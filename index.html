@@ -741,7 +741,7 @@ els["result-home-btn"].addEventListener("click", ()=>{
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let sendStart, getStart, sendBuzz, getBuzz, sendBuzzResult, getBuzzResult, sendJudge, getJudge, sendNext, getNext;
+let startAction, buzzAction, buzzResAction, judgeAction, nextAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
@@ -765,33 +765,33 @@ function leaveRoom(){
 }
 
 function setupActions(){
-  [sendStart, getStart] = room.makeAction("start");
-  [sendBuzz, getBuzz] = room.makeAction("buzz");
-  [sendBuzzResult, getBuzzResult] = room.makeAction("buzzres");
-  [sendJudge, getJudge] = room.makeAction("judge");
-  [sendNext, getNext] = room.makeAction("next");
+  startAction = room.makeAction("start");
+  buzzAction = room.makeAction("buzz");
+  buzzResAction = room.makeAction("buzzres");
+  judgeAction = room.makeAction("judge");
+  nextAction = room.makeAction("next");
 
-  getStart((data)=>{
+  startAction.onMessage = (data)=>{
     if(role !== "guest") return;
     questionIds = data.ids;
     scores = {host:0, guest:0};
     showScreen("screen-battle");
     showQuestion(0);
-  });
+  };
 
-  getBuzz((data)=>{
+  buzzAction.onMessage = (data)=>{
     if(role !== "host") return;
     handleBuzzArrival("guest", data.idx);
-  });
+  };
 
-  getBuzzResult((data)=>{
+  buzzResAction.onMessage = (data)=>{
     if(role === "host") return;
     if(data.idx !== currentIndex) return;
     buzzWinner = data.winner;
     applyBuzzResult();
-  });
+  };
 
-  getJudge((data)=>{
+  judgeAction.onMessage = (data)=>{
     if(data.idx !== currentIndex) return;
     if(judged) return;
     judged = true;
@@ -800,21 +800,29 @@ function setupActions(){
     if(role === "host"){
       els["next-btn"].classList.add("show");
     }
-  });
+  };
 
-  getNext((data)=>{
+  nextAction.onMessage = (data)=>{
     if(role === "host") return;
     if(data.index >= questionIds.length) endGame();
     else showQuestion(data.index);
-  });
+  };
 
-  room.onPeerLeave(()=>{
+  room.onPeerJoin = ()=>{
+    if(role !== "host") return;
+    scores = {host:0, guest:0};
+    startAction.send({ids: questionIds});
+    showScreen("screen-battle");
+    showQuestion(0);
+  };
+
+  room.onPeerLeave = ()=>{
     if(els["screen-battle"].classList.contains("active") || els["screen-create"].classList.contains("active") || els["screen-join"].classList.contains("active")){
       alert("相手との接続が切れました。ホーム画面にもどります。");
       leaveRoom();
       showScreen("screen-home");
     }
-  });
+  };
 }
 
 // ---- create room (host) ----
@@ -837,12 +845,6 @@ els["create-btn"].addEventListener("click", ()=>{
   try{
     room = joinRoom({appId: APP_ID}, code);
     setupActions();
-    room.onPeerJoin(()=>{
-      scores = {host:0, guest:0};
-      sendStart({ids: questionIds});
-      showScreen("screen-battle");
-      showQuestion(0);
-    });
   }catch(e){
     els["create-error"].textContent = "接続に失敗しました。通信環境を確認してもう一度お試しください。";
     els["create-error"].classList.add("show");
@@ -905,7 +907,7 @@ els["buzz-btn"].addEventListener("click", ()=>{
   if(myBuzzed || buzzWinner !== null) return;
   myBuzzed = true;
   els["buzz-btn"].disabled = true;
-  sendBuzz({idx: currentIndex});
+  buzzAction.send({idx: currentIndex});
   if(role === "host"){
     handleBuzzArrival("host", currentIndex);
   }
@@ -915,7 +917,7 @@ function handleBuzzArrival(who, idx){
   if(idx !== currentIndex) return;
   if(buzzWinner !== null) return;
   buzzWinner = who;
-  sendBuzzResult({idx: currentIndex, winner: who});
+  buzzResAction.send({idx: currentIndex, winner: who});
   applyBuzzResult();
 }
 
@@ -940,7 +942,7 @@ function judgeAnswer(correct){
   if(judged) return;
   judged = true;
   scores[buzzWinner] += correct ? 1 : 0;
-  sendJudge({idx: currentIndex, winner: buzzWinner, correct: correct});
+  judgeAction.send({idx: currentIndex, winner: buzzWinner, correct: correct});
   updateScoreUI();
   els["judge-row"].style.display = "none";
   els["status-banner"].classList.remove("win","lose","info");
@@ -955,7 +957,7 @@ els["judge-ng"].addEventListener("click", ()=>judgeAnswer(false));
 
 els["next-btn"].addEventListener("click", ()=>{
   const newIndex = currentIndex + 1;
-  sendNext({index: newIndex});
+  nextAction.send({index: newIndex});
   if(newIndex >= questionIds.length) endGame();
   else showQuestion(newIndex);
 });
