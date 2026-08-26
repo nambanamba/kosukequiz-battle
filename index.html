@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>社会 一問一答 - 早押し対戦</title>
+<style>
+  :root{
+    --paper:#f6f2ea;
+    --paper-line:#e3dbc9;
+    --ink:#2c2a24;
+    --ink-soft:#6b6457;
+    --navy:#1f3d3a;
+    --navy-deep:#16302d;
+    --gold:#b8863b;
+    --ok:#3f7d5c;
+    --ok-bg:#e4efe6;
+    --ng:#b5533f;
+    --ng-bg:#f6e6e1;
+    --card-shadow: 0 10px 30px rgba(31,61,58,0.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      linear-gradient(var(--paper-line) 1px, transparent 1px) 0 0/100% 34px,
+      var(--paper);
+    color:var(--ink);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:520px;
+    margin:0 auto;
+    padding:18px 16px 40px;
+    min-height:100vh;
+  }
+  header.top{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:18px;
+    padding-bottom:12px;
+    border-bottom:2px solid var(--navy);
+  }
+  header.top .brand{
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size:20px;
+    font-weight:700;
+    color:var(--navy-deep);
+    letter-spacing:.02em;
+  }
+  header.top .brand small{
+    display:block;
+    font-family: sans-serif;
+    font-size:11px;
+    color:var(--ink-soft);
+    font-weight:400;
+    letter-spacing:.08em;
+    margin-top:2px;
+  }
+  .screen{display:none;}
+  .screen.active{display:block;}
+
+  .section-title{
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink-soft);
+    letter-spacing:.08em;
+    margin:20px 0 8px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .section-title::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--paper-line);
+  }
+
+  .choice-grid{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .choice{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    background:#fff;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    padding:13px 15px;
+    cursor:pointer;
+    transition:border-color .15s, background .15s;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .choice.selected{
+    border-color:var(--navy);
+    background:#eef4f2;
+  }
+  .choice .name{font-size:15px; font-weight:600;}
+  .choice .count{font-size:12px; color:var(--ink-soft);}
+
+  .toggle-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:8px;
+  }
+  .toggle{
+    flex:1;
+    text-align:center;
+    padding:11px 6px;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    background:#fff;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-soft);
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .toggle.on{
+    border-color:var(--gold);
+    background:#fbf2e2;
+    color:#7a561f;
+  }
+
+  .start-btn{
+    width:100%;
+    margin-top:24px;
+    padding:16px;
+    border:none;
+    border-radius:12px;
+    background:var(--navy-deep);
+    color:#f6f2ea;
+    font-size:16px;
+    font-weight:700;
+    letter-spacing:.05em;
+    cursor:pointer;
+    box-shadow: 0 8px 18px rgba(22,48,45,0.28);
+    -webkit-tap-highlight-color:transparent;
+  }
+  .start-btn:disabled{
+    background:#b7b2a4;
+    box-shadow:none;
+    cursor:default;
+  }
+  .start-btn:active{transform:translateY(1px);}
+
+  .btn-secondary{
+    width:100%;
+    padding:14px;
+    border:1.5px solid var(--navy-deep);
+    border-radius:12px;
+    background:#fff;
+    color:var(--navy-deep);
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+
+  .back-link{
+    display:block;
+    text-align:center;
+    margin-top:16px;
+    font-size:12px;
+    color:var(--ink-soft);
+    text-decoration:underline;
+    cursor:pointer;
+  }
+
+  /* ---- home: role select ---- */
+  .role-grid{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    margin-top:10px;
+  }
+  .role-btn{
+    background:#fff;
+    border:1.5px solid var(--paper-line);
+    border-radius:14px;
+    padding:22px 18px;
+    box-shadow:var(--card-shadow);
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .role-btn .role-title{
+    font-family:"Hiragino Mincho ProN", serif;
+    font-size:19px;
+    font-weight:700;
+    color:var(--navy-deep);
+  }
+  .role-btn .role-desc{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    margin-top:6px;
+    line-height:1.6;
+  }
+
+  /* ---- room code ---- */
+  .code-box{
+    text-align:center;
+    background:#fff;
+    border:1.5px solid var(--gold);
+    border-radius:14px;
+    padding:22px 10px;
+    margin-top:18px;
+    box-shadow:var(--card-shadow);
+  }
+  .code-box .code-label{
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+  .code-box .code-num{
+    font-family:"Hiragino Mincho ProN", serif;
+    font-size:44px;
+    font-weight:700;
+    letter-spacing:.12em;
+    color:var(--navy-deep);
+    margin-top:6px;
+  }
+  .code-input{
+    width:100%;
+    padding:16px;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    background:#fff;
+    font-size:26px;
+    letter-spacing:.2em;
+    text-align:center;
+    margin-top:14px;
+  }
+  .code-input:focus{outline:none; border-color:var(--navy);}
+
+  .waiting-note{
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:13.5px;
+    margin-top:16px;
+    line-height:1.7;
+  }
+  .spinner{
+    display:inline-block;
+    width:14px;height:14px;
+    border:2px solid var(--paper-line);
+    border-top-color:var(--gold);
+    border-radius:50%;
+    margin-right:6px;
+    animation:spin 0.9s linear infinite;
+    vertical-align:-2px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .error-note{
+    text-align:center;
+    color:var(--ng);
+    font-size:13px;
+    margin-top:14px;
+    line-height:1.7;
+    display:none;
+  }
+  .error-note.show{display:block;}
+
+  /* ---- battle screen ---- */
+  .quiz-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .quiz-head .back{
+    font-size:13px;
+    color:var(--ink-soft);
+    cursor:pointer;
+  }
+  .quiz-head .counter{
+    font-size:13px;
+    font-weight:700;
+    color:var(--navy-deep);
+  }
+  .score-row{
+    display:flex;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .score-box{
+    flex:1;
+    background:#fff;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    padding:10px 8px;
+    text-align:center;
+    box-shadow:var(--card-shadow);
+  }
+  .score-box.me{border-color:var(--navy);}
+  .score-box .who{font-size:11px; color:var(--ink-soft); font-weight:700;}
+  .score-box .num{font-family:"Hiragino Mincho ProN", serif; font-size:26px; font-weight:700; color:var(--navy-deep);}
+
+  .unit-tag{
+    display:inline-block;
+    font-size:11px;
+    font-weight:700;
+    color:var(--navy-deep);
+    background:#e5ece9;
+    padding:3px 10px;
+    border-radius:100px;
+    margin-bottom:12px;
+    letter-spacing:.03em;
+  }
+  .card{
+    background:#fff;
+    border-radius:16px;
+    box-shadow:var(--card-shadow);
+    padding:26px 22px;
+    min-height:180px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+  }
+  .img-wrap{
+    margin-bottom:16px;
+    text-align:center;
+  }
+  .img-wrap img{
+    max-width:100%;
+    max-height:220px;
+    border-radius:8px;
+    border:1px solid var(--paper-line);
+    background:#fff;
+  }
+  .q-text{
+    font-size:17px;
+    line-height:1.85;
+    font-weight:500;
+  }
+  .a-block{
+    margin-top:18px;
+    padding-top:16px;
+    border-top:1.5px dashed var(--paper-line);
+    display:none;
+  }
+  .a-block.show{display:block;}
+  .a-label{
+    font-size:11px;
+    font-weight:700;
+    color:var(--gold);
+    letter-spacing:.1em;
+    margin-bottom:6px;
+  }
+  .a-text{
+    font-size:17px;
+    line-height:1.8;
+    font-weight:700;
+    color:var(--navy-deep);
+  }
+
+  .buzz-btn{
+    width:100%;
+    margin-top:22px;
+    padding:34px 10px;
+    border:none;
+    border-radius:20px;
+    background:var(--ng);
+    color:#fff;
+    font-size:22px;
+    font-weight:700;
+    letter-spacing:.1em;
+    cursor:pointer;
+    box-shadow: 0 10px 24px rgba(181,83,63,0.35);
+    -webkit-tap-highlight-color:transparent;
+  }
+  .buzz-btn:active{transform:translateY(2px);}
+  .buzz-btn:disabled{
+    background:#b7b2a4;
+    box-shadow:none;
+    cursor:default;
+  }
+
+  .status-banner{
+    margin-top:18px;
+    text-align:center;
+    font-size:15px;
+    font-weight:700;
+    padding:12px;
+    border-radius:10px;
+    display:none;
+  }
+  .status-banner.show{display:block;}
+  .status-banner.win{background:var(--ok-bg); color:var(--ok);}
+  .status-banner.lose{background:var(--ng-bg); color:var(--ng);}
+  .status-banner.info{background:#eef4f2; color:var(--navy-deep);}
+
+  .judge-row{
+    display:flex;
+    gap:10px;
+    margin-top:18px;
+  }
+  .judge-btn{
+    flex:1;
+    padding:17px 6px;
+    border:none;
+    border-radius:12px;
+    font-size:16px;
+    font-weight:700;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .judge-btn.ng{
+    background:var(--ng-bg);
+    color:var(--ng);
+    border:1.5px solid var(--ng);
+  }
+  .judge-btn.ok{
+    background:var(--ok-bg);
+    color:var(--ok);
+    border:1.5px solid var(--ok);
+  }
+  .judge-btn:active{transform:translateY(1px);}
+
+  .next-btn{
+    width:100%;
+    margin-top:18px;
+    padding:15px;
+    border:none;
+    border-radius:12px;
+    background:var(--navy-deep);
+    color:#f6f2ea;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    display:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .next-btn.show{display:block;}
+
+  /* ---- result screen ---- */
+  .result-hero{
+    text-align:center;
+    padding:28px 10px 20px;
+  }
+  .result-hero .big{
+    font-family:"Hiragino Mincho ProN", serif;
+    font-size:40px;
+    font-weight:700;
+    color:var(--navy-deep);
+  }
+  .result-hero .sub{
+    font-size:14px;
+    color:var(--ink-soft);
+    margin-top:8px;
+  }
+  .result-actions{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    margin-top:22px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">社会 一問一答<small>早押し対戦</small></div>
+  </header>
+
+  <!-- HOME SCREEN -->
+  <section id="screen-home" class="screen active">
+    <div class="role-grid">
+      <div class="role-btn" id="go-create">
+        <div class="role-title">部屋をつくる</div>
+        <div class="role-desc">出題する単元・問題数を決めて部屋をつくります。発行されたコードを相手に伝えてください。</div>
+      </div>
+      <div class="role-btn" id="go-join">
+        <div class="role-title">部屋に入る</div>
+        <div class="role-desc">相手から伝えられたコードを入力して対戦に参加します。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CREATE SCREEN -->
+  <section id="screen-create" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="create-back">← もどる</div>
+      <div></div>
+    </div>
+
+    <div id="create-setup">
+      <div class="section-title">単元をえらぶ（複数選択できます）</div>
+      <div class="choice-grid" id="unit-choices"></div>
+
+      <div class="section-title">問題数</div>
+      <div class="toggle-row" id="count-row">
+        <div class="toggle count-choice" data-count="10">10問</div>
+        <div class="toggle count-choice" data-count="20">20問</div>
+        <div class="toggle count-choice" data-count="30">30問</div>
+        <div class="toggle count-choice on" data-count="all">全部</div>
+      </div>
+
+      <div class="section-title">出題順</div>
+      <div class="toggle-row">
+        <div class="toggle on" id="shuffle-toggle" data-shuffle="1">ランダム順</div>
+        <div class="toggle" id="order-toggle" data-shuffle="0">出題順どおり</div>
+      </div>
+
+      <button class="start-btn" id="create-btn">部屋をつくる</button>
+    </div>
+
+    <div id="create-waiting" style="display:none;">
+      <div class="code-box">
+        <div class="code-label">この番号を相手に伝えてください</div>
+        <div class="code-num" id="room-code-display">----</div>
+      </div>
+      <div class="waiting-note"><span class="spinner"></span>相手の参加を待っています…</div>
+      <div class="error-note" id="create-error"></div>
+    </div>
+  </section>
+
+  <!-- JOIN SCREEN -->
+  <section id="screen-join" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="join-back">← もどる</div>
+      <div></div>
+    </div>
+
+    <div id="join-setup">
+      <div class="section-title">コードを入力</div>
+      <input type="text" id="join-code-input" class="code-input" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off">
+      <button class="start-btn" id="join-btn">参加する</button>
+    </div>
+
+    <div id="join-waiting" style="display:none;">
+      <div class="waiting-note"><span class="spinner"></span>接続しています…</div>
+      <div class="error-note" id="join-error"></div>
+    </div>
+  </section>
+
+  <!-- BATTLE SCREEN -->
+  <section id="screen-battle" class="screen">
+    <div class="quiz-head">
+      <div class="counter" id="battle-counter">1 / 10</div>
+    </div>
+    <div class="score-row">
+      <div class="score-box me"><div class="who">あなた</div><div class="num" id="score-me">0</div></div>
+      <div class="score-box"><div class="who">相手</div><div class="num" id="score-opp">0</div></div>
+    </div>
+
+    <span class="unit-tag" id="battle-unit-tag"></span>
+    <div class="card">
+      <div class="img-wrap" id="battle-img-wrap" style="display:none;">
+        <img id="battle-img" src="" alt="資料" />
+      </div>
+      <div class="q-text" id="battle-q"></div>
+      <div class="a-block" id="battle-a-block">
+        <div class="a-label">こたえ</div>
+        <div class="a-text" id="battle-a"></div>
+      </div>
+    </div>
+
+    <button class="buzz-btn" id="buzz-btn">はやく押す！</button>
+    <div class="status-banner" id="status-banner"></div>
+    <div class="judge-row" id="judge-row" style="display:none;">
+      <button class="judge-btn ng" id="judge-ng">✕ まちがい</button>
+      <button class="judge-btn ok" id="judge-ok">〇 せいかい</button>
+    </div>
+    <button class="next-btn" id="next-btn">つぎの問題へ</button>
+  </section>
+
+  <!-- RESULT SCREEN -->
+  <section id="screen-result" class="screen">
+    <div class="result-hero">
+      <div class="big" id="result-score">0 - 0</div>
+      <div class="sub" id="result-sub"></div>
+    </div>
+    <div class="result-actions">
+      <button class="start-btn" id="result-home-btn">はじめの画面にもどる</button>
+    </div>
+  </section>
+
+</div>
+
+<script src="data.js"></script>
+<script type="module">
+import {joinRoom} from 'https://esm.run/trystero';
+
+const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
+
+const byId = new Map(QA_DATA.map(d => [d.id, d]));
+
+const els = {};
+["screen-home","screen-create","screen-join","screen-battle","screen-result",
+ "go-create","go-join",
+ "create-back","unit-choices","count-row","shuffle-toggle","order-toggle","create-btn",
+ "create-setup","create-waiting","room-code-display","create-error",
+ "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
+ "battle-counter","score-me","score-opp","battle-unit-tag",
+ "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
+ "buzz-btn","status-banner","judge-row","judge-ng","judge-ok","next-btn",
+ "result-score","result-sub","result-home-btn"
+].forEach(id => els[id] = document.getElementById(id));
+
+function showScreen(name){
+  ["screen-home","screen-create","screen-join","screen-battle","screen-result"].forEach(id=>{
+    els[id].classList.toggle("active", id === name);
+  });
+  window.scrollTo(0,0);
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ---- unit selection (create screen) ----
+let selectedUnits = new Set(["ALL"]);
+let questionCount = "all";
+let currentShuffle = true;
+
+function getUnits(){
+  const set = [];
+  QA_DATA.forEach(d=>{ if(!set.includes(d.u)) set.push(d.u); });
+  return set;
+}
+function unitIndices(unit){
+  const arr = [];
+  QA_DATA.forEach((d,i)=>{ if(unit==="ALL" || d.u===unit) arr.push(i); });
+  return arr;
+}
+function buildPool(){
+  let pool;
+  if(selectedUnits.has("ALL")){
+    pool = QA_DATA.map((_,i)=>i);
+  }else{
+    pool = [];
+    QA_DATA.forEach((d,i)=>{ if(selectedUnits.has(d.u)) pool.push(i); });
+  }
+  return pool;
+}
+function makeUnitChoice(key, label, count){
+  const div = document.createElement("div");
+  div.className = "choice";
+  div.dataset.unit = key;
+  div.innerHTML = '<span class="name">'+escapeHtml(label)+'</span><span class="count">'+count+'問</span>';
+  div.addEventListener("click", ()=>{
+    if(key === "ALL"){
+      selectedUnits = new Set(["ALL"]);
+    }else{
+      if(selectedUnits.has("ALL")) selectedUnits = new Set();
+      if(selectedUnits.has(key)) selectedUnits.delete(key);
+      else selectedUnits.add(key);
+      if(selectedUnits.size === 0) selectedUnits = new Set(["ALL"]);
+    }
+    refreshUnitSelection();
+    refreshCreateButton();
+  });
+  return div;
+}
+function refreshUnitSelection(){
+  document.querySelectorAll("#unit-choices .choice").forEach(el=>{
+    el.classList.toggle("selected", selectedUnits.has(el.dataset.unit));
+  });
+}
+function refreshCreateButton(){
+  const pool = buildPool();
+  const n = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
+  els["create-btn"].disabled = pool.length === 0;
+  els["create-btn"].textContent = pool.length === 0 ? "この条件の問題はありません" : "部屋をつくる（"+n+"問）";
+}
+function renderUnitChoices(){
+  const total = QA_DATA.length;
+  els["unit-choices"].innerHTML = "";
+  els["unit-choices"].appendChild(makeUnitChoice("ALL", "全単元", total));
+  getUnits().forEach(u=>{
+    els["unit-choices"].appendChild(makeUnitChoice(u, u, unitIndices(u).length));
+  });
+  refreshUnitSelection();
+  refreshCreateButton();
+}
+document.querySelectorAll(".count-choice").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    questionCount = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
+    document.querySelectorAll(".count-choice").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    refreshCreateButton();
+  });
+});
+els["shuffle-toggle"].addEventListener("click", ()=>{
+  currentShuffle = true;
+  els["shuffle-toggle"].classList.add("on");
+  els["order-toggle"].classList.remove("on");
+});
+els["order-toggle"].addEventListener("click", ()=>{
+  currentShuffle = false;
+  els["order-toggle"].classList.add("on");
+  els["shuffle-toggle"].classList.remove("on");
+});
+
+function shuffleArray(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+// ---- navigation ----
+els["go-create"].addEventListener("click", ()=>{
+  els["create-setup"].style.display = "block";
+  els["create-waiting"].style.display = "none";
+  els["create-error"].classList.remove("show");
+  renderUnitChoices();
+  showScreen("screen-create");
+});
+els["create-back"].addEventListener("click", ()=>{
+  leaveRoom();
+  showScreen("screen-home");
+});
+els["go-join"].addEventListener("click", ()=>{
+  els["join-setup"].style.display = "block";
+  els["join-waiting"].style.display = "none";
+  els["join-error"].classList.remove("show");
+  els["join-code-input"].value = "";
+  showScreen("screen-join");
+});
+els["join-back"].addEventListener("click", ()=>{
+  leaveRoom();
+  showScreen("screen-home");
+});
+els["result-home-btn"].addEventListener("click", ()=>{
+  leaveRoom();
+  showScreen("screen-home");
+});
+
+// ---- networking state ----
+let role = null; // 'host' | 'guest'
+let room = null;
+let sendStart, getStart, sendBuzz, getBuzz, sendBuzzResult, getBuzzResult, sendJudge, getJudge, sendNext, getNext;
+let questionIds = [];
+let currentIndex = -1;
+let scores = {host:0, guest:0};
+let buzzWinner = null;
+let myBuzzed = false;
+let judged = false;
+
+function genCode(){
+  return String(Math.floor(1000 + Math.random()*9000));
+}
+
+function leaveRoom(){
+  if(room){
+    try{ room.leave(); }catch(e){}
+  }
+  room = null;
+  role = null;
+  questionIds = [];
+  currentIndex = -1;
+  scores = {host:0, guest:0};
+}
+
+function setupActions(){
+  [sendStart, getStart] = room.makeAction("start");
+  [sendBuzz, getBuzz] = room.makeAction("buzz");
+  [sendBuzzResult, getBuzzResult] = room.makeAction("buzzres");
+  [sendJudge, getJudge] = room.makeAction("judge");
+  [sendNext, getNext] = room.makeAction("next");
+
+  getStart((data)=>{
+    if(role !== "guest") return;
+    questionIds = data.ids;
+    scores = {host:0, guest:0};
+    showScreen("screen-battle");
+    showQuestion(0);
+  });
+
+  getBuzz((data)=>{
+    if(role !== "host") return;
+    handleBuzzArrival("guest", data.idx);
+  });
+
+  getBuzzResult((data)=>{
+    if(role === "host") return;
+    if(data.idx !== currentIndex) return;
+    buzzWinner = data.winner;
+    applyBuzzResult();
+  });
+
+  getJudge((data)=>{
+    if(data.idx !== currentIndex) return;
+    if(judged) return;
+    judged = true;
+    scores[data.winner] += data.correct ? 1 : 0;
+    updateScoreUI();
+    if(role === "host"){
+      els["next-btn"].classList.add("show");
+    }
+  });
+
+  getNext((data)=>{
+    if(role === "host") return;
+    if(data.index >= questionIds.length) endGame();
+    else showQuestion(data.index);
+  });
+
+  room.onPeerLeave(()=>{
+    if(els["screen-battle"].classList.contains("active") || els["screen-create"].classList.contains("active") || els["screen-join"].classList.contains("active")){
+      alert("相手との接続が切れました。ホーム画面にもどります。");
+      leaveRoom();
+      showScreen("screen-home");
+    }
+  });
+}
+
+// ---- create room (host) ----
+els["create-btn"].addEventListener("click", ()=>{
+  let pool = buildPool();
+  if(currentShuffle) pool = shuffleArray(pool);
+  if(questionCount !== "all") pool = pool.slice(0, questionCount);
+  if(pool.length === 0) return;
+
+  const ids = pool.map(i => QA_DATA[i].id);
+  const code = genCode();
+  role = "host";
+  questionIds = ids;
+
+  els["create-setup"].style.display = "none";
+  els["create-waiting"].style.display = "block";
+  els["room-code-display"].textContent = code;
+  els["create-error"].classList.remove("show");
+
+  try{
+    room = joinRoom({appId: APP_ID}, code);
+    setupActions();
+    room.onPeerJoin(()=>{
+      scores = {host:0, guest:0};
+      sendStart({ids: questionIds});
+      showScreen("screen-battle");
+      showQuestion(0);
+    });
+  }catch(e){
+    els["create-error"].textContent = "接続に失敗しました。通信環境を確認してもう一度お試しください。";
+    els["create-error"].classList.add("show");
+  }
+});
+
+// ---- join room (guest) ----
+els["join-btn"].addEventListener("click", ()=>{
+  const code = els["join-code-input"].value.trim();
+  if(!/^\d{4}$/.test(code)){
+    els["join-error"].textContent = "4桁のコードを入力してください。";
+    els["join-error"].classList.add("show");
+    return;
+  }
+  role = "guest";
+  els["join-setup"].style.display = "none";
+  els["join-waiting"].style.display = "block";
+  els["join-error"].classList.remove("show");
+
+  try{
+    room = joinRoom({appId: APP_ID}, code);
+    setupActions();
+  }catch(e){
+    els["join-error"].textContent = "接続に失敗しました。コードを確認してもう一度お試しください。";
+    els["join-error"].classList.add("show");
+  }
+});
+
+// ---- battle ----
+function showQuestion(idx){
+  currentIndex = idx;
+  if(idx >= questionIds.length){ endGame(); return; }
+  buzzWinner = null;
+  myBuzzed = false;
+  judged = false;
+
+  const d = byId.get(questionIds[idx]);
+  els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
+  els["battle-unit-tag"].textContent = d.u;
+  els["battle-q"].textContent = d.q;
+  els["battle-a"].textContent = d.a;
+  els["battle-a-block"].classList.remove("show");
+  if(d.img){
+    els["battle-img"].src = "images/"+d.img;
+    els["battle-img-wrap"].style.display = "block";
+  }else{
+    els["battle-img-wrap"].style.display = "none";
+  }
+
+  els["buzz-btn"].disabled = false;
+  els["buzz-btn"].style.display = "block";
+  els["status-banner"].classList.remove("show","win","lose","info");
+  els["judge-row"].style.display = "none";
+  els["next-btn"].classList.remove("show");
+
+  updateScoreUI();
+}
+
+els["buzz-btn"].addEventListener("click", ()=>{
+  if(myBuzzed || buzzWinner !== null) return;
+  myBuzzed = true;
+  els["buzz-btn"].disabled = true;
+  sendBuzz({idx: currentIndex});
+  if(role === "host"){
+    handleBuzzArrival("host", currentIndex);
+  }
+});
+
+function handleBuzzArrival(who, idx){
+  if(idx !== currentIndex) return;
+  if(buzzWinner !== null) return;
+  buzzWinner = who;
+  sendBuzzResult({idx: currentIndex, winner: who});
+  applyBuzzResult();
+}
+
+function applyBuzzResult(){
+  els["buzz-btn"].style.display = "none";
+  els["battle-a-block"].classList.add("show");
+
+  const amWinner = buzzWinner === role;
+  els["status-banner"].classList.add("show");
+  if(amWinner){
+    els["status-banner"].classList.add("win");
+    els["status-banner"].textContent = "あなたが先におしました！";
+    els["judge-row"].style.display = "none";
+  }else{
+    els["status-banner"].classList.add("lose");
+    els["status-banner"].textContent = "相手が先におしました。答え合わせをしてください。";
+    els["judge-row"].style.display = "flex";
+  }
+}
+
+function judgeAnswer(correct){
+  if(judged) return;
+  judged = true;
+  scores[buzzWinner] += correct ? 1 : 0;
+  sendJudge({idx: currentIndex, winner: buzzWinner, correct: correct});
+  updateScoreUI();
+  els["judge-row"].style.display = "none";
+  els["status-banner"].classList.remove("win","lose","info");
+  els["status-banner"].classList.add("info");
+  els["status-banner"].textContent = correct ? "正解として記録しました。" : "不正解として記録しました。";
+  if(role === "host"){
+    els["next-btn"].classList.add("show");
+  }
+}
+els["judge-ok"].addEventListener("click", ()=>judgeAnswer(true));
+els["judge-ng"].addEventListener("click", ()=>judgeAnswer(false));
+
+els["next-btn"].addEventListener("click", ()=>{
+  const newIndex = currentIndex + 1;
+  sendNext({index: newIndex});
+  if(newIndex >= questionIds.length) endGame();
+  else showQuestion(newIndex);
+});
+
+function updateScoreUI(){
+  const my = role === "host" ? scores.host : scores.guest;
+  const opp = role === "host" ? scores.guest : scores.host;
+  els["score-me"].textContent = my;
+  els["score-opp"].textContent = opp;
+}
+
+function endGame(){
+  const my = role === "host" ? scores.host : scores.guest;
+  const opp = role === "host" ? scores.guest : scores.host;
+  els["result-score"].textContent = my+" - "+opp;
+  let sub = "";
+  if(my > opp) sub = "あなたの勝ちです！";
+  else if(my < opp) sub = "相手の勝ちです。";
+  else sub = "引き分けです。";
+  els["result-sub"].textContent = sub;
+  showScreen("screen-result");
+}
+</script>
+</body>
+</html>
