@@ -393,6 +393,28 @@
     cursor:default;
   }
 
+  .skip-btn{
+    width:100%;
+    margin-top:10px;
+    padding:12px;
+    border:1.5px dashed var(--gold);
+    border-radius:12px;
+    background:#fff;
+    color:#7a561f;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .skip-btn:active{background:#fbf2e2;}
+  .skip-encourage{
+    margin-top:14px;
+    text-align:center;
+    font-size:16px;
+    font-weight:700;
+    color:var(--gold);
+  }
+
   .status-banner{
     margin-top:18px;
     text-align:center;
@@ -1045,6 +1067,9 @@
     </div>
 
     <button class="buzz-btn" id="buzz-btn">はやく押す！</button>
+    <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
+    <div class="skip-encourage" id="skip-encourage" style="display:none;">次、がんばって！</div>
+    <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
     <div class="status-banner" id="status-banner"></div>
     <button class="reveal-btn" id="reveal-btn" style="display:none;">こたえを見る</button>
     <div class="judge-row" id="judge-row" style="display:none;">
@@ -1103,7 +1128,7 @@ const els = {};
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
- "buzz-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
+ "buzz-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -1960,6 +1985,11 @@ let buzzed = false;
 let myVerdictOfOpponent = null; // true/false: what I decided about my opponent's answer
 let opponentVerdictOfMe = null; // true/false: what my opponent decided about my answer
 let scored = false;
+let skipReserve = []; // host-only: extra question ids held back for skip replacements
+let skipsUsed = 0;
+let skipLimit = 0;
+let pendingSendTimer = null; // host-only: the delayed startAction/nextAction send, cancellable by a skip
+let skipWindowTimer = null; // host-only: hides the skip button once the skip window closes
 
 function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
@@ -1969,11 +1999,16 @@ function leaveRoom(){
   if(room){
     try{ room.leave(); }catch(e){}
   }
+  clearTimeout(pendingSendTimer);
+  clearTimeout(skipWindowTimer);
   room = null;
   role = null;
   questionIds = [];
   currentIndex = -1;
   scores = {host:0, guest:0};
+  skipReserve = [];
+  skipsUsed = 0;
+  skipLimit = 0;
 }
 
 function setupActions(){
@@ -2011,7 +2046,10 @@ function setupActions(){
   nextAction.onMessage = (data)=>{
     if(role === "host") return;
     if(data.index >= questionIds.length) endGame();
-    else showQuestion(data.index);
+    else{
+      if(data.id) questionIds[data.index] = data.id;
+      showQuestion(data.index);
+    }
   };
 
   endAction.onMessage = ()=>{
@@ -2022,8 +2060,7 @@ function setupActions(){
     if(role !== "host") return;
     scores = {host:0, guest:0};
     showScreen("screen-battle");
-    showQuestion(0);
-    setTimeout(()=>{ if(room) startAction.send({ids: questionIds}); }, headStartSec*1000);
+    hostAdvanceAndArm(0);
   };
 
   room.onPeerLeave = ()=>{
@@ -2041,13 +2078,18 @@ function setupActions(){
 els["create-btn"].addEventListener("click", ()=>{
   let pool = buildPool();
   if(currentShuffle) pool = shuffleArray(pool);
-  if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(pool.length === 0) return;
 
-  const ids = pool.map(i => QA_DATA[i].id);
+  const n = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
+  const mainPool = pool.slice(0, n);
+  const reservePool = pool.slice(n, n + Math.ceil(n * 0.2));
+
   const code = genCode();
   role = "host";
-  questionIds = ids;
+  questionIds = mainPool.map(i => QA_DATA[i].id);
+  skipReserve = reservePool.map(i => QA_DATA[i].id);
+  skipsUsed = 0;
+  skipLimit = Math.min(Math.ceil(n * 0.2), skipReserve.length);
 
   els["home-setup"].style.display = "none";
   els["home-waiting"].style.display = "block";
@@ -2111,6 +2153,9 @@ function showQuestion(idx){
 
   els["buzz-btn"].disabled = false;
   els["buzz-btn"].style.display = "block";
+  els["skip-btn"].style.display = "none";
+  els["skip-encourage"].style.display = "none";
+  els["skip-continue-btn"].style.display = "none";
   els["status-banner"].classList.remove("show","win","lose","info");
   els["reveal-btn"].style.display = "none";
   els["judge-row"].style.display = "none";
@@ -2120,6 +2165,57 @@ function showQuestion(idx){
 
   updateScoreUI();
 }
+
+// ---- host-only: skip a question during the head-start window ----
+function armSkip(idx, sendFn){
+  clearTimeout(pendingSendTimer);
+  clearTimeout(skipWindowTimer);
+  const skipAvailable = role === "host" && headStartSec > 0 && skipsUsed < skipLimit && skipReserve.length > 0;
+  if(skipAvailable){
+    els["skip-btn"].style.display = "block";
+    els["skip-btn"].textContent = "スキップ（あと"+(skipLimit - skipsUsed)+"回）";
+    skipWindowTimer = setTimeout(()=>{ els["skip-btn"].style.display = "none"; }, Math.min(2000, headStartSec*1000));
+  }else{
+    els["skip-btn"].style.display = "none";
+  }
+  pendingSendTimer = setTimeout(()=>{
+    els["skip-btn"].style.display = "none";
+    sendFn();
+  }, headStartSec*1000);
+}
+
+function hostAdvanceAndArm(idx){
+  showQuestion(idx);
+  armSkip(idx, ()=>{
+    if(!room) return;
+    if(idx === 0) startAction.send({ids: questionIds});
+    else nextAction.send({index: idx, id: questionIds[idx]});
+  });
+}
+
+els["skip-btn"].addEventListener("click", ()=>{
+  if(skipsUsed >= skipLimit || skipReserve.length === 0) return;
+  clearTimeout(pendingSendTimer);
+  clearTimeout(skipWindowTimer);
+  els["skip-btn"].style.display = "none";
+  skipsUsed++;
+  const skippedId = questionIds[currentIndex];
+  questionIds[currentIndex] = skipReserve.shift();
+
+  const skipped = getQById(skippedId);
+  els["buzz-btn"].style.display = "none";
+  els["battle-q"].textContent = skipped.q;
+  els["battle-a"].textContent = skipped.a;
+  els["battle-a-block"].classList.add("show");
+  els["skip-encourage"].style.display = "block";
+  els["skip-continue-btn"].style.display = "block";
+});
+
+els["skip-continue-btn"].addEventListener("click", ()=>{
+  els["skip-encourage"].style.display = "none";
+  els["skip-continue-btn"].style.display = "none";
+  hostAdvanceAndArm(currentIndex);
+});
 
 els["buzz-btn"].addEventListener("click", ()=>{
   if(buzzed) return;
@@ -2131,6 +2227,8 @@ els["buzz-btn"].addEventListener("click", ()=>{
 
 function enterAnsweringPhase(){
   els["buzz-btn"].style.display = "none";
+  els["skip-btn"].style.display = "none";
+  clearTimeout(skipWindowTimer);
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "それぞれ声に出してこたえを言いましょう。言い終わったら「こたえを見る」を押してください。";
@@ -2200,8 +2298,7 @@ els["next-btn"].addEventListener("click", ()=>{
     endGame();
     return;
   }
-  showQuestion(newIndex);
-  setTimeout(()=>{ if(room) nextAction.send({index: newIndex}); }, headStartSec*1000);
+  hostAdvanceAndArm(newIndex);
 });
 
 function updateScoreUI(){
