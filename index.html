@@ -689,7 +689,33 @@
   .miss-item .q{font-size:13.5px; line-height:1.6;}
   .miss-item .a{font-size:13.5px; line-height:1.6; color:var(--ok); font-weight:700; margin-top:4px;}
 
-  /* ---- list screen: count steppers + text-edit ---- */
+  /* ---- list screen: date filter, count steppers + text-edit ---- */
+  .list-date-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-top:10px;
+    flex-wrap:wrap;
+  }
+  .list-date-input{
+    flex:1;
+    min-width:0;
+    padding:8px;
+    border:1.5px solid var(--paper-line);
+    border-radius:8px;
+    font-size:13px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .list-date-sep{
+    font-size:12px;
+    color:var(--ink-soft);
+  }
+  .list-last-answered{
+    font-size:11px;
+    color:var(--ink-soft);
+    margin-bottom:8px;
+  }
   .count-row-list{
     display:flex;
     gap:8px;
@@ -966,15 +992,21 @@
       <div class="back" id="list-back">← もどる</div>
       <div class="counter" id="list-count">0問</div>
     </div>
-    <div class="toggle-row">
-      <select id="list-unit-select" class="list-select"></select>
-      <select id="list-status-select" class="list-select">
-        <option value="all">すべての状態</option>
-        <option value="weak">苦手</option>
-        <option value="mastered">正解ずみ</option>
-        <option value="unseen">未回答</option>
-      </select>
+    <select id="list-unit-select" class="list-select" style="width:100%;"></select>
+
+    <div class="toggle-row" id="list-status-filters">
+      <div class="toggle status-filter on" data-status="unseen">未解答</div>
+      <div class="toggle status-filter on" data-status="mastered">正解ずみ</div>
+      <div class="toggle status-filter on" data-status="weak">苦手</div>
     </div>
+
+    <div class="list-date-row">
+      <input type="date" id="list-date-from" class="list-date-input">
+      <span class="list-date-sep">〜</span>
+      <input type="date" id="list-date-to" class="list-date-input">
+      <div class="back-link" id="list-date-clear" style="margin-top:0;">クリア</div>
+    </div>
+
     <div class="list-items" id="list-items"></div>
   </section>
 
@@ -1146,7 +1178,8 @@ const els = {};
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","create-cancel","room-code-display","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
- "list-back","list-count","list-unit-select","list-status-select","list-items",
+ "list-back","list-count","list-unit-select","list-items",
+ "list-date-from","list-date-to","list-date-clear",
  "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save",
@@ -1227,13 +1260,14 @@ function recordResult(id, correct){
   const s = stats[id] || {correct:0, wrong:0};
   if(correct) s.correct = (s.correct||0) + 1;
   else s.wrong = (s.wrong||0) + 1;
+  s.lastAnswered = Date.now();
   stats[id] = s;
   saveStats();
 }
 function setStatus(id, status){
   if(status === "unseen") delete stats[id];
-  else if(status === "mastered") stats[id] = {correct:1, wrong:0};
-  else if(status === "weak") stats[id] = {correct:0, wrong:1};
+  else if(status === "mastered") stats[id] = {correct:1, wrong:0, lastAnswered: Date.now()};
+  else if(status === "weak") stats[id] = {correct:0, wrong:1, lastAnswered: Date.now()};
   saveStats();
 }
 function adjustStat(qid, field, delta){
@@ -1242,9 +1276,14 @@ function adjustStat(qid, field, delta){
   if(s.correct === 0 && s.wrong === 0){
     delete stats[qid];
   }else{
+    s.lastAnswered = Date.now();
     stats[qid] = s;
   }
   saveStats();
+}
+function formatDate(ts){
+  const d = new Date(ts);
+  return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0");
 }
 
 // ---- question text corrections (fixes typos in the original data without
@@ -1368,7 +1407,7 @@ function escapeHtml(s){
 }
 
 // ---- unit selection (create screen) ----
-let selectedUnits = new Set(["ALL"]);
+let selectedUnits = new Set(getUnits()); // every unit selected by default, like a checked "select all"
 let questionCount = "all";
 let currentShuffle = true;
 let filterUnmastered = false;
@@ -1388,13 +1427,8 @@ function unitIndices(unit){
   return arr;
 }
 function buildPool(){
-  let pool;
-  if(selectedUnits.has("ALL")){
-    pool = QA_DATA.map((_,i)=>i);
-  }else{
-    pool = [];
-    QA_DATA.forEach((d,i)=>{ if(selectedUnits.has(d.u)) pool.push(i); });
-  }
+  let pool = [];
+  QA_DATA.forEach((d,i)=>{ if(selectedUnits.has(d.u)) pool.push(i); });
   if(filterUnmastered){
     pool = pool.filter(i => !isMastered(QA_DATA[i].id));
   }
@@ -1415,15 +1449,15 @@ function makeUnitChoice(key, label, count){
   div.innerHTML = '<span class="name">'+escapeHtml(label)+'</span><span class="count">'+count+'問</span>';
   div.addEventListener("click", ()=>{
     if(key === "ALL"){
-      selectedUnits = new Set(["ALL"]);
+      // acts like a normal "select all" checkbox: if everything is already
+      // checked, unchecks everything; otherwise checks everything
+      const allUnits = getUnits();
+      const isAllSelected = allUnits.length > 0 && allUnits.every(u => selectedUnits.has(u));
+      selectedUnits = isAllSelected ? new Set() : new Set(allUnits);
     }else{
-      // expand "ALL" into every individual unit first, so clicking one
-      // specific unit while everything is selected excludes just that one
-      // instead of narrowing the selection down to only that one
-      if(selectedUnits.has("ALL")) selectedUnits = new Set(getUnits());
+      // each unit is its own independent checkbox
       if(selectedUnits.has(key)) selectedUnits.delete(key);
       else selectedUnits.add(key);
-      if(selectedUnits.size === 0) selectedUnits = new Set(["ALL"]);
     }
     refreshUnitSelection();
     refreshCreateButton();
@@ -1431,8 +1465,14 @@ function makeUnitChoice(key, label, count){
   return div;
 }
 function refreshUnitSelection(){
+  const allUnits = getUnits();
+  const isAllSelected = allUnits.length > 0 && allUnits.every(u => selectedUnits.has(u));
   document.querySelectorAll("#unit-choices .choice").forEach(el=>{
-    el.classList.toggle("selected", selectedUnits.has(el.dataset.unit));
+    if(el.dataset.unit === "ALL"){
+      el.classList.toggle("selected", isAllSelected);
+    }else{
+      el.classList.toggle("selected", selectedUnits.has(el.dataset.unit));
+    }
   });
 }
 function refreshCreateButton(){
@@ -1547,7 +1587,9 @@ els["result-home-btn"].addEventListener("click", ()=>{
 
 // ---- list screen: browse every question and flip its status by hand ----
 let listUnit = "ALL";
-let listStatus = "all";
+let listStatusFilters = new Set(["unseen","mastered","weak"]);
+let listDateFrom = "";
+let listDateTo = "";
 
 function populateListUnitSelect(){
   els["list-unit-select"].innerHTML = "";
@@ -1572,16 +1614,33 @@ function questionStatus(id){
 
 function renderListScreen(){
   populateListUnitSelect();
-  els["list-status-select"].value = listStatus;
+  document.querySelectorAll(".status-filter").forEach(el=>{
+    el.classList.toggle("on", listStatusFilters.has(el.dataset.status));
+  });
+  els["list-date-from"].value = listDateFrom;
+  els["list-date-to"].value = listDateTo;
   renderListItems();
 }
 
 let editingId = null;
 
+function dateToYMD(ts){
+  const d = new Date(ts);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+
 function renderListItems(){
   let indices = unitIndices(listUnit);
-  if(listStatus !== "all"){
-    indices = indices.filter(i => questionStatus(QA_DATA[i].id) === listStatus);
+  indices = indices.filter(i => listStatusFilters.has(questionStatus(QA_DATA[i].id)));
+  if(listDateFrom || listDateTo){
+    indices = indices.filter(i=>{
+      const s = stats[QA_DATA[i].id];
+      if(!s || !s.lastAnswered) return false;
+      const ymd = dateToYMD(s.lastAnswered);
+      if(listDateFrom && ymd < listDateFrom) return false;
+      if(listDateTo && ymd > listDateTo) return false;
+      return true;
+    });
   }
   els["list-count"].textContent = indices.length+"問";
   els["list-items"].innerHTML = "";
@@ -1644,6 +1703,7 @@ function renderListItems(){
       '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
+      '<div class="list-last-answered">最終回答：'+(s.lastAnswered ? formatDate(s.lastAnswered) : "未回答")+'</div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
         '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
@@ -1703,7 +1763,9 @@ function renderListItems(){
 
 els["list-btn"].addEventListener("click", ()=>{
   listUnit = "ALL";
-  listStatus = "all";
+  listStatusFilters = new Set(["unseen","mastered","weak"]);
+  listDateFrom = "";
+  listDateTo = "";
   renderListScreen();
   showScreen("screen-list");
 });
@@ -1715,8 +1777,27 @@ els["list-unit-select"].addEventListener("change", ()=>{
   listUnit = els["list-unit-select"].value;
   renderListItems();
 });
-els["list-status-select"].addEventListener("change", ()=>{
-  listStatus = els["list-status-select"].value;
+document.querySelectorAll(".status-filter").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    if(listStatusFilters.has(el.dataset.status)) listStatusFilters.delete(el.dataset.status);
+    else listStatusFilters.add(el.dataset.status);
+    el.classList.toggle("on", listStatusFilters.has(el.dataset.status));
+    renderListItems();
+  });
+});
+els["list-date-from"].addEventListener("change", ()=>{
+  listDateFrom = els["list-date-from"].value;
+  renderListItems();
+});
+els["list-date-to"].addEventListener("change", ()=>{
+  listDateTo = els["list-date-to"].value;
+  renderListItems();
+});
+els["list-date-clear"].addEventListener("click", ()=>{
+  listDateFrom = "";
+  listDateTo = "";
+  els["list-date-from"].value = "";
+  els["list-date-to"].value = "";
   renderListItems();
 });
 
