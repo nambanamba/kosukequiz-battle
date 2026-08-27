@@ -433,6 +433,12 @@
     color:var(--ink-soft);
     margin-top:2px;
   }
+  .avatar-level{
+    font-size:11px;
+    font-weight:700;
+    color:var(--gold);
+    min-height:14px;
+  }
   #guest-avatar-box.hit .avatar-char{
     animation:avatarHit 0.5s ease;
   }
@@ -1204,6 +1210,7 @@
     <div class="battle-avatars" id="battle-avatars">
       <div class="avatar-box" id="host-avatar-box">
         <div class="avatar-char" id="host-avatar">🙂</div>
+        <div class="avatar-level" id="host-avatar-level"></div>
         <div class="avatar-label" id="host-avatar-label">あなた</div>
       </div>
       <div class="avatar-box" id="guest-avatar-box">
@@ -1307,7 +1314,7 @@ const els = {};
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
- "battle-avatars","host-avatar-box","host-avatar","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-label",
+ "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save",
  "buzz-btn","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
@@ -1362,10 +1369,13 @@ function playAttackSound(){
     osc.stop(now+0.25);
   }catch(e){ /* ignore, audio is a nice-to-have */ }
 }
-// host's avatar visibly gets stronger over the round as attacks land;
-// guest's avatar just reacts to being hit each time (no counter-evolution --
-// this is a one-directional kid-empowerment gimmick, not a real battle)
-const HOST_POWER_STAGES = ["🙂","😎","💪","🔥","🦸","👑"];
+// host's avatar visibly gets stronger over the round as attacks land, and
+// keeps climbing forever via the level badge even after the emoji stages run
+// out; guest's avatar settles into a progressively more worn-out face each
+// hit instead of always bouncing back to normal (still just a cosmetic,
+// per-round reaction -- no HP, no defeat text, resets fresh next round)
+const HOST_POWER_STAGES = ["🙂","😎","💪","🔥","⚡","🦸","🐉","🌟","👑"];
+const GUEST_WEAKEN_STAGES = ["😊","😐","😟","😖","😩","🥵","🫠"];
 let hostAttacksLanded = 0;
 
 function setupAvatarLabels(){
@@ -1376,7 +1386,12 @@ function setupAvatarLabels(){
 function resetAvatars(){
   hostAttacksLanded = 0;
   els["host-avatar"].textContent = HOST_POWER_STAGES[0];
-  els["guest-avatar"].textContent = "😊";
+  els["host-avatar-level"].textContent = "";
+  els["guest-avatar"].textContent = GUEST_WEAKEN_STAGES[0];
+}
+
+function currentGuestRestFace(){
+  return GUEST_WEAKEN_STAGES[Math.min(hostAttacksLanded, GUEST_WEAKEN_STAGES.length-1)];
 }
 
 function triggerAttackEffect(){
@@ -1389,17 +1404,24 @@ function triggerAttackEffect(){
   els["battle-avatars"].appendChild(el);
   setTimeout(()=>{
     el.remove();
-    // land the hit: guest avatar reacts, host avatar powers up
+    hostAttacksLanded++;
+
+    // land the hit: guest avatar reacts, then settles into its new
+    // (more worn-out) resting face instead of bouncing back to normal
     els["guest-avatar-box"].classList.add("hit");
-    const prevFace = els["guest-avatar"].textContent;
     els["guest-avatar"].textContent = "😵";
     setTimeout(()=>{
       els["guest-avatar-box"].classList.remove("hit");
-      els["guest-avatar"].textContent = prevFace;
+      els["guest-avatar"].textContent = currentGuestRestFace();
     }, 500);
 
-    hostAttacksLanded++;
-    els["host-avatar"].textContent = HOST_POWER_STAGES[Math.min(hostAttacksLanded, HOST_POWER_STAGES.length-1)];
+    // host avatar powers up; once the emoji stages run out, keep climbing
+    // via a level number so it never stops visibly growing
+    const stageIdx = Math.min(hostAttacksLanded, HOST_POWER_STAGES.length-1);
+    els["host-avatar"].textContent = HOST_POWER_STAGES[stageIdx];
+    els["host-avatar-level"].textContent = hostAttacksLanded > (HOST_POWER_STAGES.length-1)
+      ? "Lv."+(hostAttacksLanded - (HOST_POWER_STAGES.length-1) + 1)
+      : "";
     els["host-avatar-box"].classList.add("power-up");
     setTimeout(()=>{ els["host-avatar-box"].classList.remove("power-up"); }, 500);
   }, 500);
