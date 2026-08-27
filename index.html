@@ -931,6 +931,9 @@
     </div>
 
     <div id="home-setup">
+      <button class="btn-secondary" id="resume-solo-btn" style="display:none;">前回の続きから再開する（一人）</button>
+      <button class="btn-secondary" id="resume-battle-btn" style="display:none; margin-top:10px;">前回の対戦を再開する（ホストとして）</button>
+
       <div class="section-title">単元をえらぶ（複数選択できます）</div>
       <div class="choice-grid" id="unit-choices"></div>
 
@@ -1214,7 +1217,7 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","export-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
  "count-row","shuffle-toggle","order-toggle","review-mode-toggle",
@@ -1434,6 +1437,68 @@ function refreshLastMissButton(){
   }
 }
 
+// ---- resume an in-progress solo session after an accidental reload/navigation ----
+const SOLO_SESSION_KEY = "kq_battle_solo_session_v1";
+function saveSoloSession(){
+  try{
+    window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify({
+      quizQueue: quizQueue, quizPos: quizPos, quizResults: quizResults, reviewMode: reviewMode
+    }));
+  }catch(e){}
+}
+function loadSoloSession(){
+  try{
+    const raw = window.localStorage.getItem(SOLO_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function clearSoloSession(){
+  try{ window.localStorage.removeItem(SOLO_SESSION_KEY); }catch(e){}
+}
+function refreshResumeSoloButton(){
+  const session = loadSoloSession();
+  if(session && Array.isArray(session.quizQueue) && session.quizPos < session.quizQueue.length){
+    els["resume-solo-btn"].style.display = "block";
+    els["resume-solo-btn"].textContent = "前回の続きから再開する（一人・残り"+(session.quizQueue.length - session.quizPos)+"問）";
+  }else{
+    els["resume-solo-btn"].style.display = "none";
+  }
+}
+
+// ---- resume an in-progress battle (host side) after an accidental reload/
+//      navigation -- the guest doesn't need this, they just rejoin with the
+//      same (already remembered) room code ----
+const BATTLE_SESSION_KEY = "kq_battle_host_session_v1";
+function saveBattleSession(){
+  if(role !== "host" || !room) return;
+  try{
+    window.localStorage.setItem(BATTLE_SESSION_KEY, JSON.stringify({
+      code: els["room-code-display"].textContent,
+      questionIds: questionIds,
+      currentIndex: currentIndex,
+      scores: scores,
+      hostSkippedIds: Array.from(hostSkippedIds)
+    }));
+  }catch(e){}
+}
+function loadBattleSession(){
+  try{
+    const raw = window.localStorage.getItem(BATTLE_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function clearBattleSession(){
+  try{ window.localStorage.removeItem(BATTLE_SESSION_KEY); }catch(e){}
+}
+function refreshResumeBattleButton(){
+  const session = loadBattleSession();
+  if(session && session.code && Array.isArray(session.questionIds) && session.currentIndex < session.questionIds.length){
+    els["resume-battle-btn"].style.display = "block";
+  }else{
+    els["resume-battle-btn"].style.display = "none";
+  }
+}
+
 function refreshStatRow(){
   let total = 0, masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
@@ -1450,6 +1515,8 @@ function refreshStatRow(){
 function renderHome(){
   refreshStatRow();
   refreshLastMissButton();
+  refreshResumeSoloButton();
+  refreshResumeBattleButton();
 }
 
 function escapeHtml(s){
@@ -2193,6 +2260,7 @@ function startSoloCard(){
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   els["solo-undo-row"].style.display = (!reviewMode && quizResults.length > 0) ? "block" : "none";
+  saveSoloSession();
 }
 
 function refreshSoloCountRow(){
@@ -2215,6 +2283,7 @@ els["solo-reveal-btn"].addEventListener("click", ()=>{
 els["solo-review-next-btn"].addEventListener("click", ()=>{
   quizPos++;
   if(quizPos >= quizQueue.length){
+    clearSoloSession();
     alert("全"+quizQueue.length+"問の確認が終わりました。");
     renderHome();
     showScreen("screen-home");
@@ -2263,6 +2332,7 @@ els["solo-back"].addEventListener("click", ()=>{
 });
 
 function finishSoloQuiz(){
+  clearSoloSession();
   const correctCount = quizResults.filter(r=>r.correct).length;
   els["solo-result-score"].textContent = correctCount+" / "+quizResults.length;
 
@@ -2313,6 +2383,17 @@ els["retry-last-miss-btn"].addEventListener("click", ()=>{
   showScreen("screen-solo");
 });
 
+els["resume-solo-btn"].addEventListener("click", ()=>{
+  const session = loadSoloSession();
+  if(!session) return;
+  quizQueue = session.quizQueue;
+  quizPos = session.quizPos;
+  quizResults = session.quizResults;
+  reviewMode = !!session.reviewMode;
+  startSoloCard();
+  showScreen("screen-solo");
+});
+
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
@@ -2328,6 +2409,7 @@ let hostSkippedIds = new Set(); // host-only: question ids the host has skipped 
 let myMissesThisRound = []; // this device's own wrong answers this round, for "前回まちがえた問題"
 let pendingSendTimer = null; // host-only: the delayed startAction/nextAction send, cancellable by a skip
 let skipWindowTimer = null; // host-only: hides the skip button once the skip window closes
+let gameStarted = false; // host-only: distinguishes the first peer join (start at 0) from a later reconnect (resync current question)
 
 function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
@@ -2357,6 +2439,7 @@ function leaveRoom(){
   scores = {host:0, guest:0};
   hostSkippedIds = new Set();
   myMissesThisRound = [];
+  gameStarted = false;
 }
 
 function setupActions(){
@@ -2414,10 +2497,19 @@ function setupActions(){
 
   room.onPeerJoin = ()=>{
     if(role !== "host") return;
-    scores = {host:0, guest:0};
-    myMissesThisRound = [];
-    showScreen("screen-battle");
-    hostAdvanceAndArm(0);
+    if(!gameStarted){
+      gameStarted = true;
+      scores = {host:0, guest:0};
+      myMissesThisRound = [];
+      showScreen("screen-battle");
+      hostAdvanceAndArm(0);
+    }else{
+      // a peer (re)joined a game already in progress (e.g. reconnecting after
+      // a reload) -- resync them to the current question instead of
+      // restarting from 0
+      showScreen("screen-battle");
+      hostAdvanceAndArm(currentIndex);
+    }
   };
 
   room.onPeerLeave = ()=>{
@@ -2470,6 +2562,28 @@ els["room-code-change"].addEventListener("click", ()=>{
   room = null;
   const code = genCode();
   hostCreateRoomWithCode(code);
+});
+
+els["resume-battle-btn"].addEventListener("click", ()=>{
+  const session = loadBattleSession();
+  if(!session) return;
+  role = "host";
+  questionIds = session.questionIds;
+  currentIndex = session.currentIndex;
+  scores = session.scores;
+  hostSkippedIds = new Set(session.hostSkippedIds || []);
+  myMissesThisRound = [];
+  gameStarted = true; // a peer joining now is a reconnect, not a fresh start
+  try{
+    room = joinRoom({appId: APP_ID}, session.code);
+    setupActions();
+  }catch(e){
+    console.error("resume failed", e);
+    alert("再開に失敗しました。通信環境を確認してもう一度お試しください。");
+    return;
+  }
+  showScreen("screen-battle");
+  hostAdvanceAndArm(currentIndex);
 });
 
 // ---- join room (guest) ----
@@ -2554,6 +2668,7 @@ function armSkip(idx, sendFn){
 
 function hostAdvanceAndArm(idx){
   showQuestion(idx);
+  saveBattleSession();
   armSkip(idx, ()=>{
     if(!room) return;
     if(idx === 0) startAction.send({ids: questionIds});
@@ -2653,6 +2768,7 @@ function maybeFinishQuestion(){
   updateScoreUI();
   if(role === "host"){
     els["next-btn"].classList.add("show");
+    saveBattleSession();
   }
 }
 
@@ -2680,6 +2796,7 @@ function updateScoreUI(){
 }
 
 function endGame(){
+  clearBattleSession();
   const my = role === "host" ? scores.host : scores.guest;
   const opp = role === "host" ? scores.guest : scores.host;
   els["result-score"].textContent = "あなた："+my+"問正解";
