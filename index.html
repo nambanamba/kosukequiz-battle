@@ -969,15 +969,6 @@
         <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
 
-      <div class="section-title">二人対戦用: 問題を早く見る秒数（部屋をつくった人が先に見られます）</div>
-      <div class="toggle-row" id="headstart-row">
-        <div class="toggle headstart-choice" data-headstart="0">なし</div>
-        <div class="toggle headstart-choice" data-headstart="2">2秒</div>
-        <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
-        <div class="toggle headstart-choice" data-headstart="5">5秒</div>
-        <div class="toggle headstart-choice" data-headstart="10">10秒</div>
-      </div>
-
       <div class="start-row">
         <button class="start-btn split" id="solo-start-btn">一人で始める</button>
         <button class="start-btn split" id="create-btn">二人で始める</button>
@@ -1170,7 +1161,8 @@
       </div>
     </div>
 
-    <button class="buzz-btn" id="buzz-btn">はやく押す！</button>
+    <button class="buzz-btn" id="buzz-btn">わかった！</button>
+    <button class="reveal-btn" id="advance-btn" style="display:none;">進める</button>
     <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
     <div class="skip-encourage" id="skip-encourage" style="display:none;">あとでもう一度出てくるよ。がんばって！</div>
     <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
@@ -1236,7 +1228,7 @@ const els = {};
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save",
- "buzz-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
+ "buzz-btn","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -1529,7 +1521,6 @@ let questionCount = "all";
 let currentShuffle = true;
 let filterUnmastered = false;
 let filterWeak = false;
-let headStartSec = 3;
 let currentType = "all"; // all | image | text
 let reviewMode = false;
 
@@ -1548,7 +1539,6 @@ function loadSettings(){
     if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
     if(s.count !== undefined) questionCount = s.count;
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
-    if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
   }catch(e){
     // ignore, keep defaults
   }
@@ -1562,8 +1552,7 @@ function saveSettings(){
       type: currentType,
       shuffle: currentShuffle,
       count: questionCount,
-      reviewMode: reviewMode,
-      headStartSec: headStartSec
+      reviewMode: reviewMode
     }));
   }catch(e){
     console.error("save settings failed", e);
@@ -1581,9 +1570,6 @@ function applySettingsUI(){
   document.querySelectorAll(".count-choice").forEach(el=>{
     const val = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
     el.classList.toggle("on", val === questionCount);
-  });
-  document.querySelectorAll(".headstart-choice").forEach(el=>{
-    el.classList.toggle("on", parseInt(el.dataset.headstart, 10) === headStartSec);
   });
 }
 
@@ -1687,14 +1673,6 @@ els["order-toggle"].addEventListener("click", ()=>{
   els["order-toggle"].classList.add("on");
   els["shuffle-toggle"].classList.remove("on");
   saveSettings();
-});
-document.querySelectorAll(".headstart-choice").forEach(el=>{
-  el.addEventListener("click", ()=>{
-    headStartSec = parseInt(el.dataset.headstart, 10);
-    document.querySelectorAll(".headstart-choice").forEach(c=>c.classList.remove("on"));
-    el.classList.add("on");
-    saveSettings();
-  });
 });
 document.querySelectorAll(".mode-filter").forEach(el=>{
   el.addEventListener("click", ()=>{
@@ -2407,8 +2385,6 @@ let opponentVerdictOfMe = null; // true/false: what my opponent decided about my
 let scored = false;
 let hostSkippedIds = new Set(); // host-only: question ids the host has skipped this game
 let myMissesThisRound = []; // this device's own wrong answers this round, for "前回まちがえた問題"
-let pendingSendTimer = null; // host-only: the delayed startAction/nextAction send, cancellable by a skip
-let skipWindowTimer = null; // host-only: hides the skip button once the skip window closes
 let gameStarted = false; // host-only: distinguishes the first peer join (start at 0) from a later reconnect (resync current question)
 
 function genCode(){
@@ -2430,8 +2406,6 @@ function leaveRoom(){
   if(room){
     try{ room.leave(); }catch(e){}
   }
-  clearTimeout(pendingSendTimer);
-  clearTimeout(skipWindowTimer);
   room = null;
   role = null;
   questionIds = [];
@@ -2508,7 +2482,7 @@ function setupActions(){
       // a reload) -- resync them to the current question instead of
       // restarting from 0
       showScreen("screen-battle");
-      hostAdvanceAndArm(currentIndex);
+      hostResyncQuestion(currentIndex);
     }
   };
 
@@ -2583,7 +2557,7 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
     return;
   }
   showScreen("screen-battle");
-  hostAdvanceAndArm(currentIndex);
+  hostResyncQuestion(currentIndex);
 });
 
 // ---- join room (guest) ----
@@ -2611,7 +2585,7 @@ els["join-btn"].addEventListener("click", ()=>{
 });
 
 // ---- battle ----
-function showQuestion(idx){
+function showQuestion(idx, hostPrivate){
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
   buzzed = false;
@@ -2634,9 +2608,18 @@ function showQuestion(idx){
     els["battle-img-wrap"].style.display = "none";
   }
 
-  els["buzz-btn"].disabled = false;
-  els["buzz-btn"].style.display = "block";
-  els["skip-btn"].style.display = "none";
+  if(hostPrivate){
+    // host is looking at this question alone; nothing has been sent to the
+    // guest yet, so buzzing makes no sense until スキップ or 進める is tapped
+    els["buzz-btn"].style.display = "none";
+    els["skip-btn"].style.display = "block";
+    els["advance-btn"].style.display = "block";
+  }else{
+    els["buzz-btn"].disabled = false;
+    els["buzz-btn"].style.display = "block";
+    els["skip-btn"].style.display = "none";
+    els["advance-btn"].style.display = "none";
+  }
   els["skip-encourage"].style.display = "none";
   els["skip-continue-btn"].style.display = "none";
   els["status-banner"].classList.remove("show","win","lose","info");
@@ -2649,37 +2632,41 @@ function showQuestion(idx){
   updateScoreUI();
 }
 
-// ---- host-only: skip a question during the head-start window ----
-function armSkip(idx, sendFn){
-  clearTimeout(pendingSendTimer);
-  clearTimeout(skipWindowTimer);
-  const skipAvailable = role === "host" && headStartSec > 0;
-  if(skipAvailable){
-    els["skip-btn"].style.display = "block";
-    skipWindowTimer = setTimeout(()=>{ els["skip-btn"].style.display = "none"; }, Math.min(2000, headStartSec*1000));
-  }else{
-    els["skip-btn"].style.display = "none";
-  }
-  pendingSendTimer = setTimeout(()=>{
-    els["skip-btn"].style.display = "none";
-    sendFn();
-  }, headStartSec*1000);
+// ---- host-only: look at a question privately (no time limit) before either
+//      skipping it or tapping 進める to send it to the guest and start
+//      buzzing on both sides ----
+function hostAdvanceAndArm(idx){
+  showQuestion(idx, true);
+  saveBattleSession();
 }
 
-function hostAdvanceAndArm(idx){
-  showQuestion(idx);
+// ---- host-only: resend the current question immediately (used when a peer
+//      (re)connects mid-game) -- the 進める decision for this question was
+//      already made before, so skip straight to the buzzing phase ----
+function hostResyncQuestion(idx){
+  showQuestion(idx, false);
   saveBattleSession();
-  armSkip(idx, ()=>{
-    if(!room) return;
+  if(room){
     if(idx === 0) startAction.send({ids: questionIds});
     else nextAction.send({index: idx, id: questionIds[idx]});
-  });
+  }
 }
 
-els["skip-btn"].addEventListener("click", ()=>{
-  clearTimeout(pendingSendTimer);
-  clearTimeout(skipWindowTimer);
+els["advance-btn"].addEventListener("click", ()=>{
   els["skip-btn"].style.display = "none";
+  els["advance-btn"].style.display = "none";
+  els["buzz-btn"].style.display = "block";
+  els["buzz-btn"].disabled = false;
+  saveBattleSession();
+  if(room){
+    if(currentIndex === 0) startAction.send({ids: questionIds});
+    else nextAction.send({index: currentIndex, id: questionIds[currentIndex]});
+  }
+});
+
+els["skip-btn"].addEventListener("click", ()=>{
+  els["skip-btn"].style.display = "none";
+  els["advance-btn"].style.display = "none";
   // move this question to the end of the round instead of dropping it, so it
   // comes back around for a real attempt later the same round (this doesn't
   // change how many questions are in the round -- just their order)
@@ -2689,7 +2676,6 @@ els["skip-btn"].addEventListener("click", ()=>{
   questionIds.push(skippedId);
 
   const skipped = getQById(skippedId);
-  els["buzz-btn"].style.display = "none";
   els["battle-q"].textContent = skipped.q;
   els["battle-a"].textContent = skipped.a;
   els["battle-a-block"].classList.add("show");
@@ -2714,7 +2700,6 @@ els["buzz-btn"].addEventListener("click", ()=>{
 function enterAnsweringPhase(){
   els["buzz-btn"].style.display = "none";
   els["skip-btn"].style.display = "none";
-  clearTimeout(skipWindowTimer);
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "それぞれ声に出してこたえを言いましょう。言い終わったら「こたえを見る」を押してください。";
