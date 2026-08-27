@@ -592,6 +592,99 @@
     font-size:13px;
     padding:20px 10px;
   }
+
+  /* ---- solo quiz screen ---- */
+  .undo-row{
+    text-align:right;
+    margin:-4px 0 10px;
+  }
+  .undo-row span{
+    font-size:12px;
+    color:var(--gold);
+    font-weight:700;
+    text-decoration:underline;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .progress-bar{
+    height:5px;
+    background:var(--paper-line);
+    border-radius:3px;
+    overflow:hidden;
+    margin-bottom:18px;
+  }
+  .progress-fill{
+    height:100%;
+    background:var(--gold);
+    width:0%;
+    transition:width .25s;
+  }
+  .count-row{
+    display:flex;
+    gap:8px;
+    margin-top:8px;
+  }
+  .count-stepper{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    border:1.5px solid var(--paper-line);
+    border-radius:8px;
+    padding:6px 8px;
+  }
+  .count-stepper .count-label{
+    font-size:11px;
+    font-weight:700;
+    color:var(--ink-soft);
+  }
+  .count-stepper.ok .count-label{color:var(--ok);}
+  .count-stepper.ng .count-label{color:var(--ng);}
+  .count-stepper .count-controls{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .count-stepper .count-num{
+    min-width:1.4em;
+    text-align:center;
+    font-size:14px;
+    font-weight:700;
+    color:var(--ink);
+  }
+  .count-btn{
+    width:24px;
+    height:24px;
+    border-radius:50%;
+    border:1.5px solid var(--paper-line);
+    background:#fff;
+    color:var(--ink-soft);
+    font-size:15px;
+    font-weight:700;
+    line-height:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .count-btn:active{background:#eef4f2;}
+
+  /* ---- solo result screen ---- */
+  .miss-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-top:14px;
+  }
+  .miss-item{
+    background:#fff;
+    border:1px solid var(--paper-line);
+    border-radius:10px;
+    padding:12px 14px;
+  }
+  .miss-item .q{font-size:13.5px; line-height:1.6;}
+  .miss-item .a{font-size:13.5px; line-height:1.6; color:var(--ok); font-weight:700; margin-top:4px;}
 </style>
 </head>
 <body>
@@ -609,6 +702,29 @@
       <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
     </div>
     <div class="role-grid">
+      <div class="role-btn" id="go-solo">
+        <div class="role-title">一人でやる</div>
+        <div class="role-desc">自分のペースで一問一答の練習をします。</div>
+      </div>
+      <div class="role-btn" id="go-battle-home">
+        <div class="role-title">二人で対戦する</div>
+        <div class="role-desc">早押しで相手と対戦します。</div>
+      </div>
+    </div>
+    <button class="btn-secondary" id="list-btn" style="margin-top:14px;">問題一覧を見る・記録を切りかえる</button>
+    <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
+    <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
+    <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
+    <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
+  </section>
+
+  <!-- BATTLE HOME (two-player room choice) -->
+  <section id="screen-battle-home" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="battle-home-back">← もどる</div>
+      <div></div>
+    </div>
+    <div class="role-grid">
       <div class="role-btn" id="go-create">
         <div class="role-title">部屋をつくる</div>
         <div class="role-desc">出題する単元・問題数を決めて部屋をつくります。発行されたコードを相手に伝えてください。</div>
@@ -618,13 +734,9 @@
         <div class="role-desc">相手から伝えられたコードを入力して対戦に参加します。</div>
       </div>
     </div>
-    <button class="btn-secondary" id="list-btn" style="margin-top:14px;">問題一覧を見る・記録を切りかえる</button>
-    <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
-    <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
-    <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
   </section>
 
-  <!-- CREATE SCREEN -->
+  <!-- CREATE / SOLO SETUP SCREEN -->
   <section id="screen-create" class="screen">
     <div class="quiz-head">
       <div class="back" id="create-back">← もどる</div>
@@ -641,6 +753,13 @@
         <div class="toggle mode-filter" id="mode-weak" data-mode="weak">苦手な問題だけ</div>
       </div>
 
+      <div class="section-title" id="type-section-title">出題タイプ</div>
+      <div class="toggle-row" id="type-row">
+        <div class="toggle on" id="type-all" data-type="all">文章・図をすべて</div>
+        <div class="toggle" id="type-image" data-type="image">図の問題だけ</div>
+        <div class="toggle" id="type-text" data-type="text">文章問題だけ</div>
+      </div>
+
       <div class="section-title">問題数</div>
       <div class="toggle-row" id="count-row">
         <div class="toggle count-choice" data-count="10">10問</div>
@@ -655,15 +774,25 @@
         <div class="toggle" id="order-toggle" data-shuffle="0">出題順どおり</div>
       </div>
 
-      <div class="section-title">問題を早く見る秒数（部屋をつくった人が先に見られます）</div>
-      <div class="toggle-row" id="headstart-row">
-        <div class="toggle headstart-choice" data-headstart="0">なし</div>
-        <div class="toggle headstart-choice" data-headstart="2">2秒</div>
-        <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
-        <div class="toggle headstart-choice" data-headstart="5">5秒</div>
-        <div class="toggle headstart-choice" data-headstart="10">10秒</div>
+      <div id="review-mode-section">
+        <div class="section-title">モード</div>
+        <div class="toggle-row">
+          <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
+        </div>
       </div>
 
+      <div id="headstart-section">
+        <div class="section-title">問題を早く見る秒数（部屋をつくった人が先に見られます）</div>
+        <div class="toggle-row" id="headstart-row">
+          <div class="toggle headstart-choice" data-headstart="0">なし</div>
+          <div class="toggle headstart-choice" data-headstart="2">2秒</div>
+          <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
+          <div class="toggle headstart-choice" data-headstart="5">5秒</div>
+          <div class="toggle headstart-choice" data-headstart="10">10秒</div>
+        </div>
+      </div>
+
+      <button class="start-btn" id="solo-start-btn" style="display:none;">はじめる</button>
       <button class="start-btn" id="create-btn">部屋をつくる</button>
     </div>
 
@@ -712,6 +841,71 @@
       </select>
     </div>
     <div class="list-items" id="list-items"></div>
+  </section>
+
+  <!-- SOLO QUIZ SCREEN -->
+  <section id="screen-solo" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="solo-back">← やめてもどる</div>
+      <div class="counter" id="solo-counter">1 / 10</div>
+    </div>
+    <div class="undo-row" id="solo-undo-row" style="display:none;">
+      <span id="solo-undo-link">↩ ひとつ前の判定をやり直す</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="solo-progress-fill"></div></div>
+
+    <span class="unit-tag" id="solo-unit-tag"></span>
+    <div class="card">
+      <div class="img-wrap" id="solo-img-wrap" style="display:none;">
+        <img id="solo-img" src="" alt="資料" />
+      </div>
+      <div class="q-text" id="solo-q"></div>
+      <div class="a-block" id="solo-a-block">
+        <div class="a-label">こたえ</div>
+        <div class="a-text" id="solo-a"></div>
+      </div>
+    </div>
+
+    <div class="count-row" id="solo-count-row" style="display:none;">
+      <div class="count-stepper ok">
+        <span class="count-label">正解数</span>
+        <span class="count-controls">
+          <span class="count-btn" id="solo-count-correct-minus" data-field="correct" data-delta="-1">－</span>
+          <span class="count-num" id="solo-count-correct">0</span>
+          <span class="count-btn" id="solo-count-correct-plus" data-field="correct" data-delta="1">＋</span>
+        </span>
+      </div>
+      <div class="count-stepper ng">
+        <span class="count-label">誤答数</span>
+        <span class="count-controls">
+          <span class="count-btn" id="solo-count-wrong-minus" data-field="wrong" data-delta="-1">－</span>
+          <span class="count-num" id="solo-count-wrong">0</span>
+          <span class="count-btn" id="solo-count-wrong-plus" data-field="wrong" data-delta="1">＋</span>
+        </span>
+      </div>
+    </div>
+
+    <button class="reveal-btn" id="solo-reveal-btn">こたえを見る</button>
+    <div class="judge-row" id="solo-judge-row" style="display:none;">
+      <button class="judge-btn ng" id="solo-judge-ng">✕ まちがえた</button>
+      <button class="judge-btn ok" id="solo-judge-ok">〇 わかった</button>
+    </div>
+    <button class="reveal-btn" id="solo-review-next-btn" style="display:none;">つぎへ</button>
+  </section>
+
+  <!-- SOLO RESULT SCREEN -->
+  <section id="screen-solo-result" class="screen">
+    <div class="result-hero">
+      <div class="big" id="solo-result-score">0 / 0</div>
+      <div class="sub">正解数 / 出題数</div>
+    </div>
+    <div class="section-title" id="solo-miss-title" style="display:none;">まちがえた問題</div>
+    <div class="miss-list" id="solo-miss-list"></div>
+    <div class="empty-note" id="solo-perfect-note" style="display:none;">全問正解です。すばらしい！</div>
+    <div class="result-actions">
+      <button class="start-btn" id="solo-retry-miss-btn">まちがえた問題だけもう一度</button>
+      <button class="btn-secondary" id="solo-result-home-btn">はじめの画面にもどる</button>
+    </div>
   </section>
 
   <!-- BATTLE SCREEN -->
@@ -770,13 +964,22 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 const byId = new Map(QA_DATA.map(d => [d.id, d]));
 
 const els = {};
-["screen-home","screen-create","screen-join","screen-list","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","list-btn","export-link","import-link","import-file",
- "go-create","go-join",
- "create-back","unit-choices","mode-unmastered","mode-weak","count-row","shuffle-toggle","order-toggle","create-btn",
+["screen-home","screen-battle-home","screen-create","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
+ "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","export-link","import-link","import-file",
+ "go-solo","go-battle-home","battle-home-back","go-create","go-join",
+ "create-back","unit-choices","mode-unmastered","mode-weak",
+ "type-section-title","type-row","type-all","type-image","type-text",
+ "count-row","shuffle-toggle","order-toggle",
+ "review-mode-section","review-mode-toggle","headstart-section",
+ "solo-start-btn","create-btn",
  "create-setup","create-waiting","room-code-display","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-status-select","list-items",
+ "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
+ "solo-img-wrap","solo-img","solo-q","solo-a-block","solo-a",
+ "solo-count-row","solo-count-correct","solo-count-wrong",
+ "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
+ "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
  "buzz-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
@@ -812,7 +1015,7 @@ function playChime(){
 }
 
 function showScreen(name){
-  ["screen-home","screen-create","screen-join","screen-list","screen-battle","screen-result"].forEach(id=>{
+  ["screen-home","screen-battle-home","screen-create","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   window.scrollTo(0,0);
@@ -858,6 +1061,47 @@ function setStatus(id, status){
   else if(status === "weak") stats[id] = {correct:0, wrong:1};
   saveStats();
 }
+function adjustStat(qid, field, delta){
+  const s = stats[qid] || {correct:0, wrong:0};
+  s[field] = Math.max(0, (s[field]||0) + delta);
+  if(s.correct === 0 && s.wrong === 0){
+    delete stats[qid];
+  }else{
+    stats[qid] = s;
+  }
+  saveStats();
+}
+
+// ---- last solo quiz round's missed questions (survives closing/reopening the app) ----
+const LAST_MISS_KEY = "kq_battle_last_miss_v1";
+let lastMissIds = [];
+function loadLastMiss(){
+  try{
+    const raw = window.localStorage.getItem(LAST_MISS_KEY);
+    lastMissIds = raw ? JSON.parse(raw) : [];
+  }catch(e){
+    lastMissIds = [];
+  }
+}
+function saveLastMiss(ids){
+  lastMissIds = ids;
+  try{
+    window.localStorage.setItem(LAST_MISS_KEY, JSON.stringify(ids));
+  }catch(e){
+    console.error("save last-miss failed", e);
+  }
+}
+function refreshLastMissButton(){
+  const validIds = lastMissIds.filter(id => QA_DATA.some(d => d.id === id));
+  if(validIds.length !== lastMissIds.length) saveLastMiss(validIds);
+  if(validIds.length > 0){
+    els["retry-last-miss-btn"].style.display = "block";
+    els["retry-last-miss-btn"].textContent = "前回まちがえた問題だけやり直す（"+validIds.length+"問）";
+  }else{
+    els["retry-last-miss-btn"].style.display = "none";
+  }
+}
+
 function renderHome(){
   let masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
@@ -867,6 +1111,7 @@ function renderHome(){
   els["stat-total"].textContent = QA_DATA.length;
   els["stat-mastered"].textContent = masteredCount;
   els["stat-weak"].textContent = weakCount;
+  refreshLastMissButton();
 }
 
 function escapeHtml(s){
@@ -880,6 +1125,9 @@ let currentShuffle = true;
 let filterUnmastered = false;
 let filterWeak = false;
 let headStartSec = 3;
+let currentType = "all"; // all | image | text
+let reviewMode = false;
+let setupMode = "host"; // "host" | "solo" -- which screen navigated into screen-create
 
 function getUnits(){
   const set = [];
@@ -904,6 +1152,11 @@ function buildPool(){
   }
   if(filterWeak){
     pool = pool.filter(i => isWeak(QA_DATA[i].id));
+  }
+  if(currentType === "image"){
+    pool = pool.filter(i => !!QA_DATA[i].img);
+  }else if(currentType === "text"){
+    pool = pool.filter(i => !QA_DATA[i].img);
   }
   return pool;
 }
@@ -934,8 +1187,10 @@ function refreshUnitSelection(){
 function refreshCreateButton(){
   const pool = buildPool();
   const n = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
-  els["create-btn"].disabled = pool.length === 0;
-  els["create-btn"].textContent = pool.length === 0 ? "この条件の問題はありません" : "部屋をつくる（"+n+"問）";
+  const btn = setupMode === "solo" ? els["solo-start-btn"] : els["create-btn"];
+  const label = setupMode === "solo" ? "はじめる" : "部屋をつくる";
+  btn.disabled = pool.length === 0;
+  btn.textContent = pool.length === 0 ? "この条件の問題はありません" : label+"（"+n+"問）";
 }
 function renderUnitChoices(){
   const total = QA_DATA.length;
@@ -980,6 +1235,31 @@ document.querySelectorAll(".mode-filter").forEach(el=>{
     refreshCreateButton();
   });
 });
+els["type-all"].addEventListener("click", ()=>{
+  currentType = "all";
+  els["type-all"].classList.add("on");
+  els["type-image"].classList.remove("on");
+  els["type-text"].classList.remove("on");
+  refreshCreateButton();
+});
+els["type-image"].addEventListener("click", ()=>{
+  currentType = "image";
+  els["type-image"].classList.add("on");
+  els["type-all"].classList.remove("on");
+  els["type-text"].classList.remove("on");
+  refreshCreateButton();
+});
+els["type-text"].addEventListener("click", ()=>{
+  currentType = "text";
+  els["type-text"].classList.add("on");
+  els["type-all"].classList.remove("on");
+  els["type-image"].classList.remove("on");
+  refreshCreateButton();
+});
+els["review-mode-toggle"].addEventListener("click", ()=>{
+  reviewMode = !reviewMode;
+  els["review-mode-toggle"].classList.toggle("on", reviewMode);
+});
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -991,17 +1271,41 @@ function shuffleArray(arr){
 }
 
 // ---- navigation ----
-els["go-create"].addEventListener("click", ()=>{
+function enterSetup(mode){
+  setupMode = mode;
+  const isSolo = mode === "solo";
+  els["type-section-title"].style.display = "block";
+  els["type-row"].style.display = "flex";
+  els["review-mode-section"].style.display = isSolo ? "block" : "none";
+  els["headstart-section"].style.display = isSolo ? "none" : "block";
+  els["solo-start-btn"].style.display = isSolo ? "block" : "none";
+  els["create-btn"].style.display = isSolo ? "none" : "block";
   els["create-setup"].style.display = "block";
   els["create-waiting"].style.display = "none";
   els["create-error"].classList.remove("show");
   renderUnitChoices();
   showScreen("screen-create");
+}
+els["go-solo"].addEventListener("click", ()=>{
+  enterSetup("solo");
+});
+els["go-battle-home"].addEventListener("click", ()=>{
+  showScreen("screen-battle-home");
+});
+els["battle-home-back"].addEventListener("click", ()=>{
+  showScreen("screen-home");
+});
+els["go-create"].addEventListener("click", ()=>{
+  enterSetup("host");
 });
 els["create-back"].addEventListener("click", ()=>{
   leaveRoom();
-  renderHome();
-  showScreen("screen-home");
+  if(setupMode === "solo"){
+    renderHome();
+    showScreen("screen-home");
+  }else{
+    showScreen("screen-battle-home");
+  }
 });
 els["go-join"].addEventListener("click", ()=>{
   els["join-setup"].style.display = "block";
@@ -1012,8 +1316,7 @@ els["go-join"].addEventListener("click", ()=>{
 });
 els["join-back"].addEventListener("click", ()=>{
   leaveRoom();
-  renderHome();
-  showScreen("screen-home");
+  showScreen("screen-battle-home");
 });
 els["result-home-btn"].addEventListener("click", ()=>{
   leaveRoom();
@@ -1241,6 +1544,173 @@ els["import-file"].addEventListener("change", (e)=>{
     }
   };
   reader.readAsText(file, "UTF-8");
+});
+
+// ---- solo quiz ----
+let quizQueue = [];
+let quizPos = 0;
+let quizResults = []; // { idx, correct }
+
+els["solo-start-btn"].addEventListener("click", ()=>{
+  let pool = buildPool();
+  if(pool.length === 0) return;
+  if(currentShuffle) pool = shuffleArray(pool);
+  if(questionCount !== "all") pool = pool.slice(0, questionCount);
+  quizQueue = pool;
+  quizPos = 0;
+  quizResults = [];
+  startSoloCard();
+  showScreen("screen-solo");
+});
+
+function startSoloCard(){
+  const idx = quizQueue[quizPos];
+  const d = QA_DATA[idx];
+  els["solo-unit-tag"].textContent = d.u;
+  els["solo-q"].textContent = d.q;
+  els["solo-a"].textContent = d.a;
+  if(d.img){
+    els["solo-img"].src = "images/"+d.img;
+    els["solo-img-wrap"].style.display = "block";
+  }else{
+    els["solo-img-wrap"].style.display = "none";
+  }
+  if(reviewMode){
+    // review mode: show the answer right away, no reveal tap needed
+    els["solo-a-block"].classList.add("show");
+    els["solo-reveal-btn"].style.display = "none";
+    els["solo-judge-row"].style.display = "none";
+    els["solo-review-next-btn"].style.display = "block";
+    els["solo-count-row"].style.display = "flex";
+    refreshSoloCountRow();
+  }else{
+    els["solo-a-block"].classList.remove("show");
+    els["solo-reveal-btn"].style.display = "block";
+    els["solo-judge-row"].style.display = "none";
+    els["solo-review-next-btn"].style.display = "none";
+    els["solo-count-row"].style.display = "none";
+  }
+  els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
+  els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
+  els["solo-undo-row"].style.display = (!reviewMode && quizResults.length > 0) ? "block" : "none";
+}
+
+function refreshSoloCountRow(){
+  const qid = QA_DATA[quizQueue[quizPos]].id;
+  const s = stats[qid] || {correct:0, wrong:0};
+  els["solo-count-correct"].textContent = s.correct||0;
+  els["solo-count-wrong"].textContent = s.wrong||0;
+}
+
+els["solo-reveal-btn"].addEventListener("click", ()=>{
+  els["solo-a-block"].classList.add("show");
+  els["solo-reveal-btn"].style.display = "none";
+  if(reviewMode){
+    els["solo-review-next-btn"].style.display = "block";
+  }else{
+    els["solo-judge-row"].style.display = "flex";
+  }
+});
+
+els["solo-review-next-btn"].addEventListener("click", ()=>{
+  quizPos++;
+  if(quizPos >= quizQueue.length){
+    alert("全"+quizQueue.length+"問の確認が終わりました。");
+    renderHome();
+    showScreen("screen-home");
+  }else{
+    startSoloCard();
+  }
+});
+
+document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    const qid = QA_DATA[quizQueue[quizPos]].id;
+    adjustStat(qid, btn.dataset.field, parseInt(btn.dataset.delta, 10));
+    refreshSoloCountRow();
+  });
+});
+
+function judgeSolo(correct){
+  const idx = quizQueue[quizPos];
+  const qid = QA_DATA[idx].id;
+  recordResult(qid, correct);
+  quizResults.push({idx, correct});
+  quizPos++;
+  if(quizPos >= quizQueue.length){
+    finishSoloQuiz();
+  }else{
+    startSoloCard();
+  }
+}
+els["solo-judge-ok"].addEventListener("click", ()=>judgeSolo(true));
+els["solo-judge-ng"].addEventListener("click", ()=>judgeSolo(false));
+
+els["solo-undo-link"].addEventListener("click", ()=>{
+  if(quizResults.length === 0) return;
+  const last = quizResults.pop();
+  const qid = QA_DATA[last.idx].id;
+  adjustStat(qid, last.correct ? "correct" : "wrong", -1);
+  quizPos = Math.max(0, quizPos - 1);
+  startSoloCard();
+});
+
+els["solo-back"].addEventListener("click", ()=>{
+  if(quizResults.length === 0 || confirm("とちゅうでやめますか？ここまでの記録は保存されます。")){
+    renderHome();
+    showScreen("screen-home");
+  }
+});
+
+function finishSoloQuiz(){
+  const correctCount = quizResults.filter(r=>r.correct).length;
+  els["solo-result-score"].textContent = correctCount+" / "+quizResults.length;
+
+  const misses = quizResults.filter(r=>!r.correct);
+  saveLastMiss(misses.map(m=>QA_DATA[m.idx].id));
+  els["solo-miss-list"].innerHTML = "";
+  if(misses.length === 0){
+    els["solo-miss-title"].style.display = "none";
+    els["solo-perfect-note"].style.display = "block";
+    els["solo-retry-miss-btn"].style.display = "none";
+  }else{
+    els["solo-miss-title"].style.display = "block";
+    els["solo-perfect-note"].style.display = "none";
+    els["solo-retry-miss-btn"].style.display = "block";
+    misses.forEach(m=>{
+      const d = QA_DATA[m.idx];
+      const div = document.createElement("div");
+      div.className = "miss-item";
+      div.innerHTML = '<div class="q">'+escapeHtml(d.q)+'</div><div class="a">'+escapeHtml(d.a)+'</div>';
+      els["solo-miss-list"].appendChild(div);
+    });
+  }
+  els["solo-retry-miss-btn"].onclick = ()=>{
+    let pool = misses.map(m=>m.idx);
+    if(currentShuffle) pool = shuffleArray(pool);
+    quizQueue = pool;
+    quizPos = 0;
+    quizResults = [];
+    startSoloCard();
+    showScreen("screen-solo");
+  };
+  showScreen("screen-solo-result");
+}
+
+els["solo-result-home-btn"].addEventListener("click", ()=>{
+  renderHome();
+  showScreen("screen-home");
+});
+
+els["retry-last-miss-btn"].addEventListener("click", ()=>{
+  let pool = lastMissIds.map(id => QA_DATA.findIndex(d => d.id === id)).filter(i => i !== -1);
+  if(pool.length === 0) return;
+  if(currentShuffle) pool = shuffleArray(pool);
+  quizQueue = pool;
+  quizPos = 0;
+  quizResults = [];
+  startSoloCard();
+  showScreen("screen-solo");
 });
 
 // ---- networking state ----
@@ -1516,6 +1986,7 @@ function endGame(){
 }
 
 loadStats();
+loadLastMiss();
 renderHome();
 </script>
 </body>
