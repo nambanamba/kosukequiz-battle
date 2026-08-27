@@ -1029,9 +1029,9 @@
     <select id="list-unit-select" class="list-select" style="width:100%;"></select>
 
     <div class="toggle-row" id="list-status-filters">
-      <div class="toggle status-filter on" data-status="unseen">未解答</div>
-      <div class="toggle status-filter on" data-status="mastered">正解ずみ</div>
-      <div class="toggle status-filter on" data-status="weak">苦手</div>
+      <div class="toggle list-filter-toggle" data-filter="unmastered">正解ずみを除く</div>
+      <div class="toggle list-filter-toggle" data-filter="weak">苦手な問題だけ</div>
+      <div class="toggle list-filter-toggle" data-filter="unseen">未解答のみ</div>
     </div>
 
     <div class="list-date-row">
@@ -1702,7 +1702,9 @@ els["result-home-btn"].addEventListener("click", ()=>{
 
 // ---- list screen: browse every question and flip its status by hand ----
 let listUnit = "ALL";
-let listStatusFilters = new Set(["unseen","mastered","weak"]);
+let listFilterUnmastered = false;
+let listFilterWeak = false;
+let listFilterUnseen = false;
 let listDateFrom = "";
 let listDateTo = "";
 
@@ -1729,8 +1731,11 @@ function questionStatus(id){
 
 function renderListScreen(){
   populateListUnitSelect();
-  document.querySelectorAll(".status-filter").forEach(el=>{
-    el.classList.toggle("on", listStatusFilters.has(el.dataset.status));
+  document.querySelectorAll(".list-filter-toggle").forEach(el=>{
+    const on = el.dataset.filter === "unmastered" ? listFilterUnmastered
+      : el.dataset.filter === "weak" ? listFilterWeak
+      : listFilterUnseen;
+    el.classList.toggle("on", on);
   });
   els["list-date-from"].value = listDateFrom;
   els["list-date-to"].value = listDateTo;
@@ -1747,7 +1752,9 @@ function dateToYMD(ts){
 
 function renderListItems(){
   let indices = unitIndices(listUnit);
-  indices = indices.filter(i => listStatusFilters.has(questionStatus(QA_DATA[i].id)));
+  if(listFilterUnmastered) indices = indices.filter(i => !isMastered(QA_DATA[i].id));
+  if(listFilterWeak) indices = indices.filter(i => isWeak(QA_DATA[i].id));
+  if(listFilterUnseen) indices = indices.filter(i => !stats[QA_DATA[i].id]);
   if(listDateFrom || listDateTo){
     indices = indices.filter(i=>{
       const s = stats[QA_DATA[i].id];
@@ -1931,7 +1938,9 @@ els["selection-battle-btn"].addEventListener("click", ()=>{
 
 els["list-btn"].addEventListener("click", ()=>{
   listUnit = "ALL";
-  listStatusFilters = new Set(["unseen","mastered","weak"]);
+  listFilterUnmastered = false;
+  listFilterWeak = false;
+  listFilterUnseen = false;
   listDateFrom = "";
   listDateTo = "";
   selectedQuestionIds = new Set();
@@ -1947,11 +1956,13 @@ els["list-unit-select"].addEventListener("change", ()=>{
   listUnit = els["list-unit-select"].value;
   renderListItems();
 });
-document.querySelectorAll(".status-filter").forEach(el=>{
+document.querySelectorAll(".list-filter-toggle").forEach(el=>{
   el.addEventListener("click", ()=>{
-    if(listStatusFilters.has(el.dataset.status)) listStatusFilters.delete(el.dataset.status);
-    else listStatusFilters.add(el.dataset.status);
-    el.classList.toggle("on", listStatusFilters.has(el.dataset.status));
+    let on;
+    if(el.dataset.filter === "unmastered"){ listFilterUnmastered = !listFilterUnmastered; on = listFilterUnmastered; }
+    else if(el.dataset.filter === "weak"){ listFilterWeak = !listFilterWeak; on = listFilterWeak; }
+    else{ listFilterUnseen = !listFilterUnseen; on = listFilterUnseen; }
+    el.classList.toggle("on", on);
     renderListItems();
   });
 });
