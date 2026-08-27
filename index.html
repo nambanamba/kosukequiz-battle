@@ -420,10 +420,10 @@
   .avatar-box{
     flex:0 0 auto;
     text-align:center;
-    width:80px;
+    width:88px;
   }
   .avatar-char{
-    font-size:44px;
+    font-size:34px;
     line-height:1.1;
     transition:transform 0.15s;
   }
@@ -1374,8 +1374,11 @@ function playAttackSound(){
 // out; guest's avatar settles into a progressively more worn-out face each
 // hit instead of always bouncing back to normal (still just a cosmetic,
 // per-round reaction -- no HP, no defeat text, resets fresh next round)
-const HOST_POWER_STAGES = ["🙂","😎","💪","🔥","⚡","🦸","🐉","🌟","👑"];
-const GUEST_WEAKEN_STAGES = ["😊","😐","😟","😖","😩","🥵","🫠"];
+const HOST_POWER_STAGES = [
+  "🙂","😀","😎","💪","🔥","⚡","🥋","🦸","🐉","🚀",
+  "🌟","💫","🌈","👑","🏆","💎","🌠","☄️","🌌","🐲👑"
+];
+const GUEST_WEAKEN_STAGES = ["😊","🙂","😐","😕","😟","😖","😣","😩","🥺","🥵","😵","🫠"];
 let hostAttacksLanded = 0;
 
 function setupAvatarLabels(){
