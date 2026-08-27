@@ -1156,6 +1156,7 @@
           <div class="edit-btn cancel" id="solo-edit-cancel">キャンセル</div>
           <div class="edit-btn save" id="solo-edit-save">保存する</div>
         </div>
+        <div class="edit-link" id="solo-edit-report" style="margin-top:10px; text-align:center; display:block;">🐙 保存してGitHubに報告する</div>
       </div>
     </div>
 
@@ -1246,6 +1247,7 @@
           <div class="edit-btn cancel" id="battle-edit-cancel">キャンセル</div>
           <div class="edit-btn save" id="battle-edit-save">保存する</div>
         </div>
+        <div class="edit-link" id="battle-edit-report" style="margin-top:10px; text-align:center; display:block;">🐙 保存してGitHubに報告する</div>
       </div>
     </div>
 
@@ -1309,14 +1311,14 @@ const els = {};
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
  "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
- "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save",
+ "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
- "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save",
+ "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "buzz-btn","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
@@ -1525,6 +1527,27 @@ function getQById(id){
 }
 
 // ---- inline "文章を直す" editing, directly from the solo/battle quiz card ----
+// ---- report a fix to GitHub as a pre-filled issue -- no API token needed
+//      (and none could be safely embedded in a public static page anyway),
+//      this just opens github.com's own "new issue" form with the fields
+//      already filled in via URL parameters ----
+function reportEditToGitHub(id, unit, origQ, origA, newQ, newA){
+  const title = "[data.js修正] "+unit+" - "+id;
+  const body = [
+    "## 問題ID", id, "",
+    "## 単元", unit, "",
+    "## 元の問題文", origQ, "",
+    "## 元のこたえ", origA, "",
+    "## 直した問題文", newQ, "",
+    "## 直したこたえ", newA, "",
+    "---",
+    "kosukequiz-battle の「文章を直す」から報告"
+  ].join("\n");
+  const url = "https://github.com/nambanamba/kosukequiz/issues/new?title="
+    + encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
+  window.open(url, "_blank", "noopener");
+}
+
 function setupInlineEdit(prefix, getCurrentId){
   const editLink = els[prefix+"-edit-link"];
   const editForm = els[prefix+"-edit-form"];
@@ -1548,15 +1571,16 @@ function setupInlineEdit(prefix, getCurrentId){
     editForm.style.display = "none";
     viewDiv.style.display = "block";
   });
-  els[prefix+"-edit-save"].addEventListener("click", ()=>{
+
+  function applyEdit(){
     const id = getCurrentId();
     const base = QA_DATA.find(x => x.id === id);
-    if(!base) return;
+    if(!base) return null;
     const newQ = qInput.value.trim();
     const newA = aInput.value.trim();
     if(!newQ || !newA){
       alert("問題文とこたえは空にできません。");
-      return;
+      return null;
     }
     if(newQ === base.q && newA === base.a) delete edits[id];
     else edits[id] = {q: newQ, a: newA};
@@ -1565,6 +1589,16 @@ function setupInlineEdit(prefix, getCurrentId){
     aDisplay.textContent = newA;
     editForm.style.display = "none";
     viewDiv.style.display = "block";
+    return {base, newQ, newA};
+  }
+
+  els[prefix+"-edit-save"].addEventListener("click", ()=>{
+    applyEdit();
+  });
+  els[prefix+"-edit-report"].addEventListener("click", ()=>{
+    const result = applyEdit();
+    if(!result) return;
+    reportEditToGitHub(result.base.id, result.base.u, result.base.q, result.base.a, result.newQ, result.newA);
   });
 }
 
@@ -2020,7 +2054,8 @@ function renderListItems(){
         '<div class="edit-actions">'+
           '<div class="edit-btn cancel" id="edit-cancel-btn">キャンセル</div>'+
           '<div class="edit-btn save" id="edit-save-btn">保存する</div>'+
-        '</div>';
+        '</div>'+
+        '<div class="edit-link" id="edit-report-btn" style="margin-top:10px; text-align:center; display:block;">🐙 保存してGitHubに報告する</div>';
       els["list-items"].appendChild(item);
       const qInput = item.querySelector("#edit-q-input");
       const aInput = item.querySelector("#edit-a-input");
@@ -2030,12 +2065,12 @@ function renderListItems(){
         editingId = null;
         renderListItems();
       });
-      item.querySelector("#edit-save-btn").addEventListener("click", ()=>{
+      function applyListEdit(){
         const newQ = qInput.value.trim();
         const newA = aInput.value.trim();
         if(!newQ || !newA){
           alert("問題文とこたえは空にできません。");
-          return;
+          return null;
         }
         if(newQ === base.q && newA === base.a){
           delete edits[base.id];
@@ -2045,6 +2080,15 @@ function renderListItems(){
         saveEdits();
         editingId = null;
         renderListItems();
+        return {newQ, newA};
+      }
+      item.querySelector("#edit-save-btn").addEventListener("click", ()=>{
+        applyListEdit();
+      });
+      item.querySelector("#edit-report-btn").addEventListener("click", ()=>{
+        const result = applyListEdit();
+        if(!result) return;
+        reportEditToGitHub(base.id, base.u, base.q, base.a, result.newQ, result.newA);
       });
       return;
     }
