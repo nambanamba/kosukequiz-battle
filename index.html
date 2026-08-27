@@ -292,6 +292,7 @@
     font-size:13px;
     margin-top:14px;
     line-height:1.7;
+    white-space:pre-wrap;
     display:none;
   }
   .error-note.show{display:block;}
@@ -1212,7 +1213,8 @@ els["create-btn"].addEventListener("click", ()=>{
     room = joinRoom({appId: APP_ID}, code);
     setupActions();
   }catch(e){
-    els["create-error"].textContent = "接続に失敗しました。通信環境を確認してもう一度お試しください。";
+    console.error("room create failed", e);
+    els["create-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\n通信環境を確認してもう一度お試しください。";
     els["create-error"].classList.add("show");
   }
 });
@@ -1234,7 +1236,8 @@ els["join-btn"].addEventListener("click", ()=>{
     room = joinRoom({appId: APP_ID}, code);
     setupActions();
   }catch(e){
-    els["join-error"].textContent = "接続に失敗しました。コードを確認してもう一度お試しください。";
+    console.error("room join failed", e);
+    els["join-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\nコードを確認してもう一度お試しください。";
     els["join-error"].classList.add("show");
   }
 });
