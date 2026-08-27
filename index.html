@@ -2063,6 +2063,7 @@ let myVerdictOfOpponent = null; // true/false: what I decided about my opponent'
 let opponentVerdictOfMe = null; // true/false: what my opponent decided about my answer
 let scored = false;
 let hostSkippedIds = new Set(); // host-only: question ids the host has skipped this game
+let myMissesThisRound = []; // this device's own wrong answers this round, for "前回まちがえた問題"
 let pendingSendTimer = null; // host-only: the delayed startAction/nextAction send, cancellable by a skip
 let skipWindowTimer = null; // host-only: hides the skip button once the skip window closes
 
@@ -2082,6 +2083,7 @@ function leaveRoom(){
   currentIndex = -1;
   scores = {host:0, guest:0};
   hostSkippedIds = new Set();
+  myMissesThisRound = [];
 }
 
 function setupActions(){
@@ -2095,6 +2097,7 @@ function setupActions(){
     if(role !== "guest") return;
     questionIds = data.ids;
     scores = {host:0, guest:0};
+    myMissesThisRound = [];
     showScreen("screen-battle");
     showQuestion(0);
   };
@@ -2116,7 +2119,9 @@ function setupActions(){
     // record it as wrong so it keeps coming up in future practice.
     const qid = questionIds[currentIndex];
     const forcedWrong = role === "host" && hostSkippedIds.has(qid);
-    recordResult(qid, forcedWrong ? false : data.correct);
+    const finalCorrect = forcedWrong ? false : data.correct;
+    recordResult(qid, finalCorrect);
+    if(!finalCorrect) myMissesThisRound.push(qid);
     updateMyResultUI(forcedWrong);
     maybeFinishQuestion();
   };
@@ -2137,6 +2142,7 @@ function setupActions(){
   room.onPeerJoin = ()=>{
     if(role !== "host") return;
     scores = {host:0, guest:0};
+    myMissesThisRound = [];
     showScreen("screen-battle");
     hostAdvanceAndArm(0);
   };
@@ -2394,6 +2400,7 @@ function endGame(){
   else if(my < opp) sub = "相手の勝ちです。";
   else sub = "引き分けです。";
   els["result-sub"].textContent = sub;
+  saveLastMiss(myMissesThisRound);
   showScreen("screen-result");
 }
 
