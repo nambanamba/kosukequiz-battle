@@ -1068,7 +1068,7 @@
 
     <button class="buzz-btn" id="buzz-btn">はやく押す！</button>
     <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
-    <div class="skip-encourage" id="skip-encourage" style="display:none;">次、がんばって！</div>
+    <div class="skip-encourage" id="skip-encourage" style="display:none;">あとでもう一度出てくるよ。がんばって！</div>
     <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
     <div class="status-banner" id="status-banner"></div>
     <button class="reveal-btn" id="reveal-btn" style="display:none;">こたえを見る</button>
@@ -1985,9 +1985,7 @@ let buzzed = false;
 let myVerdictOfOpponent = null; // true/false: what I decided about my opponent's answer
 let opponentVerdictOfMe = null; // true/false: what my opponent decided about my answer
 let scored = false;
-let skipReserve = []; // host-only: extra question ids held back for skip replacements
-let skipsUsed = 0;
-let skipLimit = 0;
+let hostSkippedIds = new Set(); // host-only: question ids the host has skipped this game
 let pendingSendTimer = null; // host-only: the delayed startAction/nextAction send, cancellable by a skip
 let skipWindowTimer = null; // host-only: hides the skip button once the skip window closes
 
@@ -2006,9 +2004,7 @@ function leaveRoom(){
   questionIds = [];
   currentIndex = -1;
   scores = {host:0, guest:0};
-  skipReserve = [];
-  skipsUsed = 0;
-  skipLimit = 0;
+  hostSkippedIds = new Set();
 }
 
 function setupActions(){
@@ -2037,9 +2033,14 @@ function setupActions(){
     if(data.idx !== currentIndex) return;
     if(opponentVerdictOfMe !== null) return;
     opponentVerdictOfMe = data.correct;
-    // the sender judged MY answer, so this is my own result to record
-    recordResult(questionIds[currentIndex], data.correct);
-    updateMyResultUI();
+    // the sender judged MY answer, so this is my own result to record.
+    // if I (the host) skipped this question earlier in this round, I already
+    // saw the answer, so a correct answer here doesn't reflect real recall --
+    // record it as wrong so it keeps coming up in future practice.
+    const qid = questionIds[currentIndex];
+    const forcedWrong = role === "host" && hostSkippedIds.has(qid);
+    recordResult(qid, forcedWrong ? false : data.correct);
+    updateMyResultUI(forcedWrong);
     maybeFinishQuestion();
   };
 
@@ -2078,18 +2079,13 @@ function setupActions(){
 els["create-btn"].addEventListener("click", ()=>{
   let pool = buildPool();
   if(currentShuffle) pool = shuffleArray(pool);
+  if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(pool.length === 0) return;
-
-  const n = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
-  const mainPool = pool.slice(0, n);
-  const reservePool = pool.slice(n, n + Math.ceil(n * 0.2));
 
   const code = genCode();
   role = "host";
-  questionIds = mainPool.map(i => QA_DATA[i].id);
-  skipReserve = reservePool.map(i => QA_DATA[i].id);
-  skipsUsed = 0;
-  skipLimit = Math.min(Math.ceil(n * 0.2), skipReserve.length);
+  questionIds = pool.map(i => QA_DATA[i].id);
+  hostSkippedIds = new Set();
 
   els["home-setup"].style.display = "none";
   els["home-waiting"].style.display = "block";
@@ -2170,10 +2166,9 @@ function showQuestion(idx){
 function armSkip(idx, sendFn){
   clearTimeout(pendingSendTimer);
   clearTimeout(skipWindowTimer);
-  const skipAvailable = role === "host" && headStartSec > 0 && skipsUsed < skipLimit && skipReserve.length > 0;
+  const skipAvailable = role === "host" && headStartSec > 0;
   if(skipAvailable){
     els["skip-btn"].style.display = "block";
-    els["skip-btn"].textContent = "スキップ（あと"+(skipLimit - skipsUsed)+"回）";
     skipWindowTimer = setTimeout(()=>{ els["skip-btn"].style.display = "none"; }, Math.min(2000, headStartSec*1000));
   }else{
     els["skip-btn"].style.display = "none";
@@ -2194,13 +2189,16 @@ function hostAdvanceAndArm(idx){
 }
 
 els["skip-btn"].addEventListener("click", ()=>{
-  if(skipsUsed >= skipLimit || skipReserve.length === 0) return;
   clearTimeout(pendingSendTimer);
   clearTimeout(skipWindowTimer);
   els["skip-btn"].style.display = "none";
-  skipsUsed++;
+  // move this question to the end of the round instead of dropping it, so it
+  // comes back around for a real attempt later the same round (this doesn't
+  // change how many questions are in the round -- just their order)
   const skippedId = questionIds[currentIndex];
-  questionIds[currentIndex] = skipReserve.shift();
+  hostSkippedIds.add(skippedId);
+  questionIds.splice(currentIndex, 1);
+  questionIds.push(skippedId);
 
   const skipped = getQById(skippedId);
   els["buzz-btn"].style.display = "none";
@@ -2255,7 +2253,7 @@ function judgeOpponent(correct){
 els["judge-ok"].addEventListener("click", ()=>judgeOpponent(true));
 els["judge-ng"].addEventListener("click", ()=>judgeOpponent(false));
 
-function updateMyResultUI(){
+function updateMyResultUI(forcedWrong){
   els["my-result"].style.display = "block";
   els["my-result"].classList.add("show");
   els["my-result"].classList.remove("win","lose","info");
@@ -2264,7 +2262,7 @@ function updateMyResultUI(){
     els["my-result"].textContent = "あなたの結果：相手の判定を待っています…";
   }else if(opponentVerdictOfMe){
     els["my-result"].classList.add("win");
-    els["my-result"].textContent = "あなたの結果：〇 正解でした！";
+    els["my-result"].textContent = "あなたの結果：〇 正解でした！"+(forcedWrong ? "（スキップした問題なので、記録は苦手のまま残ります）" : "");
   }else{
     els["my-result"].classList.add("lose");
     els["my-result"].textContent = "あなたの結果：✕ 残念、不正解でした。";
