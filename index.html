@@ -716,6 +716,39 @@
     color:var(--ink-soft);
     margin-bottom:8px;
   }
+  .list-item-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:8px;
+    margin-bottom:6px;
+  }
+  .q-select-checkbox{
+    width:22px;
+    height:22px;
+    flex:0 0 auto;
+    accent-color:var(--gold);
+  }
+  .selection-bar{
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    max-width:520px;
+    margin:0 auto;
+    background:var(--paper);
+    border-top:2px solid var(--navy);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    box-shadow:0 -8px 20px rgba(31,61,58,0.12);
+    z-index:100;
+  }
+  .selection-count{
+    text-align:center;
+    font-size:13px;
+    font-weight:700;
+    color:var(--navy-deep);
+    margin-bottom:8px;
+  }
   .count-row-list{
     display:flex;
     gap:8px;
@@ -1009,6 +1042,15 @@
     </div>
 
     <div class="list-items" id="list-items"></div>
+
+    <div class="selection-bar" id="selection-bar" style="display:none;">
+      <div class="selection-count" id="selection-count">0問選択中</div>
+      <div class="start-row">
+        <button class="start-btn split" id="selection-solo-btn">一人で始める</button>
+        <button class="start-btn split" id="selection-battle-btn">二人で始める</button>
+      </div>
+      <div class="back-link" id="selection-clear" style="margin-top:6px;">選択をクリア</div>
+    </div>
   </section>
 
   <!-- SOLO QUIZ SCREEN -->
@@ -1181,6 +1223,7 @@ const els = {};
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
+ "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
  "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save",
@@ -1391,15 +1434,21 @@ function refreshLastMissButton(){
   }
 }
 
-function renderHome(){
-  let masteredCount = 0, weakCount = 0;
+function refreshStatRow(){
+  let total = 0, masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
+    if(!selectedUnits.has(d.u)) return;
+    total++;
     if(isMastered(d.id)) masteredCount++;
     if(isWeak(d.id)) weakCount++;
   });
-  els["stat-total"].textContent = QA_DATA.length;
+  els["stat-total"].textContent = total;
   els["stat-mastered"].textContent = masteredCount;
   els["stat-weak"].textContent = weakCount;
+}
+
+function renderHome(){
+  refreshStatRow();
   refreshLastMissButton();
 }
 
@@ -1416,6 +1465,60 @@ let filterWeak = false;
 let headStartSec = 3;
 let currentType = "all"; // all | image | text
 let reviewMode = false;
+
+// ---- remember the last-used setup filters (kosukequiz's own home screen
+//      does the same) so the same settings don't need reselecting every time ----
+const SETTINGS_KEY = "kq_battle_settings_v1";
+function loadSettings(){
+  try{
+    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    if(!raw) return;
+    const s = JSON.parse(raw);
+    if(Array.isArray(s.units) && s.units.length) selectedUnits = new Set(s.units);
+    if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
+    if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
+    if(s.type) currentType = s.type;
+    if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
+    if(s.count !== undefined) questionCount = s.count;
+    if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
+    if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
+  }catch(e){
+    // ignore, keep defaults
+  }
+}
+function saveSettings(){
+  try{
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      units: Array.from(selectedUnits),
+      filterUnmastered: filterUnmastered,
+      filterWeak: filterWeak,
+      type: currentType,
+      shuffle: currentShuffle,
+      count: questionCount,
+      reviewMode: reviewMode,
+      headStartSec: headStartSec
+    }));
+  }catch(e){
+    console.error("save settings failed", e);
+  }
+}
+function applySettingsUI(){
+  els["mode-unmastered"].classList.toggle("on", filterUnmastered);
+  els["mode-weak"].classList.toggle("on", filterWeak);
+  els["type-all"].classList.toggle("on", currentType === "all");
+  els["type-image"].classList.toggle("on", currentType === "image");
+  els["type-text"].classList.toggle("on", currentType === "text");
+  els["shuffle-toggle"].classList.toggle("on", currentShuffle === true);
+  els["order-toggle"].classList.toggle("on", currentShuffle === false);
+  els["review-mode-toggle"].classList.toggle("on", reviewMode === true);
+  document.querySelectorAll(".count-choice").forEach(el=>{
+    const val = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
+    el.classList.toggle("on", val === questionCount);
+  });
+  document.querySelectorAll(".headstart-choice").forEach(el=>{
+    el.classList.toggle("on", parseInt(el.dataset.headstart, 10) === headStartSec);
+  });
+}
 
 function getUnits(){
   const set = [];
@@ -1462,6 +1565,8 @@ function makeUnitChoice(key, label, count){
     }
     refreshUnitSelection();
     refreshCreateButton();
+    refreshStatRow();
+    saveSettings();
   });
   return div;
 }
@@ -1501,23 +1606,27 @@ document.querySelectorAll(".count-choice").forEach(el=>{
     document.querySelectorAll(".count-choice").forEach(c=>c.classList.remove("on"));
     el.classList.add("on");
     refreshCreateButton();
+    saveSettings();
   });
 });
 els["shuffle-toggle"].addEventListener("click", ()=>{
   currentShuffle = true;
   els["shuffle-toggle"].classList.add("on");
   els["order-toggle"].classList.remove("on");
+  saveSettings();
 });
 els["order-toggle"].addEventListener("click", ()=>{
   currentShuffle = false;
   els["order-toggle"].classList.add("on");
   els["shuffle-toggle"].classList.remove("on");
+  saveSettings();
 });
 document.querySelectorAll(".headstart-choice").forEach(el=>{
   el.addEventListener("click", ()=>{
     headStartSec = parseInt(el.dataset.headstart, 10);
     document.querySelectorAll(".headstart-choice").forEach(c=>c.classList.remove("on"));
     el.classList.add("on");
+    saveSettings();
   });
 });
 document.querySelectorAll(".mode-filter").forEach(el=>{
@@ -1526,6 +1635,7 @@ document.querySelectorAll(".mode-filter").forEach(el=>{
     else filterWeak = !filterWeak;
     el.classList.toggle("on", el.dataset.mode === "unmastered" ? filterUnmastered : filterWeak);
     refreshCreateButton();
+    saveSettings();
   });
 });
 els["type-all"].addEventListener("click", ()=>{
@@ -1534,6 +1644,7 @@ els["type-all"].addEventListener("click", ()=>{
   els["type-image"].classList.remove("on");
   els["type-text"].classList.remove("on");
   refreshCreateButton();
+  saveSettings();
 });
 els["type-image"].addEventListener("click", ()=>{
   currentType = "image";
@@ -1541,6 +1652,7 @@ els["type-image"].addEventListener("click", ()=>{
   els["type-all"].classList.remove("on");
   els["type-text"].classList.remove("on");
   refreshCreateButton();
+  saveSettings();
 });
 els["type-text"].addEventListener("click", ()=>{
   currentType = "text";
@@ -1548,10 +1660,12 @@ els["type-text"].addEventListener("click", ()=>{
   els["type-all"].classList.remove("on");
   els["type-image"].classList.remove("on");
   refreshCreateButton();
+  saveSettings();
 });
 els["review-mode-toggle"].addEventListener("click", ()=>{
   reviewMode = !reviewMode;
   els["review-mode-toggle"].classList.toggle("on", reviewMode);
+  saveSettings();
 });
 
 function shuffleArray(arr){
@@ -1624,6 +1738,7 @@ function renderListScreen(){
 }
 
 let editingId = null;
+let selectedQuestionIds = new Set();
 
 function dateToYMD(ts){
   const d = new Date(ts);
@@ -1701,7 +1816,10 @@ function renderListItems(){
 
     const s = stats[base.id] || {correct:0, wrong:0};
     item.innerHTML =
-      '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
+      '<div class="list-item-head">'+
+        '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
+        '<input type="checkbox" class="q-select-checkbox" '+(selectedQuestionIds.has(base.id) ? "checked" : "")+'>'+
+      '</div>'+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       '<div class="list-last-answered">最終回答：'+(s.lastAnswered ? formatDate(s.lastAnswered) : "未回答")+'</div>'+
@@ -1758,15 +1876,66 @@ function renderListItems(){
         }
       });
     }
+    item.querySelector(".q-select-checkbox").addEventListener("change", (e)=>{
+      if(e.target.checked) selectedQuestionIds.add(base.id);
+      else selectedQuestionIds.delete(base.id);
+      updateSelectionBar();
+    });
     els["list-items"].appendChild(item);
   });
 }
+
+function updateSelectionBar(){
+  const n = selectedQuestionIds.size;
+  if(n === 0){
+    els["selection-bar"].style.display = "none";
+    els["list-items"].style.paddingBottom = "0";
+  }else{
+    els["selection-bar"].style.display = "block";
+    els["selection-count"].textContent = n+"問選択中";
+    els["list-items"].style.paddingBottom = "110px";
+  }
+}
+
+function selectedIdsInOrder(){
+  return QA_DATA.filter(d => selectedQuestionIds.has(d.id)).map(d => d.id);
+}
+
+els["selection-clear"].addEventListener("click", ()=>{
+  selectedQuestionIds = new Set();
+  updateSelectionBar();
+  renderListItems();
+});
+
+els["selection-solo-btn"].addEventListener("click", ()=>{
+  const ids = selectedIdsInOrder();
+  if(ids.length === 0) return;
+  quizQueue = ids.map(id => QA_DATA.findIndex(d => d.id === id)).filter(i => i !== -1);
+  quizPos = 0;
+  quizResults = [];
+  startSoloCard();
+  showScreen("screen-solo");
+});
+
+els["selection-battle-btn"].addEventListener("click", ()=>{
+  const ids = selectedIdsInOrder();
+  if(ids.length === 0) return;
+  questionIds = ids;
+  hostSkippedIds = new Set();
+  showScreen("screen-home");
+  els["home-setup"].style.display = "none";
+  els["home-waiting"].style.display = "block";
+  const code = loadLastCode() || genCode();
+  hostCreateRoomWithCode(code);
+});
 
 els["list-btn"].addEventListener("click", ()=>{
   listUnit = "ALL";
   listStatusFilters = new Set(["unseen","mastered","weak"]);
   listDateFrom = "";
   listDateTo = "";
+  selectedQuestionIds = new Set();
+  updateSelectionBar();
   renderListScreen();
   showScreen("screen-list");
 });
@@ -2641,8 +2810,10 @@ setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 loadStats();
 loadEdits();
 loadLastMiss();
+loadSettings();
 renderHome();
 renderUnitChoices();
+applySettingsUI();
 </script>
 </body>
 </html>
