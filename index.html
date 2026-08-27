@@ -1184,8 +1184,8 @@
   <!-- RESULT SCREEN -->
   <section id="screen-result" class="screen">
     <div class="result-hero">
-      <div class="big" id="result-score">0 - 0</div>
-      <div class="sub" id="result-sub"></div>
+      <div class="big" id="result-score">あなた：0問正解</div>
+      <div class="sub" id="result-sub">相手：0問正解</div>
     </div>
     <div class="result-actions">
       <button class="start-btn" id="result-home-btn">はじめの画面にもどる</button>
@@ -2682,12 +2682,8 @@ function updateScoreUI(){
 function endGame(){
   const my = role === "host" ? scores.host : scores.guest;
   const opp = role === "host" ? scores.guest : scores.host;
-  els["result-score"].textContent = my+" - "+opp;
-  let sub = "";
-  if(my > opp) sub = "あなたの勝ちです！";
-  else if(my < opp) sub = "相手の勝ちです。";
-  else sub = "引き分けです。";
-  els["result-sub"].textContent = sub;
+  els["result-score"].textContent = "あなた："+my+"問正解";
+  els["result-sub"].textContent = "相手："+opp+"問正解";
   saveLastMiss(myMissesThisRound);
   showScreen("screen-result");
 }
