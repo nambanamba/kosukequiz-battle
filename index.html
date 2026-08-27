@@ -175,6 +175,34 @@
     cursor:pointer;
   }
 
+  /* ---- home: stats ---- */
+  .stat-row{
+    display:flex;
+    gap:10px;
+    margin-bottom:6px;
+  }
+  .stat-card{
+    flex:1;
+    background:#fff;
+    border:1px solid var(--paper-line);
+    border-radius:10px;
+    padding:12px 10px;
+    text-align:center;
+    box-shadow:var(--card-shadow);
+  }
+  .stat-card .num{
+    font-family:"Hiragino Mincho ProN", serif;
+    font-size:26px;
+    font-weight:700;
+    color:var(--navy-deep);
+    line-height:1.1;
+  }
+  .stat-card .lbl{
+    font-size:11px;
+    color:var(--ink-soft);
+    margin-top:4px;
+  }
+
   /* ---- home: role select ---- */
   .role-grid{
     display:flex;
@@ -397,6 +425,21 @@
   .status-banner.lose{background:var(--ng-bg); color:var(--ng);}
   .status-banner.info{background:#eef4f2; color:var(--navy-deep);}
 
+  .reveal-btn{
+    width:100%;
+    margin-top:18px;
+    padding:15px;
+    border:1.5px solid var(--navy-deep);
+    border-radius:12px;
+    background:#fff;
+    color:var(--navy-deep);
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .reveal-btn:active{background:#eef4f2;}
+
   .judge-row{
     display:flex;
     gap:10px;
@@ -462,6 +505,92 @@
     gap:10px;
     margin-top:22px;
   }
+
+  /* ---- list screen ---- */
+  .list-select{
+    flex:1 1 auto;
+    min-width:0;
+    padding:10px 8px;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    background:#fff;
+    font-size:13px;
+    color:var(--ink);
+    -webkit-appearance:none;
+    appearance:none;
+  }
+  .list-items{
+    margin-top:14px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .list-item{
+    background:#fff;
+    border:1px solid var(--paper-line);
+    border-radius:12px;
+    padding:12px 14px;
+    box-shadow:var(--card-shadow);
+  }
+  .list-item .list-unit-tag{
+    display:inline-block;
+    font-size:10px;
+    font-weight:700;
+    color:var(--navy-deep);
+    background:#e5ece9;
+    padding:2px 8px;
+    border-radius:100px;
+    margin-bottom:6px;
+  }
+  .list-item .list-q{
+    font-size:13.5px;
+    line-height:1.6;
+    margin-bottom:4px;
+  }
+  .list-item .list-a{
+    font-size:12.5px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    margin-bottom:10px;
+  }
+  .status-toggle{
+    display:flex;
+    gap:6px;
+  }
+  .status-btn{
+    flex:1;
+    padding:8px 4px;
+    border-radius:8px;
+    font-size:12px;
+    font-weight:700;
+    text-align:center;
+    cursor:pointer;
+    border:1.5px solid var(--paper-line);
+    color:var(--ink-soft);
+    background:#fff;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .status-btn.active.unseen{
+    border-color:var(--ink-soft);
+    background:#f0eee7;
+    color:var(--ink);
+  }
+  .status-btn.active.ok{
+    border-color:var(--ok);
+    background:var(--ok-bg);
+    color:var(--ok);
+  }
+  .status-btn.active.ng{
+    border-color:var(--ng);
+    background:var(--ng-bg);
+    color:var(--ng);
+  }
+  .empty-note{
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:13px;
+    padding:20px 10px;
+  }
 </style>
 </head>
 <body>
@@ -473,6 +602,11 @@
 
   <!-- HOME SCREEN -->
   <section id="screen-home" class="screen active">
+    <div class="stat-row">
+      <div class="stat-card"><div class="num" id="stat-total">-</div><div class="lbl">全問題数</div></div>
+      <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
+      <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
+    </div>
     <div class="role-grid">
       <div class="role-btn" id="go-create">
         <div class="role-title">部屋をつくる</div>
@@ -483,6 +617,7 @@
         <div class="role-desc">相手から伝えられたコードを入力して対戦に参加します。</div>
       </div>
     </div>
+    <button class="btn-secondary" id="list-btn" style="margin-top:14px;">問題一覧を見る・記録を切りかえる</button>
   </section>
 
   <!-- CREATE SCREEN -->
@@ -495,6 +630,12 @@
     <div id="create-setup">
       <div class="section-title">単元をえらぶ（複数選択できます）</div>
       <div class="choice-grid" id="unit-choices"></div>
+
+      <div class="section-title">出題モード（組み合わせOK）</div>
+      <div class="toggle-row">
+        <div class="toggle mode-filter" id="mode-unmastered" data-mode="unmastered">正解ずみを除く</div>
+        <div class="toggle mode-filter" id="mode-weak" data-mode="weak">苦手な問題だけ</div>
+      </div>
 
       <div class="section-title">問題数</div>
       <div class="toggle-row" id="count-row">
@@ -542,6 +683,24 @@
     </div>
   </section>
 
+  <!-- LIST SCREEN -->
+  <section id="screen-list" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="list-back">← もどる</div>
+      <div class="counter" id="list-count">0問</div>
+    </div>
+    <div class="toggle-row">
+      <select id="list-unit-select" class="list-select"></select>
+      <select id="list-status-select" class="list-select">
+        <option value="all">すべての状態</option>
+        <option value="weak">苦手</option>
+        <option value="mastered">正解ずみ</option>
+        <option value="unseen">未回答</option>
+      </select>
+    </div>
+    <div class="list-items" id="list-items"></div>
+  </section>
+
   <!-- BATTLE SCREEN -->
   <section id="screen-battle" class="screen">
     <div class="quiz-head">
@@ -566,6 +725,7 @@
 
     <button class="buzz-btn" id="buzz-btn">はやく押す！</button>
     <div class="status-banner" id="status-banner"></div>
+    <button class="reveal-btn" id="reveal-btn" style="display:none;">こたえを見る</button>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng" id="judge-ng">✕ まちがい</button>
       <button class="judge-btn ok" id="judge-ok">〇 せいかい</button>
@@ -595,22 +755,75 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 const byId = new Map(QA_DATA.map(d => [d.id, d]));
 
 const els = {};
-["screen-home","screen-create","screen-join","screen-battle","screen-result",
+["screen-home","screen-create","screen-join","screen-list","screen-battle","screen-result",
+ "stat-total","stat-mastered","stat-weak","list-btn",
  "go-create","go-join",
- "create-back","unit-choices","count-row","shuffle-toggle","order-toggle","create-btn",
+ "create-back","unit-choices","mode-unmastered","mode-weak","count-row","shuffle-toggle","order-toggle","create-btn",
  "create-setup","create-waiting","room-code-display","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
+ "list-back","list-count","list-unit-select","list-status-select","list-items",
  "battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
- "buzz-btn","status-banner","judge-row","judge-ng","judge-ok","next-btn",
+ "buzz-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","next-btn",
  "result-score","result-sub","result-home-btn"
 ].forEach(id => els[id] = document.getElementById(id));
 
 function showScreen(name){
-  ["screen-home","screen-create","screen-join","screen-battle","screen-result"].forEach(id=>{
+  ["screen-home","screen-create","screen-join","screen-list","screen-battle","screen-result"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   window.scrollTo(0,0);
+}
+
+// ---- persisted per-device stats (correct/wrong counts by question id) ----
+const STATS_KEY = "kq_battle_stats_v1";
+let stats = {};
+function loadStats(){
+  try{
+    const raw = window.localStorage.getItem(STATS_KEY);
+    stats = raw ? JSON.parse(raw) : {};
+  }catch(e){
+    stats = {};
+  }
+}
+function saveStats(){
+  try{
+    window.localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  }catch(e){
+    console.error("save stats failed", e);
+  }
+}
+function isMastered(id){
+  const s = stats[id];
+  return !!(s && (s.correct||0) > 0);
+}
+function isWeak(id){
+  const s = stats[id];
+  if(!s) return false;
+  return (s.wrong||0) > 0 && (s.wrong||0) >= (s.correct||0);
+}
+function recordResult(id, correct){
+  const s = stats[id] || {correct:0, wrong:0};
+  if(correct) s.correct = (s.correct||0) + 1;
+  else s.wrong = (s.wrong||0) + 1;
+  stats[id] = s;
+  saveStats();
+}
+function setStatus(id, status){
+  if(status === "unseen") delete stats[id];
+  else if(status === "mastered") stats[id] = {correct:1, wrong:0};
+  else if(status === "weak") stats[id] = {correct:0, wrong:1};
+  saveStats();
+}
+function renderHome(){
+  let masteredCount = 0, weakCount = 0;
+  QA_DATA.forEach(d=>{
+    if(isMastered(d.id)) masteredCount++;
+    if(isWeak(d.id)) weakCount++;
+  });
+  els["stat-total"].textContent = QA_DATA.length;
+  els["stat-mastered"].textContent = masteredCount;
+  els["stat-weak"].textContent = weakCount;
 }
 
 function escapeHtml(s){
@@ -621,6 +834,8 @@ function escapeHtml(s){
 let selectedUnits = new Set(["ALL"]);
 let questionCount = "all";
 let currentShuffle = true;
+let filterUnmastered = false;
+let filterWeak = false;
 
 function getUnits(){
   const set = [];
@@ -639,6 +854,12 @@ function buildPool(){
   }else{
     pool = [];
     QA_DATA.forEach((d,i)=>{ if(selectedUnits.has(d.u)) pool.push(i); });
+  }
+  if(filterUnmastered){
+    pool = pool.filter(i => !isMastered(QA_DATA[i].id));
+  }
+  if(filterWeak){
+    pool = pool.filter(i => isWeak(QA_DATA[i].id));
   }
   return pool;
 }
@@ -700,6 +921,14 @@ els["order-toggle"].addEventListener("click", ()=>{
   els["order-toggle"].classList.add("on");
   els["shuffle-toggle"].classList.remove("on");
 });
+document.querySelectorAll(".mode-filter").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    if(el.dataset.mode === "unmastered") filterUnmastered = !filterUnmastered;
+    else filterWeak = !filterWeak;
+    el.classList.toggle("on", el.dataset.mode === "unmastered" ? filterUnmastered : filterWeak);
+    refreshCreateButton();
+  });
+});
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -720,6 +949,7 @@ els["go-create"].addEventListener("click", ()=>{
 });
 els["create-back"].addEventListener("click", ()=>{
   leaveRoom();
+  renderHome();
   showScreen("screen-home");
 });
 els["go-join"].addEventListener("click", ()=>{
@@ -731,17 +961,107 @@ els["go-join"].addEventListener("click", ()=>{
 });
 els["join-back"].addEventListener("click", ()=>{
   leaveRoom();
+  renderHome();
   showScreen("screen-home");
 });
 els["result-home-btn"].addEventListener("click", ()=>{
   leaveRoom();
+  renderHome();
   showScreen("screen-home");
+});
+
+// ---- list screen: browse every question and flip its status by hand ----
+let listUnit = "ALL";
+let listStatus = "all";
+
+function populateListUnitSelect(){
+  els["list-unit-select"].innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "ALL";
+  optAll.textContent = "全単元";
+  els["list-unit-select"].appendChild(optAll);
+  getUnits().forEach(u=>{
+    const opt = document.createElement("option");
+    opt.value = u;
+    opt.textContent = u;
+    els["list-unit-select"].appendChild(opt);
+  });
+  els["list-unit-select"].value = listUnit;
+}
+
+function questionStatus(id){
+  if(isWeak(id)) return "weak";
+  if(isMastered(id)) return "mastered";
+  return "unseen";
+}
+
+function renderListScreen(){
+  populateListUnitSelect();
+  els["list-status-select"].value = listStatus;
+  renderListItems();
+}
+
+function renderListItems(){
+  let indices = unitIndices(listUnit);
+  if(listStatus !== "all"){
+    indices = indices.filter(i => questionStatus(QA_DATA[i].id) === listStatus);
+  }
+  els["list-count"].textContent = indices.length+"問";
+  els["list-items"].innerHTML = "";
+  if(indices.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = "この条件の問題はありません。";
+    els["list-items"].appendChild(empty);
+    return;
+  }
+  indices.forEach(i=>{
+    const d = QA_DATA[i];
+    const status = questionStatus(d.id);
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.innerHTML =
+      '<div class="list-unit-tag">'+escapeHtml(d.u)+'</div>'+
+      '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
+      '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
+      '<div class="status-toggle">'+
+        '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
+        '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
+        '<div class="status-btn ng'+(status==="weak"?" active":"")+'" data-status="weak">✕ 不正解</div>'+
+      '</div>';
+    item.querySelectorAll(".status-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        setStatus(d.id, btn.dataset.status);
+        renderListItems();
+      });
+    });
+    els["list-items"].appendChild(item);
+  });
+}
+
+els["list-btn"].addEventListener("click", ()=>{
+  listUnit = "ALL";
+  listStatus = "all";
+  renderListScreen();
+  showScreen("screen-list");
+});
+els["list-back"].addEventListener("click", ()=>{
+  renderHome();
+  showScreen("screen-home");
+});
+els["list-unit-select"].addEventListener("change", ()=>{
+  listUnit = els["list-unit-select"].value;
+  renderListItems();
+});
+els["list-status-select"].addEventListener("change", ()=>{
+  listStatus = els["list-status-select"].value;
+  renderListItems();
 });
 
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let startAction, buzzAction, buzzResAction, judgeAction, nextAction;
+let startAction, buzzAction, buzzResAction, judgeAction, nextAction, revealAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
@@ -770,6 +1090,7 @@ function setupActions(){
   buzzResAction = room.makeAction("buzzres");
   judgeAction = room.makeAction("judge");
   nextAction = room.makeAction("next");
+  revealAction = room.makeAction("reveal");
 
   startAction.onMessage = (data)=>{
     if(role !== "guest") return;
@@ -796,10 +1117,21 @@ function setupActions(){
     if(judged) return;
     judged = true;
     scores[data.winner] += data.correct ? 1 : 0;
+    // the receiver of this message is always the buzzer (the judge only ever
+    // sends, never receives their own broadcast), so record the result here
+    recordResult(questionIds[currentIndex], data.correct);
     updateScoreUI();
+    els["status-banner"].classList.remove("win","lose","info");
+    els["status-banner"].classList.add("info");
+    els["status-banner"].textContent = data.correct ? "正解でした！" : "残念、不正解でした。";
     if(role === "host"){
       els["next-btn"].classList.add("show");
     }
+  };
+
+  revealAction.onMessage = (data)=>{
+    if(data.idx !== currentIndex) return;
+    els["battle-a-block"].classList.add("show");
   };
 
   nextAction.onMessage = (data)=>{
@@ -897,6 +1229,7 @@ function showQuestion(idx){
   els["buzz-btn"].disabled = false;
   els["buzz-btn"].style.display = "block";
   els["status-banner"].classList.remove("show","win","lose","info");
+  els["reveal-btn"].style.display = "none";
   els["judge-row"].style.display = "none";
   els["next-btn"].classList.remove("show");
 
@@ -923,20 +1256,25 @@ function handleBuzzArrival(who, idx){
 
 function applyBuzzResult(){
   els["buzz-btn"].style.display = "none";
-  els["battle-a-block"].classList.add("show");
 
   const amWinner = buzzWinner === role;
   els["status-banner"].classList.add("show");
   if(amWinner){
     els["status-banner"].classList.add("win");
-    els["status-banner"].textContent = "あなたが先におしました！";
-    els["judge-row"].style.display = "none";
+    els["status-banner"].textContent = "あなたが先におしました！こたえを声に出して言ってください。";
   }else{
     els["status-banner"].classList.add("lose");
-    els["status-banner"].textContent = "相手が先におしました。答え合わせをしてください。";
-    els["judge-row"].style.display = "flex";
+    els["status-banner"].textContent = "相手が先におしました。こたえを聞いたら「こたえを見る」を押してください。";
+    els["reveal-btn"].style.display = "block";
   }
 }
+
+els["reveal-btn"].addEventListener("click", ()=>{
+  els["reveal-btn"].style.display = "none";
+  els["battle-a-block"].classList.add("show");
+  els["judge-row"].style.display = "flex";
+  revealAction.send({idx: currentIndex});
+});
 
 function judgeAnswer(correct){
   if(judged) return;
@@ -980,6 +1318,9 @@ function endGame(){
   els["result-sub"].textContent = sub;
   showScreen("screen-result");
 }
+
+loadStats();
+renderHome();
 </script>
 </body>
 </html>
