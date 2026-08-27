@@ -407,6 +407,25 @@
     -webkit-tap-highlight-color:transparent;
   }
   .skip-btn:active{background:#fbf2e2;}
+
+  .attack-fx{
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%) scale(0.3);
+    font-size:84px;
+    z-index:1500;
+    pointer-events:none;
+    opacity:0;
+    animation:attackPop 0.7s ease-out forwards;
+    text-shadow:0 4px 18px rgba(0,0,0,0.25);
+  }
+  @keyframes attackPop{
+    0%{ transform:translate(-50%,-50%) scale(0.3) rotate(-8deg); opacity:0; }
+    25%{ transform:translate(-50%,-50%) scale(1.25) rotate(4deg); opacity:1; }
+    70%{ transform:translate(-50%,-50%) scale(1.1) rotate(0deg); opacity:1; }
+    100%{ transform:translate(-50%,-50%) scale(1.4) rotate(0deg); opacity:0; }
+  }
   .skip-encourage{
     margin-top:14px;
     text-align:center;
@@ -1268,6 +1287,35 @@ function playChime(){
       osc.stop(now+n.t+n.d+0.05);
     });
   }catch(e){ /* ignore, audio is a nice-to-have */ }
+}
+
+// ---- kid-friendly "attack" flourish on a correct answer: no HP, no defeat,
+//      just a satisfying pop + sound tied to the moment you get one right ----
+function playAttackSound(){
+  if(!audioCtx) return;
+  try{
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(55, now+0.16);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.exponentialRampToValueAtTime(0.28, now+0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now+0.22);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now+0.25);
+  }catch(e){ /* ignore, audio is a nice-to-have */ }
+}
+function triggerAttackEffect(scorerRole){
+  const amScorer = scorerRole === role;
+  playAttackSound();
+  const el = document.createElement("div");
+  el.className = "attack-fx";
+  el.textContent = amScorer ? "💥" : "😲";
+  document.body.appendChild(el);
+  setTimeout(()=>{ el.remove(); }, 700);
 }
 
 function showScreen(name){
@@ -2787,6 +2835,8 @@ function maybeFinishQuestion(){
   if(hostCorrect) scores.host += 1;
   if(guestCorrect) scores.guest += 1;
   updateScoreUI();
+  if(hostCorrect) triggerAttackEffect("host");
+  if(guestCorrect) triggerAttackEffect("guest");
   if(role === "host"){
     els["next-btn"].classList.add("show");
     saveBattleSession();
