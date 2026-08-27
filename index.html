@@ -728,9 +728,10 @@
     <div class="status-banner" id="status-banner"></div>
     <button class="reveal-btn" id="reveal-btn" style="display:none;">こたえを見る</button>
     <div class="judge-row" id="judge-row" style="display:none;">
-      <button class="judge-btn ng" id="judge-ng">✕ まちがい</button>
-      <button class="judge-btn ok" id="judge-ok">〇 せいかい</button>
+      <button class="judge-btn ng" id="judge-ng">✕ 相手はまちがい</button>
+      <button class="judge-btn ok" id="judge-ok">〇 相手はせいかい</button>
     </div>
+    <div class="status-banner" id="my-result" style="display:none;"></div>
     <button class="next-btn" id="next-btn">つぎの問題へ</button>
   </section>
 
@@ -765,7 +766,7 @@ const els = {};
  "list-back","list-count","list-unit-select","list-status-select","list-items",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
- "buzz-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","next-btn",
+ "buzz-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-home-btn"
 ].forEach(id => els[id] = document.getElementById(id));
 
@@ -1090,14 +1091,14 @@ els["list-status-select"].addEventListener("change", ()=>{
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let startAction, buzzAction, buzzResAction, judgeAction, nextAction, revealAction, endAction;
+let startAction, buzzAction, judgeAction, nextAction, endAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
-let currentAnswerer = null; // 'host' | 'guest' -- whoever currently has the chance to answer
-let myBuzzed = false;
-let attemptsUsed = 0;
-let finished = false;
+let buzzed = false;
+let myVerdictOfOpponent = null; // true/false: what I decided about my opponent's answer
+let opponentVerdictOfMe = null; // true/false: what my opponent decided about my answer
+let scored = false;
 
 function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
@@ -1117,10 +1118,8 @@ function leaveRoom(){
 function setupActions(){
   startAction = room.makeAction("start");
   buzzAction = room.makeAction("buzz");
-  buzzResAction = room.makeAction("buzzres");
   judgeAction = room.makeAction("judge");
   nextAction = room.makeAction("next");
-  revealAction = room.makeAction("reveal");
   endAction = room.makeAction("end");
 
   startAction.onMessage = (data)=>{
@@ -1132,48 +1131,20 @@ function setupActions(){
   };
 
   buzzAction.onMessage = (data)=>{
-    if(role !== "host") return;
-    handleBuzzArrival("guest", data.idx);
-  };
-
-  buzzResAction.onMessage = (data)=>{
-    if(role === "host") return;
     if(data.idx !== currentIndex) return;
-    currentAnswerer = data.winner;
-    applyAnswererState();
+    if(buzzed) return;
+    buzzed = true;
+    enterAnsweringPhase();
   };
 
   judgeAction.onMessage = (data)=>{
     if(data.idx !== currentIndex) return;
-    if(finished) return;
-    attemptsUsed++;
-    // the receiver of this message is always whoever just answered (the judge
-    // only ever sends, never receives their own broadcast), so record it here
+    if(opponentVerdictOfMe !== null) return;
+    opponentVerdictOfMe = data.correct;
+    // the sender judged MY answer, so this is my own result to record
     recordResult(questionIds[currentIndex], data.correct);
-    if(data.correct){
-      scores[data.answerer] += 1;
-    }
-    updateScoreUI();
-    if(data.final){
-      finished = true;
-      els["reveal-btn"].style.display = "none";
-      els["judge-row"].style.display = "none";
-      els["status-banner"].classList.remove("win","lose","info");
-      els["status-banner"].classList.add("info");
-      els["status-banner"].textContent = data.correct ? "正解でした！" : "残念、不正解でした。";
-      if(role === "host"){
-        els["next-btn"].classList.add("show");
-      }
-    }else{
-      // this device just answered wrong; the turn now passes to the other side
-      currentAnswerer = data.nextAnswerer;
-      applyAnswererState();
-    }
-  };
-
-  revealAction.onMessage = (data)=>{
-    if(data.idx !== currentIndex) return;
-    els["battle-a-block"].classList.add("show");
+    updateMyResultUI();
+    maybeFinishQuestion();
   };
 
   nextAction.onMessage = (data)=>{
@@ -1255,10 +1226,10 @@ els["join-btn"].addEventListener("click", ()=>{
 function showQuestion(idx){
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
-  currentAnswerer = null;
-  myBuzzed = false;
-  attemptsUsed = 0;
-  finished = false;
+  buzzed = false;
+  myVerdictOfOpponent = null;
+  opponentVerdictOfMe = null;
+  scored = false;
 
   const d = byId.get(questionIds[idx]);
   els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
@@ -1278,87 +1249,78 @@ function showQuestion(idx){
   els["status-banner"].classList.remove("show","win","lose","info");
   els["reveal-btn"].style.display = "none";
   els["judge-row"].style.display = "none";
+  els["my-result"].style.display = "none";
+  els["my-result"].classList.remove("show","win","lose","info");
   els["next-btn"].classList.remove("show");
 
   updateScoreUI();
 }
 
 els["buzz-btn"].addEventListener("click", ()=>{
-  if(myBuzzed || currentAnswerer !== null) return;
-  myBuzzed = true;
+  if(buzzed) return;
+  buzzed = true;
   playChime();
-  els["buzz-btn"].disabled = true;
   buzzAction.send({idx: currentIndex});
-  if(role === "host"){
-    handleBuzzArrival("host", currentIndex);
-  }
+  enterAnsweringPhase();
 });
 
-function handleBuzzArrival(who, idx){
-  if(idx !== currentIndex) return;
-  if(currentAnswerer !== null) return;
-  currentAnswerer = who;
-  buzzResAction.send({idx: currentIndex, winner: who});
-  applyAnswererState();
-}
-
-function applyAnswererState(){
+function enterAnsweringPhase(){
   els["buzz-btn"].style.display = "none";
-  els["battle-a-block"].classList.remove("show");
-  els["status-banner"].classList.remove("win","lose","info");
-  els["status-banner"].classList.add("show");
-  els["reveal-btn"].style.display = "none";
-  els["judge-row"].style.display = "none";
-
-  const amAnswerer = currentAnswerer === role;
-  if(amAnswerer){
-    els["status-banner"].classList.add("win");
-    els["status-banner"].textContent = "あなたの番です。こたえを声に出して言ってください。";
-  }else{
-    els["status-banner"].classList.add("lose");
-    els["status-banner"].textContent = "相手の番です。こたえを聞いたら「こたえを見る」を押してください。";
-    els["reveal-btn"].style.display = "block";
-  }
+  els["status-banner"].classList.remove("win","lose");
+  els["status-banner"].classList.add("show","info");
+  els["status-banner"].textContent = "それぞれ声に出してこたえを言いましょう。言い終わったら「こたえを見る」を押してください。";
+  els["reveal-btn"].style.display = "block";
 }
 
 els["reveal-btn"].addEventListener("click", ()=>{
   els["reveal-btn"].style.display = "none";
   els["battle-a-block"].classList.add("show");
   els["judge-row"].style.display = "flex";
-  revealAction.send({idx: currentIndex});
 });
 
-function judgeAnswer(correct){
-  if(finished) return;
-  const answerer = currentAnswerer;
-  attemptsUsed++;
-  let nextAnswerer = null;
-  if(correct){
-    scores[answerer] += 1;
-    finished = true;
-  }else if(attemptsUsed < 2){
-    nextAnswerer = role; // no one else is left to judge, so the judge becomes the next answerer
-  }else{
-    finished = true;
-  }
-  judgeAction.send({idx: currentIndex, answerer: answerer, correct: correct, nextAnswerer: nextAnswerer, final: finished});
-  updateScoreUI();
+function judgeOpponent(correct){
+  if(myVerdictOfOpponent !== null) return;
+  myVerdictOfOpponent = correct;
+  judgeAction.send({idx: currentIndex, correct: correct});
+  els["judge-row"].style.display = "none";
+  els["status-banner"].classList.remove("win","lose");
+  els["status-banner"].classList.add("show","info");
+  els["status-banner"].textContent = "相手を「"+(correct ? "せいかい" : "まちがい")+"」と判定しました。";
+  updateMyResultUI();
+  maybeFinishQuestion();
+}
+els["judge-ok"].addEventListener("click", ()=>judgeOpponent(true));
+els["judge-ng"].addEventListener("click", ()=>judgeOpponent(false));
 
-  if(finished){
-    els["judge-row"].style.display = "none";
-    els["status-banner"].classList.remove("win","lose","info");
-    els["status-banner"].classList.add("info");
-    els["status-banner"].textContent = correct ? "正解として記録しました。" : "不正解として記録しました。";
-    if(role === "host"){
-      els["next-btn"].classList.add("show");
-    }
+function updateMyResultUI(){
+  els["my-result"].style.display = "block";
+  els["my-result"].classList.add("show");
+  els["my-result"].classList.remove("win","lose","info");
+  if(opponentVerdictOfMe === null){
+    els["my-result"].classList.add("info");
+    els["my-result"].textContent = "あなたの結果：相手の判定を待っています…";
+  }else if(opponentVerdictOfMe){
+    els["my-result"].classList.add("win");
+    els["my-result"].textContent = "あなたの結果：〇 正解でした！";
   }else{
-    currentAnswerer = nextAnswerer;
-    applyAnswererState();
+    els["my-result"].classList.add("lose");
+    els["my-result"].textContent = "あなたの結果：✕ 残念、不正解でした。";
   }
 }
-els["judge-ok"].addEventListener("click", ()=>judgeAnswer(true));
-els["judge-ng"].addEventListener("click", ()=>judgeAnswer(false));
+
+function maybeFinishQuestion(){
+  if(myVerdictOfOpponent === null || opponentVerdictOfMe === null) return;
+  if(scored) return;
+  scored = true;
+  const hostCorrect = role === "host" ? opponentVerdictOfMe : myVerdictOfOpponent;
+  const guestCorrect = role === "guest" ? opponentVerdictOfMe : myVerdictOfOpponent;
+  if(hostCorrect) scores.host += 1;
+  if(guestCorrect) scores.guest += 1;
+  updateScoreUI();
+  if(role === "host"){
+    els["next-btn"].classList.add("show");
+  }
+}
 
 els["battle-end-btn"].addEventListener("click", ()=>{
   if(!confirm("対戦を終えてもよいですか？")) return;
