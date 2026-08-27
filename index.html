@@ -963,6 +963,7 @@
       </div>
       <div class="waiting-note"><span class="spinner"></span>相手の参加を待っています…</div>
       <div class="error-note" id="create-error"></div>
+      <div class="back-link" id="room-code-change">別のコードにする</div>
       <div class="back-link" id="create-cancel">✕ やめる</div>
     </div>
   </section>
@@ -1176,7 +1177,7 @@ const els = {};
  "type-all","type-image","type-text",
  "count-row","shuffle-toggle","order-toggle","review-mode-toggle",
  "solo-start-btn","create-btn","go-join",
- "home-setup","home-waiting","create-cancel","room-code-display","create-error",
+ "home-setup","home-waiting","create-cancel","room-code-display","room-code-change","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
@@ -1567,7 +1568,7 @@ els["go-join"].addEventListener("click", ()=>{
   els["join-setup"].style.display = "block";
   els["join-waiting"].style.display = "none";
   els["join-error"].classList.remove("show");
-  els["join-code-input"].value = "";
+  els["join-code-input"].value = loadLastCode();
   showScreen("screen-join");
 });
 els["join-back"].addEventListener("click", ()=>{
@@ -2152,6 +2153,17 @@ function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
 }
 
+// ---- remember the last-used room code so the same two people don't have to
+//      re-enter it every time (host reuses it automatically; guest gets it
+//      pre-filled) ----
+const LAST_CODE_KEY = "kq_battle_last_code_v1";
+function loadLastCode(){
+  try{ return window.localStorage.getItem(LAST_CODE_KEY) || ""; }catch(e){ return ""; }
+}
+function saveLastCode(code){
+  try{ window.localStorage.setItem(LAST_CODE_KEY, code); }catch(e){}
+}
+
 function leaveRoom(){
   if(room){
     try{ room.leave(); }catch(e){}
@@ -2240,30 +2252,44 @@ function setupActions(){
 }
 
 // ---- create room (host) ----
+function hostCreateRoomWithCode(code){
+  role = "host";
+  els["room-code-display"].textContent = code;
+  els["create-error"].classList.remove("show");
+  try{
+    room = joinRoom({appId: APP_ID}, code);
+    setupActions();
+    saveLastCode(code);
+  }catch(e){
+    console.error("room create failed", e);
+    els["create-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\n通信環境を確認してもう一度お試しください。";
+    els["create-error"].classList.add("show");
+  }
+}
+
 els["create-btn"].addEventListener("click", ()=>{
   let pool = buildPool();
   if(currentShuffle) pool = shuffleArray(pool);
   if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(pool.length === 0) return;
 
-  const code = genCode();
-  role = "host";
   questionIds = pool.map(i => QA_DATA[i].id);
   hostSkippedIds = new Set();
 
   els["home-setup"].style.display = "none";
   els["home-waiting"].style.display = "block";
-  els["room-code-display"].textContent = code;
-  els["create-error"].classList.remove("show");
 
-  try{
-    room = joinRoom({appId: APP_ID}, code);
-    setupActions();
-  }catch(e){
-    console.error("room create failed", e);
-    els["create-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\n通信環境を確認してもう一度お試しください。";
-    els["create-error"].classList.add("show");
-  }
+  const code = loadLastCode() || genCode();
+  hostCreateRoomWithCode(code);
+});
+
+els["room-code-change"].addEventListener("click", ()=>{
+  // leave the old room but keep the already-built question set/settings --
+  // only the code itself changes
+  if(room){ try{ room.leave(); }catch(e){} }
+  room = null;
+  const code = genCode();
+  hostCreateRoomWithCode(code);
 });
 
 // ---- join room (guest) ----
@@ -2282,6 +2308,7 @@ els["join-btn"].addEventListener("click", ()=>{
   try{
     room = joinRoom({appId: APP_ID}, code);
     setupActions();
+    saveLastCode(code);
   }catch(e){
     console.error("room join failed", e);
     els["join-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\nコードを確認してもう一度お試しください。";
