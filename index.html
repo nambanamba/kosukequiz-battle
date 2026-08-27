@@ -1308,12 +1308,12 @@ function playAttackSound(){
     osc.stop(now+0.25);
   }catch(e){ /* ignore, audio is a nice-to-have */ }
 }
-function triggerAttackEffect(scorerRole){
-  const amScorer = scorerRole === role;
+function triggerAttackEffect(){
+  // host (the kid) is always the attacker here; guest is on the receiving end
   playAttackSound();
   const el = document.createElement("div");
   el.className = "attack-fx";
-  el.textContent = amScorer ? "💥" : "😲";
+  el.textContent = role === "host" ? "💥" : "😲";
   document.body.appendChild(el);
   setTimeout(()=>{ el.remove(); }, 700);
 }
@@ -2835,8 +2835,11 @@ function maybeFinishQuestion(){
   if(hostCorrect) scores.host += 1;
   if(guestCorrect) scores.guest += 1;
   updateScoreUI();
-  if(hostCorrect) triggerAttackEffect("host");
-  if(guestCorrect) triggerAttackEffect("guest");
+  // one-directional on purpose: the attack flourish is a kid-empowerment
+  // gimmick (host is the kid), so it only fires when the kid got it right
+  // and the parent didn't -- not the other way around, and not just for
+  // getting it right regardless of how the parent did
+  if(hostCorrect && !guestCorrect) triggerAttackEffect();
   if(role === "host"){
     els["next-btn"].classList.add("show");
     saveBattleSession();
