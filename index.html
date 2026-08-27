@@ -994,10 +994,23 @@
       <div class="img-wrap" id="solo-img-wrap" style="display:none;">
         <img id="solo-img" src="" alt="資料" />
       </div>
-      <div class="q-text" id="solo-q"></div>
-      <div class="a-block" id="solo-a-block">
-        <div class="a-label">こたえ</div>
-        <div class="a-text" id="solo-a"></div>
+      <div id="solo-view">
+        <div class="q-text" id="solo-q"></div>
+        <div class="a-block" id="solo-a-block">
+          <div class="a-label">こたえ</div>
+          <div class="a-text" id="solo-a"></div>
+        </div>
+        <div class="edit-link" id="solo-edit-link" style="margin-top:14px;">✎ 文章を直す</div>
+      </div>
+      <div id="solo-edit-form" style="display:none;">
+        <div class="edit-field-label">問題文</div>
+        <textarea class="edit-textarea" id="solo-edit-q" rows="3"></textarea>
+        <div class="edit-field-label">こたえ</div>
+        <textarea class="edit-textarea" id="solo-edit-a" rows="2"></textarea>
+        <div class="edit-actions">
+          <div class="edit-btn cancel" id="solo-edit-cancel">キャンセル</div>
+          <div class="edit-btn save" id="solo-edit-save">保存する</div>
+        </div>
       </div>
     </div>
 
@@ -1059,10 +1072,23 @@
       <div class="img-wrap" id="battle-img-wrap" style="display:none;">
         <img id="battle-img" src="" alt="資料" />
       </div>
-      <div class="q-text" id="battle-q"></div>
-      <div class="a-block" id="battle-a-block">
-        <div class="a-label">こたえ</div>
-        <div class="a-text" id="battle-a"></div>
+      <div id="battle-view">
+        <div class="q-text" id="battle-q"></div>
+        <div class="a-block" id="battle-a-block">
+          <div class="a-label">こたえ</div>
+          <div class="a-text" id="battle-a"></div>
+        </div>
+        <div class="edit-link" id="battle-edit-link" style="margin-top:14px;">✎ 文章を直す</div>
+      </div>
+      <div id="battle-edit-form" style="display:none;">
+        <div class="edit-field-label">問題文</div>
+        <textarea class="edit-textarea" id="battle-edit-q" rows="3"></textarea>
+        <div class="edit-field-label">こたえ</div>
+        <textarea class="edit-textarea" id="battle-edit-a" rows="2"></textarea>
+        <div class="edit-actions">
+          <div class="edit-btn cancel" id="battle-edit-cancel">キャンセル</div>
+          <div class="edit-btn save" id="battle-edit-save">保存する</div>
+        </div>
       </div>
     </div>
 
@@ -1122,12 +1148,14 @@ const els = {};
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-status-select","list-items",
  "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
- "solo-img-wrap","solo-img","solo-q","solo-a-block","solo-a",
+ "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
+ "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save",
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
- "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
+ "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
+ "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save",
  "buzz-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
@@ -1249,6 +1277,50 @@ function getQById(id){
   return idx === -1 ? null : getQ(idx);
 }
 
+// ---- inline "文章を直す" editing, directly from the solo/battle quiz card ----
+function setupInlineEdit(prefix, getCurrentId){
+  const editLink = els[prefix+"-edit-link"];
+  const editForm = els[prefix+"-edit-form"];
+  const viewDiv = els[prefix+"-view"];
+  const qInput = els[prefix+"-edit-q"];
+  const aInput = els[prefix+"-edit-a"];
+  const qDisplay = els[prefix+"-q"];
+  const aDisplay = els[prefix+"-a"];
+
+  editLink.addEventListener("click", ()=>{
+    const id = getCurrentId();
+    if(!id) return;
+    const d = getQById(id);
+    if(!d) return;
+    qInput.value = d.q;
+    aInput.value = d.a;
+    viewDiv.style.display = "none";
+    editForm.style.display = "block";
+  });
+  els[prefix+"-edit-cancel"].addEventListener("click", ()=>{
+    editForm.style.display = "none";
+    viewDiv.style.display = "block";
+  });
+  els[prefix+"-edit-save"].addEventListener("click", ()=>{
+    const id = getCurrentId();
+    const base = QA_DATA.find(x => x.id === id);
+    if(!base) return;
+    const newQ = qInput.value.trim();
+    const newA = aInput.value.trim();
+    if(!newQ || !newA){
+      alert("問題文とこたえは空にできません。");
+      return;
+    }
+    if(newQ === base.q && newA === base.a) delete edits[id];
+    else edits[id] = {q: newQ, a: newA};
+    saveEdits();
+    qDisplay.textContent = newQ;
+    aDisplay.textContent = newA;
+    editForm.style.display = "none";
+    viewDiv.style.display = "block";
+  });
+}
+
 // ---- last solo quiz round's missed questions (survives closing/reopening the app) ----
 const LAST_MISS_KEY = "kq_battle_last_miss_v1";
 let lastMissIds = [];
@@ -1345,7 +1417,10 @@ function makeUnitChoice(key, label, count){
     if(key === "ALL"){
       selectedUnits = new Set(["ALL"]);
     }else{
-      if(selectedUnits.has("ALL")) selectedUnits = new Set();
+      // expand "ALL" into every individual unit first, so clicking one
+      // specific unit while everything is selected excludes just that one
+      // instead of narrowing the selection down to only that one
+      if(selectedUnits.has("ALL")) selectedUnits = new Set(getUnits());
       if(selectedUnits.has(key)) selectedUnits.delete(key);
       else selectedUnits.add(key);
       if(selectedUnits.size === 0) selectedUnits = new Set(["ALL"]);
@@ -1830,6 +1905,8 @@ function startSoloCard(){
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q"].textContent = d.q;
   els["solo-a"].textContent = d.a;
+  els["solo-view"].style.display = "block";
+  els["solo-edit-form"].style.display = "none";
   if(d.img){
     els["solo-img"].src = "images/"+d.img;
     els["solo-img-wrap"].style.display = "block";
@@ -2139,6 +2216,8 @@ function showQuestion(idx){
   els["battle-unit-tag"].textContent = d.u;
   els["battle-q"].textContent = d.q;
   els["battle-a"].textContent = d.a;
+  els["battle-view"].style.display = "block";
+  els["battle-edit-form"].style.display = "none";
   els["battle-a-block"].classList.remove("show");
   if(d.img){
     els["battle-img"].src = "images/"+d.img;
@@ -2440,6 +2519,9 @@ els["solo-img"].addEventListener("click", ()=>{
 els["battle-img"].addEventListener("click", ()=>{
   if(els["battle-img"].src) openLightbox(els["battle-img"].src);
 });
+
+setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? QA_DATA[quizQueue[quizPos]].id : null);
+setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 
 loadStats();
 loadEdits();
