@@ -151,6 +151,16 @@
     cursor:default;
   }
   .start-btn:active{transform:translateY(1px);}
+  .start-row{
+    display:flex;
+    gap:10px;
+    margin-top:24px;
+  }
+  .start-btn.split{
+    width:auto;
+    flex:1;
+    margin-top:0;
+  }
 
   .btn-secondary{
     width:100%;
@@ -201,35 +211,6 @@
     font-size:11px;
     color:var(--ink-soft);
     margin-top:4px;
-  }
-
-  /* ---- home: role select ---- */
-  .role-grid{
-    display:flex;
-    flex-direction:column;
-    gap:14px;
-    margin-top:10px;
-  }
-  .role-btn{
-    background:#fff;
-    border:1.5px solid var(--paper-line);
-    border-radius:14px;
-    padding:22px 18px;
-    box-shadow:var(--card-shadow);
-    cursor:pointer;
-    -webkit-tap-highlight-color:transparent;
-  }
-  .role-btn .role-title{
-    font-family:"Hiragino Mincho ProN", serif;
-    font-size:19px;
-    font-weight:700;
-    color:var(--navy-deep);
-  }
-  .role-btn .role-desc{
-    font-size:12.5px;
-    color:var(--ink-soft);
-    margin-top:6px;
-    line-height:1.6;
   }
 
   /* ---- room code ---- */
@@ -867,49 +848,8 @@
       <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
       <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
     </div>
-    <div class="role-grid">
-      <div class="role-btn" id="go-solo">
-        <div class="role-title">一人でやる</div>
-        <div class="role-desc">自分のペースで一問一答の練習をします。</div>
-      </div>
-      <div class="role-btn" id="go-battle-home">
-        <div class="role-title">二人で対戦する</div>
-        <div class="role-desc">早押しで相手と対戦します。</div>
-      </div>
-    </div>
-    <button class="btn-secondary" id="list-btn" style="margin-top:14px;">問題一覧を見る・記録を切りかえる</button>
-    <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
-    <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
-    <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
-    <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
-  </section>
 
-  <!-- BATTLE HOME (two-player room choice) -->
-  <section id="screen-battle-home" class="screen">
-    <div class="quiz-head">
-      <div class="back" id="battle-home-back">← もどる</div>
-      <div></div>
-    </div>
-    <div class="role-grid">
-      <div class="role-btn" id="go-create">
-        <div class="role-title">部屋をつくる</div>
-        <div class="role-desc">出題する単元・問題数を決めて部屋をつくります。発行されたコードを相手に伝えてください。</div>
-      </div>
-      <div class="role-btn" id="go-join">
-        <div class="role-title">部屋に入る</div>
-        <div class="role-desc">相手から伝えられたコードを入力して対戦に参加します。</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- CREATE / SOLO SETUP SCREEN -->
-  <section id="screen-create" class="screen">
-    <div class="quiz-head">
-      <div class="back" id="create-back">← もどる</div>
-      <div></div>
-    </div>
-
-    <div id="create-setup">
+    <div id="home-setup">
       <div class="section-title">単元をえらぶ（複数選択できます）</div>
       <div class="choice-grid" id="unit-choices"></div>
 
@@ -919,8 +859,8 @@
         <div class="toggle mode-filter" id="mode-weak" data-mode="weak">苦手な問題だけ</div>
       </div>
 
-      <div class="section-title" id="type-section-title">出題タイプ</div>
-      <div class="toggle-row" id="type-row">
+      <div class="section-title">出題タイプ</div>
+      <div class="toggle-row">
         <div class="toggle on" id="type-all" data-type="all">文章・図をすべて</div>
         <div class="toggle" id="type-image" data-type="image">図の問題だけ</div>
         <div class="toggle" id="type-text" data-type="text">文章問題だけ</div>
@@ -940,35 +880,42 @@
         <div class="toggle" id="order-toggle" data-shuffle="0">出題順どおり</div>
       </div>
 
-      <div id="review-mode-section">
-        <div class="section-title">モード</div>
-        <div class="toggle-row">
-          <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
-        </div>
+      <div class="section-title">一人モード用: チェックのみ</div>
+      <div class="toggle-row">
+        <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
 
-      <div id="headstart-section">
-        <div class="section-title">問題を早く見る秒数（部屋をつくった人が先に見られます）</div>
-        <div class="toggle-row" id="headstart-row">
-          <div class="toggle headstart-choice" data-headstart="0">なし</div>
-          <div class="toggle headstart-choice" data-headstart="2">2秒</div>
-          <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
-          <div class="toggle headstart-choice" data-headstart="5">5秒</div>
-          <div class="toggle headstart-choice" data-headstart="10">10秒</div>
-        </div>
+      <div class="section-title">二人対戦用: 問題を早く見る秒数（部屋をつくった人が先に見られます）</div>
+      <div class="toggle-row" id="headstart-row">
+        <div class="toggle headstart-choice" data-headstart="0">なし</div>
+        <div class="toggle headstart-choice" data-headstart="2">2秒</div>
+        <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
+        <div class="toggle headstart-choice" data-headstart="5">5秒</div>
+        <div class="toggle headstart-choice" data-headstart="10">10秒</div>
       </div>
 
-      <button class="start-btn" id="solo-start-btn" style="display:none;">はじめる</button>
-      <button class="start-btn" id="create-btn">部屋をつくる</button>
+      <div class="start-row">
+        <button class="start-btn split" id="solo-start-btn">一人で始める</button>
+        <button class="start-btn split" id="create-btn">二人で始める</button>
+      </div>
+      <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
+
+      <button class="btn-secondary" id="list-btn" style="margin-top:20px;">問題一覧を見る・記録を切りかえる</button>
+      <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
+      <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
+      <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
+      <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
+      <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
     </div>
 
-    <div id="create-waiting" style="display:none;">
+    <div id="home-waiting" style="display:none;">
       <div class="code-box">
         <div class="code-label">この番号を相手に伝えてください</div>
         <div class="code-num" id="room-code-display">----</div>
       </div>
       <div class="waiting-note"><span class="spinner"></span>相手の参加を待っています…</div>
       <div class="error-note" id="create-error"></div>
+      <div class="back-link" id="create-cancel">✕ やめる</div>
     </div>
   </section>
 
@@ -1140,15 +1087,13 @@ import {joinRoom} from 'https://esm.run/trystero';
 const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
 const els = {};
-["screen-home","screen-battle-home","screen-create","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","export-link","import-link","import-file",
- "go-solo","go-battle-home","battle-home-back","go-create","go-join",
- "create-back","unit-choices","mode-unmastered","mode-weak",
- "type-section-title","type-row","type-all","type-image","type-text",
- "count-row","shuffle-toggle","order-toggle",
- "review-mode-section","review-mode-toggle","headstart-section",
- "solo-start-btn","create-btn",
- "create-setup","create-waiting","room-code-display","create-error",
+["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
+ "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","export-link","import-link","import-file","export-edits-link",
+ "unit-choices","mode-unmastered","mode-weak",
+ "type-all","type-image","type-text",
+ "count-row","shuffle-toggle","order-toggle","review-mode-toggle",
+ "solo-start-btn","create-btn","go-join",
+ "home-setup","home-waiting","create-cancel","room-code-display","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-status-select","list-items",
  "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
@@ -1192,7 +1137,7 @@ function playChime(){
 }
 
 function showScreen(name){
-  ["screen-home","screen-battle-home","screen-create","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
+  ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   window.scrollTo(0,0);
@@ -1334,7 +1279,6 @@ let filterWeak = false;
 let headStartSec = 3;
 let currentType = "all"; // all | image | text
 let reviewMode = false;
-let setupMode = "host"; // "host" | "solo" -- which screen navigated into screen-create
 
 function getUnits(){
   const set = [];
@@ -1394,10 +1338,11 @@ function refreshUnitSelection(){
 function refreshCreateButton(){
   const pool = buildPool();
   const n = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
-  const btn = setupMode === "solo" ? els["solo-start-btn"] : els["create-btn"];
-  const label = setupMode === "solo" ? "はじめる" : "部屋をつくる";
-  btn.disabled = pool.length === 0;
-  btn.textContent = pool.length === 0 ? "この条件の問題はありません" : label+"（"+n+"問）";
+  const disabled = pool.length === 0;
+  els["solo-start-btn"].disabled = disabled;
+  els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+n+"問）";
+  els["create-btn"].disabled = disabled;
+  els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+n+"問）";
 }
 function renderUnitChoices(){
   const total = QA_DATA.length;
@@ -1478,42 +1423,6 @@ function shuffleArray(arr){
 }
 
 // ---- navigation ----
-function enterSetup(mode){
-  setupMode = mode;
-  const isSolo = mode === "solo";
-  els["type-section-title"].style.display = "block";
-  els["type-row"].style.display = "flex";
-  els["review-mode-section"].style.display = isSolo ? "block" : "none";
-  els["headstart-section"].style.display = isSolo ? "none" : "block";
-  els["solo-start-btn"].style.display = isSolo ? "block" : "none";
-  els["create-btn"].style.display = isSolo ? "none" : "block";
-  els["create-setup"].style.display = "block";
-  els["create-waiting"].style.display = "none";
-  els["create-error"].classList.remove("show");
-  renderUnitChoices();
-  showScreen("screen-create");
-}
-els["go-solo"].addEventListener("click", ()=>{
-  enterSetup("solo");
-});
-els["go-battle-home"].addEventListener("click", ()=>{
-  showScreen("screen-battle-home");
-});
-els["battle-home-back"].addEventListener("click", ()=>{
-  showScreen("screen-home");
-});
-els["go-create"].addEventListener("click", ()=>{
-  enterSetup("host");
-});
-els["create-back"].addEventListener("click", ()=>{
-  leaveRoom();
-  if(setupMode === "solo"){
-    renderHome();
-    showScreen("screen-home");
-  }else{
-    showScreen("screen-battle-home");
-  }
-});
 els["go-join"].addEventListener("click", ()=>{
   els["join-setup"].style.display = "block";
   els["join-waiting"].style.display = "none";
@@ -1523,7 +1432,12 @@ els["go-join"].addEventListener("click", ()=>{
 });
 els["join-back"].addEventListener("click", ()=>{
   leaveRoom();
-  showScreen("screen-battle-home");
+  showScreen("screen-home");
+});
+els["create-cancel"].addEventListener("click", ()=>{
+  leaveRoom();
+  els["home-setup"].style.display = "block";
+  els["home-waiting"].style.display = "none";
 });
 els["result-home-btn"].addEventListener("click", ()=>{
   leaveRoom();
@@ -1772,6 +1686,34 @@ els["export-link"].addEventListener("click", ()=>{
 
 els["import-link"].addEventListener("click", ()=>{
   els["import-file"].click();
+});
+
+els["export-edits-link"].addEventListener("click", ()=>{
+  const ids = Object.keys(edits);
+  if(ids.length === 0){
+    alert("直した問題はまだありません。問題一覧の「文章を直す」で直すと、ここに書き出せるようになります。");
+    return;
+  }
+  const rows = [["ID","単元","元の問題文","元のこたえ","直した問題文","直したこたえ"]];
+  ids.forEach(id=>{
+    const base = QA_DATA.find(d => d.id === id);
+    if(!base) return;
+    const e = edits[id];
+    rows.push([id, base.u, base.q, base.a, e.q, e.a]);
+  });
+  const csv = rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const now = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  const stamp = now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate());
+  a.href = url;
+  a.download = "社会一問一答_直した問題_"+stamp+".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
 });
 
 els["import-file"].addEventListener("change", (e)=>{
@@ -2085,9 +2027,11 @@ function setupActions(){
   };
 
   room.onPeerLeave = ()=>{
-    if(els["screen-battle"].classList.contains("active") || els["screen-create"].classList.contains("active") || els["screen-join"].classList.contains("active")){
+    if(els["screen-battle"].classList.contains("active") || els["home-waiting"].style.display === "block" || els["screen-join"].classList.contains("active")){
       alert("相手との接続が切れました。ホーム画面にもどります。");
       leaveRoom();
+      els["home-setup"].style.display = "block";
+      els["home-waiting"].style.display = "none";
       showScreen("screen-home");
     }
   };
@@ -2105,8 +2049,8 @@ els["create-btn"].addEventListener("click", ()=>{
   role = "host";
   questionIds = ids;
 
-  els["create-setup"].style.display = "none";
-  els["create-waiting"].style.display = "block";
+  els["home-setup"].style.display = "none";
+  els["home-waiting"].style.display = "block";
   els["room-code-display"].textContent = code;
   els["create-error"].classList.remove("show");
 
@@ -2406,6 +2350,7 @@ loadStats();
 loadEdits();
 loadLastMiss();
 renderHome();
+renderUnitChoices();
 </script>
 </body>
 </html>
