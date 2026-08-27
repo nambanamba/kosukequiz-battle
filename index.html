@@ -619,6 +619,9 @@
       </div>
     </div>
     <button class="btn-secondary" id="list-btn" style="margin-top:14px;">問題一覧を見る・記録を切りかえる</button>
+    <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
+    <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
+    <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
   </section>
 
   <!-- CREATE SCREEN -->
@@ -768,7 +771,7 @@ const byId = new Map(QA_DATA.map(d => [d.id, d]));
 
 const els = {};
 ["screen-home","screen-create","screen-join","screen-list","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","list-btn",
+ "stat-total","stat-mastered","stat-weak","list-btn","export-link","import-link","import-file",
  "go-create","go-join",
  "create-back","unit-choices","mode-unmastered","mode-weak","count-row","shuffle-toggle","order-toggle","create-btn",
  "create-setup","create-waiting","room-code-display","create-error",
@@ -1104,6 +1107,140 @@ els["list-unit-select"].addEventListener("change", ()=>{
 els["list-status-select"].addEventListener("change", ()=>{
   listStatus = els["list-status-select"].value;
   renderListItems();
+});
+
+// ---- CSV export/import: same file format as kosukequiz, so records can be
+// carried between the two apps (they run on different origins and can't
+// share localStorage directly) ----
+function csvEscape(v){
+  v = String(v);
+  if(/[",\n\r]/.test(v)){
+    v = '"' + v.replace(/"/g, '""') + '"';
+  }
+  return v;
+}
+
+function parseCSV(text){
+  if(text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else{ inQuotes = false; }
+      }else{
+        field += c;
+      }
+    }else{
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field = ""; }
+      else if(c === '\r'){ /* handled by \n */ }
+      else if(c === '\n'){ row.push(field); field = ""; rows.push(row); row = []; }
+      else{ field += c; }
+    }
+  }
+  if(field.length > 0 || row.length > 0){ row.push(field); rows.push(row); }
+  return rows.filter(r => !(r.length === 1 && r[0].trim() === ""));
+}
+
+els["export-link"].addEventListener("click", ()=>{
+  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態"]];
+  QA_DATA.forEach(d=>{
+    const s = stats[d.id] || {correct:0, wrong:0};
+    const correct = s.correct||0;
+    const wrong = s.wrong||0;
+    let status = "未回答";
+    if(isWeak(d.id)) status = "苦手";
+    else if(isMastered(d.id)) status = "正解ずみ";
+    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status]);
+  });
+  const csv = rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const now = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  const stamp = now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate());
+  a.href = url;
+  a.download = "社会一問一答_対戦記録_"+stamp+".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+});
+
+els["import-link"].addEventListener("click", ()=>{
+  els["import-file"].click();
+});
+
+els["import-file"].addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  els["import-file"].value = "";
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    try{
+      const parsed = parseCSV(String(ev.target.result));
+      if(parsed.length < 2){
+        alert("CSVの中身が読み取れませんでした。");
+        return;
+      }
+      const header = parsed[0];
+      const idIdx = header.indexOf("ID");
+      const unitIdx = header.indexOf("単元");
+      const qIdx = header.indexOf("問題");
+      const correctIdx = header.indexOf("正解した回数");
+      const wrongIdx = header.indexOf("まちがえた回数");
+      if(qIdx === -1 || correctIdx === -1 || wrongIdx === -1){
+        alert("このCSVの形式を読み取れませんでした。kosukequiz（元のアプリ）またはこの対戦アプリからエクスポートしたファイルを選んでください。");
+        return;
+      }
+      const byId = new Map(QA_DATA.map(d=>[d.id, d]));
+      const byQuestion = new Map(QA_DATA.map(d=>[(d.u||"")+"||"+(d.q||""), d]));
+      let matched = 0, unmatched = 0, updated = 0;
+      for(let i=1;i<parsed.length;i++){
+        const row = parsed[i];
+        if(row.length < 2) continue;
+        let d = null;
+        if(idIdx !== -1 && row[idIdx] && byId.has(row[idIdx])){
+          d = byId.get(row[idIdx]);
+        }else if(unitIdx !== -1){
+          d = byQuestion.get((row[unitIdx]||"")+"||"+(row[qIdx]||""));
+        }
+        if(!d){ unmatched++; continue; }
+        matched++;
+        const importedCorrect = parseInt(row[correctIdx], 10) || 0;
+        const importedWrong = parseInt(row[wrongIdx], 10) || 0;
+        const cur = stats[d.id] || {correct:0, wrong:0};
+        // merge by taking the higher count on each side, rather than replacing
+        // outright, so records already in this app are never lost or shrunk
+        const mergedCorrect = Math.max(cur.correct||0, importedCorrect);
+        const mergedWrong = Math.max(cur.wrong||0, importedWrong);
+        if(mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0)) updated++;
+        if(mergedCorrect > 0 || mergedWrong > 0){
+          stats[d.id] = {correct: mergedCorrect, wrong: mergedWrong};
+        }
+      }
+      if(matched === 0){
+        alert("一致する問題が見つかりませんでした。");
+        return;
+      }
+      saveStats();
+      renderHome();
+      if(els["screen-list"].classList.contains("active")) renderListItems();
+      let msg = matched+"問分の記録を読み込み、"+updated+"問を更新しました。";
+      if(unmatched > 0) msg += "\n（"+unmatched+"行は問題が一致せず読み飛ばされました）";
+      alert(msg);
+    }catch(err){
+      console.error(err);
+      alert("CSVの読み込み中にエラーが発生しました。ファイルの形式をご確認ください。");
+    }
+  };
+  reader.readAsText(file, "UTF-8");
 });
 
 // ---- networking state ----
