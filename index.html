@@ -685,6 +685,172 @@
   }
   .miss-item .q{font-size:13.5px; line-height:1.6;}
   .miss-item .a{font-size:13.5px; line-height:1.6; color:var(--ok); font-weight:700; margin-top:4px;}
+
+  /* ---- list screen: count steppers + text-edit ---- */
+  .count-row-list{
+    display:flex;
+    gap:8px;
+    margin-top:10px;
+  }
+  .list-item-footer{
+    display:flex;
+    justify-content:space-between;
+    margin-top:10px;
+  }
+  .edit-link{
+    font-size:11.5px;
+    color:var(--gold);
+    font-weight:700;
+    text-decoration:underline;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .revert-link{
+    font-size:11.5px;
+    color:var(--ink-soft);
+    text-decoration:underline;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .edited-badge{
+    display:inline-block;
+    font-size:10px;
+    font-weight:700;
+    color:var(--gold);
+    background:#fbf2e2;
+    padding:2px 8px;
+    border-radius:100px;
+    margin-left:6px;
+  }
+  .edit-field-label{
+    font-size:11px;
+    font-weight:700;
+    color:var(--ink-soft);
+    margin:8px 0 4px;
+  }
+  .edit-textarea{
+    width:100%;
+    padding:10px;
+    border:1.5px solid var(--paper-line);
+    border-radius:8px;
+    font-size:13.5px;
+    font-family:inherit;
+    line-height:1.6;
+    resize:vertical;
+  }
+  .edit-textarea:focus{
+    outline:none;
+    border-color:var(--navy);
+  }
+  .edit-actions{
+    display:flex;
+    gap:8px;
+    margin-top:12px;
+  }
+  .edit-btn{
+    flex:1;
+    text-align:center;
+    padding:10px 6px;
+    border-radius:8px;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .edit-btn.cancel{
+    background:#fff;
+    color:var(--ink-soft);
+    border:1.5px solid var(--paper-line);
+  }
+  .edit-btn.save{
+    background:var(--navy-deep);
+    color:#f6f2ea;
+    border:1.5px solid var(--navy-deep);
+  }
+
+  /* ---- image lightbox (pinch/tap to zoom) ---- */
+  .img-wrap img{
+    cursor:zoom-in;
+    touch-action:none;
+  }
+  .lightbox-overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(10,14,13,0.92);
+    z-index:2000;
+    overflow:hidden;
+    touch-action:none;
+  }
+  .lightbox-overlay.show{
+    display:block;
+  }
+  .lightbox-stage{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .lightbox-stage img{
+    max-width:92vw;
+    max-height:92vh;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+    transform-origin:0 0;
+    will-change:transform;
+  }
+  .lightbox-close{
+    position:absolute;
+    top:14px;
+    right:14px;
+    width:40px;
+    height:40px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.15);
+    color:#f6f2ea;
+    border:none;
+    font-size:20px;
+    line-height:40px;
+    text-align:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+    z-index:1;
+  }
+  .lightbox-zoom-controls{
+    position:absolute;
+    top:14px;
+    left:14px;
+    display:flex;
+    gap:8px;
+    z-index:1;
+  }
+  .lightbox-zoom-btn{
+    width:40px;
+    height:40px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.15);
+    color:#f6f2ea;
+    border:none;
+    font-size:20px;
+    font-weight:700;
+    line-height:40px;
+    text-align:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .lightbox-zoom-btn:active{background:rgba(255,255,255,0.3);}
+  .lightbox-hint{
+    position:absolute;
+    bottom:16px;
+    left:0;
+    right:0;
+    text-align:center;
+    font-size:12px;
+    color:rgba(246,242,234,0.7);
+    pointer-events:none;
+  }
 </style>
 </head>
 <body>
@@ -955,13 +1121,23 @@
 
 </div>
 
+<div class="lightbox-overlay" id="lightbox-overlay">
+  <button class="lightbox-close" id="lightbox-close">×</button>
+  <div class="lightbox-zoom-controls">
+    <button class="lightbox-zoom-btn" id="lightbox-zoom-out">－</button>
+    <button class="lightbox-zoom-btn" id="lightbox-zoom-in">＋</button>
+  </div>
+  <div class="lightbox-stage" id="lightbox-stage">
+    <img id="lightbox-img" src="" alt="資料（拡大）" />
+  </div>
+  <div class="lightbox-hint">ピンチ／ダブルタップ／＋－ボタンで拡大・縮小</div>
+</div>
+
 <script src="data.js"></script>
 <script type="module">
 import {joinRoom} from 'https://esm.run/trystero';
 
 const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
-
-const byId = new Map(QA_DATA.map(d => [d.id, d]));
 
 const els = {};
 ["screen-home","screen-battle-home","screen-create","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
@@ -983,7 +1159,8 @@ const els = {};
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
  "battle-img-wrap","battle-img","battle-q","battle-a-block","battle-a",
  "buzz-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
- "result-score","result-sub","result-home-btn"
+ "result-score","result-sub","result-home-btn",
+ "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
 
 // ---- buzzer chime (synthesized, no audio file needed) ----
@@ -1070,6 +1247,36 @@ function adjustStat(qid, field, delta){
     stats[qid] = s;
   }
   saveStats();
+}
+
+// ---- question text corrections (fixes typos in the original data without
+//      touching the correct/incorrect records) ----
+const EDITS_KEY = "kq_battle_edits_v1";
+let edits = {}; // { id: {q, a} }
+function loadEdits(){
+  try{
+    const raw = window.localStorage.getItem(EDITS_KEY);
+    edits = raw ? JSON.parse(raw) : {};
+  }catch(e){
+    edits = {};
+  }
+}
+function saveEdits(){
+  try{
+    window.localStorage.setItem(EDITS_KEY, JSON.stringify(edits));
+  }catch(e){
+    console.error("save edits failed", e);
+  }
+}
+function getQ(idx){
+  const base = QA_DATA[idx];
+  const e = edits[base.id];
+  if(!e) return base;
+  return Object.assign({}, base, e);
+}
+function getQById(id){
+  const idx = QA_DATA.findIndex(d => d.id === id);
+  return idx === -1 ? null : getQ(idx);
 }
 
 // ---- last solo quiz round's missed questions (survives closing/reopening the app) ----
@@ -1355,6 +1562,8 @@ function renderListScreen(){
   renderListItems();
 }
 
+let editingId = null;
+
 function renderListItems(){
   let indices = unitIndices(listUnit);
   if(listStatus !== "all"){
@@ -1370,25 +1579,110 @@ function renderListItems(){
     return;
   }
   indices.forEach(i=>{
-    const d = QA_DATA[i];
-    const status = questionStatus(d.id);
+    const base = QA_DATA[i];
+    const d = getQ(i);
+    const isEdited = !!edits[base.id];
+    const status = questionStatus(base.id);
     const item = document.createElement("div");
     item.className = "list-item";
+
+    if(editingId === base.id){
+      item.innerHTML =
+        '<div class="list-unit-tag">'+escapeHtml(d.u)+'</div>'+
+        '<div class="edit-field-label">問題文</div>'+
+        '<textarea class="edit-textarea" id="edit-q-input" rows="3"></textarea>'+
+        '<div class="edit-field-label">こたえ</div>'+
+        '<textarea class="edit-textarea" id="edit-a-input" rows="2"></textarea>'+
+        '<div class="edit-actions">'+
+          '<div class="edit-btn cancel" id="edit-cancel-btn">キャンセル</div>'+
+          '<div class="edit-btn save" id="edit-save-btn">保存する</div>'+
+        '</div>';
+      els["list-items"].appendChild(item);
+      const qInput = item.querySelector("#edit-q-input");
+      const aInput = item.querySelector("#edit-a-input");
+      qInput.value = d.q;
+      aInput.value = d.a;
+      item.querySelector("#edit-cancel-btn").addEventListener("click", ()=>{
+        editingId = null;
+        renderListItems();
+      });
+      item.querySelector("#edit-save-btn").addEventListener("click", ()=>{
+        const newQ = qInput.value.trim();
+        const newA = aInput.value.trim();
+        if(!newQ || !newA){
+          alert("問題文とこたえは空にできません。");
+          return;
+        }
+        if(newQ === base.q && newA === base.a){
+          delete edits[base.id];
+        }else{
+          edits[base.id] = {q: newQ, a: newA};
+        }
+        saveEdits();
+        editingId = null;
+        renderListItems();
+      });
+      return;
+    }
+
+    const s = stats[base.id] || {correct:0, wrong:0};
     item.innerHTML =
-      '<div class="list-unit-tag">'+escapeHtml(d.u)+'</div>'+
+      '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
         '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
         '<div class="status-btn ng'+(status==="weak"?" active":"")+'" data-status="weak">✕ 不正解</div>'+
+      '</div>'+
+      '<div class="count-row-list">'+
+        '<div class="count-stepper ok">'+
+          '<span class="count-label">正解数</span>'+
+          '<span class="count-controls">'+
+            '<span class="count-btn" data-field="correct" data-delta="-1">－</span>'+
+            '<span class="count-num">'+(s.correct||0)+'</span>'+
+            '<span class="count-btn" data-field="correct" data-delta="1">＋</span>'+
+          '</span>'+
+        '</div>'+
+        '<div class="count-stepper ng">'+
+          '<span class="count-label">誤答数</span>'+
+          '<span class="count-controls">'+
+            '<span class="count-btn" data-field="wrong" data-delta="-1">－</span>'+
+            '<span class="count-num">'+(s.wrong||0)+'</span>'+
+            '<span class="count-btn" data-field="wrong" data-delta="1">＋</span>'+
+          '</span>'+
+        '</div>'+
+      '</div>'+
+      '<div class="list-item-footer">'+
+        '<span class="edit-link">✎ 文章を直す</span>'+
+        (isEdited ? '<span class="revert-link">元にもどす</span>' : '')+
       '</div>';
     item.querySelectorAll(".status-btn").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        setStatus(d.id, btn.dataset.status);
+        setStatus(base.id, btn.dataset.status);
         renderListItems();
       });
     });
+    item.querySelectorAll(".count-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        adjustStat(base.id, btn.dataset.field, parseInt(btn.dataset.delta, 10));
+        renderListItems();
+      });
+    });
+    item.querySelector(".edit-link").addEventListener("click", ()=>{
+      editingId = base.id;
+      renderListItems();
+    });
+    const revertLink = item.querySelector(".revert-link");
+    if(revertLink){
+      revertLink.addEventListener("click", ()=>{
+        if(confirm("この問題を元の文章にもどしますか？")){
+          delete edits[base.id];
+          saveEdits();
+          renderListItems();
+        }
+      });
+    }
     els["list-items"].appendChild(item);
   });
 }
@@ -1565,7 +1859,7 @@ els["solo-start-btn"].addEventListener("click", ()=>{
 
 function startSoloCard(){
   const idx = quizQueue[quizPos];
-  const d = QA_DATA[idx];
+  const d = getQ(idx);
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q"].textContent = d.q;
   els["solo-a"].textContent = d.a;
@@ -1678,7 +1972,7 @@ function finishSoloQuiz(){
     els["solo-perfect-note"].style.display = "none";
     els["solo-retry-miss-btn"].style.display = "block";
     misses.forEach(m=>{
-      const d = QA_DATA[m.idx];
+      const d = getQ(m.idx);
       const div = document.createElement("div");
       div.className = "miss-item";
       div.innerHTML = '<div class="q">'+escapeHtml(d.q)+'</div><div class="a">'+escapeHtml(d.a)+'</div>';
@@ -1858,7 +2152,7 @@ function showQuestion(idx){
   opponentVerdictOfMe = null;
   scored = false;
 
-  const d = byId.get(questionIds[idx]);
+  const d = getQById(questionIds[idx]);
   els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
   els["battle-unit-tag"].textContent = d.u;
   els["battle-q"].textContent = d.q;
@@ -1985,7 +2279,131 @@ function endGame(){
   showScreen("screen-result");
 }
 
+// ---- image lightbox (tap to open, then pinch/drag/double-tap/+-buttons to zoom) ----
+let openLightbox = function(){};
+(function(){
+  const overlay = els["lightbox-overlay"];
+  const stage = els["lightbox-stage"];
+  const img = els["lightbox-img"];
+
+  let scale = 1, minScale = 1, maxScale = 5;
+  let originX = 0, originY = 0;
+  let startDist = 0, startScale = 1;
+  let startX = 0, startY = 0, startOriginX = 0, startOriginY = 0;
+  let pointers = {};
+
+  function apply(){
+    img.style.transform = "translate("+originX+"px,"+originY+"px) scale("+scale+")";
+  }
+  function reset(){
+    scale = 1; originX = 0; originY = 0;
+    apply();
+  }
+  function clampOrigin(){
+    const stageRect = stage.getBoundingClientRect();
+    const maxX = stageRect.width;
+    const maxY = stageRect.height;
+    if(originX > maxX) originX = maxX;
+    if(originX < -maxX) originX = -maxX;
+    if(originY > maxY) originY = maxY;
+    if(originY < -maxY) originY = -maxY;
+  }
+  function zoomAt(fx, fy, nextScale){
+    nextScale = Math.min(maxScale, Math.max(minScale, nextScale));
+    const rect = img.getBoundingClientRect();
+    const localX = (fx - rect.left) / scale;
+    const localY = (fy - rect.top) / scale;
+    originX += (scale - nextScale) * localX;
+    originY += (scale - nextScale) * localY;
+    scale = nextScale;
+    clampOrigin();
+    apply();
+  }
+  function zoomAtCenter(nextScale){
+    const rect = stage.getBoundingClientRect();
+    zoomAt(rect.left+rect.width/2, rect.top+rect.height/2, nextScale);
+  }
+  function dist(a, b){
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+  function open(src){
+    img.src = src;
+    reset();
+    overlay.classList.add("show");
+    document.body.style.overflow = "hidden";
+  }
+  function close(){
+    overlay.classList.remove("show");
+    document.body.style.overflow = "";
+    img.src = "";
+    pointers = {};
+  }
+  openLightbox = open;
+
+  els["lightbox-close"].addEventListener("click", close);
+  overlay.addEventListener("click", (e)=>{
+    if(e.target === overlay || e.target === stage) close();
+  });
+  els["lightbox-zoom-in"].addEventListener("click", ()=> zoomAtCenter(scale*1.6));
+  els["lightbox-zoom-out"].addEventListener("click", ()=> zoomAtCenter(scale/1.6));
+
+  stage.addEventListener("pointerdown", (e)=>{
+    stage.setPointerCapture(e.pointerId);
+    pointers[e.pointerId] = e;
+    const pts = Object.values(pointers);
+    if(pts.length === 1){
+      startX = e.clientX; startY = e.clientY;
+      startOriginX = originX; startOriginY = originY;
+    }else if(pts.length === 2){
+      startDist = dist(pts[0], pts[1]);
+      startScale = scale;
+    }
+  });
+  stage.addEventListener("pointermove", (e)=>{
+    if(!pointers[e.pointerId]) return;
+    pointers[e.pointerId] = e;
+    const pts = Object.values(pointers);
+    if(pts.length === 2){
+      const newDist = dist(pts[0], pts[1]);
+      if(startDist > 0){
+        const next = startScale * (newDist / startDist);
+        zoomAt((pts[0].clientX+pts[1].clientX)/2, (pts[0].clientY+pts[1].clientY)/2, next);
+      }
+    }else if(pts.length === 1 && scale > 1){
+      originX = startOriginX + (e.clientX - startX);
+      originY = startOriginY + (e.clientY - startY);
+      clampOrigin();
+      apply();
+    }
+  });
+  function endPointer(e){
+    delete pointers[e.pointerId];
+    const pts = Object.values(pointers);
+    if(pts.length === 1){
+      startX = pts[0].clientX; startY = pts[0].clientY;
+      startOriginX = originX; startOriginY = originY;
+    }
+    if(pts.length === 0) startDist = 0;
+  }
+  stage.addEventListener("pointerup", endPointer);
+  stage.addEventListener("pointercancel", endPointer);
+  stage.addEventListener("dblclick", ()=>{
+    if(scale > 1) reset();
+    else zoomAtCenter(2.5);
+  });
+})();
+
+els["solo-img"].addEventListener("click", ()=>{
+  if(els["solo-img"].src) openLightbox(els["solo-img"].src);
+});
+els["battle-img"].addEventListener("click", ()=>{
+  if(els["battle-img"].src) openLightbox(els["battle-img"].src);
+});
+
 loadStats();
+loadEdits();
 loadLastMiss();
 renderHome();
 </script>
