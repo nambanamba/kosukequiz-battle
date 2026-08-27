@@ -408,23 +408,65 @@
   }
   .skip-btn:active{background:#fbf2e2;}
 
-  .attack-fx{
-    position:fixed;
-    top:50%;
-    left:50%;
-    transform:translate(-50%,-50%) scale(0.3);
-    font-size:84px;
-    z-index:1500;
-    pointer-events:none;
-    opacity:0;
-    animation:attackPop 0.7s ease-out forwards;
-    text-shadow:0 4px 18px rgba(0,0,0,0.25);
+  .battle-avatars{
+    position:relative;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    padding:6px 24px 4px;
+    margin-bottom:8px;
+    overflow:visible;
   }
-  @keyframes attackPop{
-    0%{ transform:translate(-50%,-50%) scale(0.3) rotate(-8deg); opacity:0; }
-    25%{ transform:translate(-50%,-50%) scale(1.25) rotate(4deg); opacity:1; }
-    70%{ transform:translate(-50%,-50%) scale(1.1) rotate(0deg); opacity:1; }
-    100%{ transform:translate(-50%,-50%) scale(1.4) rotate(0deg); opacity:0; }
+  .avatar-box{
+    flex:0 0 auto;
+    text-align:center;
+    width:80px;
+  }
+  .avatar-char{
+    font-size:44px;
+    line-height:1.1;
+    transition:transform 0.15s;
+  }
+  .avatar-label{
+    font-size:11px;
+    font-weight:700;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+  #guest-avatar-box.hit .avatar-char{
+    animation:avatarHit 0.5s ease;
+  }
+  @keyframes avatarHit{
+    0%{ transform:translateX(0) rotate(0); }
+    20%{ transform:translateX(10px) rotate(10deg); }
+    40%{ transform:translateX(-9px) rotate(-9deg); }
+    60%{ transform:translateX(7px) rotate(7deg); }
+    80%{ transform:translateX(-4px) rotate(-4deg); }
+    100%{ transform:translateX(0) rotate(0); }
+  }
+  #host-avatar-box.power-up .avatar-char{
+    animation:avatarPowerUp 0.5s ease;
+  }
+  @keyframes avatarPowerUp{
+    0%{ transform:scale(1); }
+    40%{ transform:scale(1.5) rotate(-8deg); }
+    70%{ transform:scale(1.55) rotate(6deg); }
+    100%{ transform:scale(1) rotate(0); }
+  }
+  .attack-fx{
+    position:absolute;
+    top:6px;
+    left:70px;
+    font-size:34px;
+    z-index:50;
+    pointer-events:none;
+    text-shadow:0 3px 10px rgba(0,0,0,0.25);
+    animation:attackFly 0.55s ease-in forwards;
+  }
+  @keyframes attackFly{
+    0%{ left:70px; top:6px; transform:scale(0.6) rotate(0deg); opacity:0; }
+    15%{ opacity:1; transform:scale(1) rotate(0deg); }
+    100%{ left:calc(100% - 100px); top:2px; transform:scale(1.3) rotate(340deg); opacity:1; }
   }
   .skip-encourage{
     margin-top:14px;
@@ -1159,6 +1201,17 @@
       <div class="back" id="battle-end-btn">✕ おわる</div>
       <div class="counter" id="battle-counter">1 / 10</div>
     </div>
+    <div class="battle-avatars" id="battle-avatars">
+      <div class="avatar-box" id="host-avatar-box">
+        <div class="avatar-char" id="host-avatar">🙂</div>
+        <div class="avatar-label" id="host-avatar-label">あなた</div>
+      </div>
+      <div class="avatar-box" id="guest-avatar-box">
+        <div class="avatar-char" id="guest-avatar">😊</div>
+        <div class="avatar-label" id="guest-avatar-label">相手</div>
+      </div>
+    </div>
+
     <div class="score-row">
       <div class="score-box me"><div class="who">あなた</div><div class="num" id="score-me">0</div></div>
       <div class="score-box"><div class="who">相手</div><div class="num" id="score-opp">0</div></div>
@@ -1254,6 +1307,7 @@ const els = {};
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
+ "battle-avatars","host-avatar-box","host-avatar","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save",
  "buzz-btn","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
@@ -1308,14 +1362,47 @@ function playAttackSound(){
     osc.stop(now+0.25);
   }catch(e){ /* ignore, audio is a nice-to-have */ }
 }
+// host's avatar visibly gets stronger over the round as attacks land;
+// guest's avatar just reacts to being hit each time (no counter-evolution --
+// this is a one-directional kid-empowerment gimmick, not a real battle)
+const HOST_POWER_STAGES = ["🙂","😎","💪","🔥","🦸","👑"];
+let hostAttacksLanded = 0;
+
+function setupAvatarLabels(){
+  els["host-avatar-label"].textContent = role === "host" ? "あなた" : "相手";
+  els["guest-avatar-label"].textContent = role === "guest" ? "あなた" : "相手";
+}
+
+function resetAvatars(){
+  hostAttacksLanded = 0;
+  els["host-avatar"].textContent = HOST_POWER_STAGES[0];
+  els["guest-avatar"].textContent = "😊";
+}
+
 function triggerAttackEffect(){
-  // host (the kid) is always the attacker here; guest is on the receiving end
   playAttackSound();
+
+  // fly a projectile from the host avatar over to the guest avatar
   const el = document.createElement("div");
   el.className = "attack-fx";
-  el.textContent = role === "host" ? "💥" : "😲";
-  document.body.appendChild(el);
-  setTimeout(()=>{ el.remove(); }, 700);
+  el.textContent = "💥";
+  els["battle-avatars"].appendChild(el);
+  setTimeout(()=>{
+    el.remove();
+    // land the hit: guest avatar reacts, host avatar powers up
+    els["guest-avatar-box"].classList.add("hit");
+    const prevFace = els["guest-avatar"].textContent;
+    els["guest-avatar"].textContent = "😵";
+    setTimeout(()=>{
+      els["guest-avatar-box"].classList.remove("hit");
+      els["guest-avatar"].textContent = prevFace;
+    }, 500);
+
+    hostAttacksLanded++;
+    els["host-avatar"].textContent = HOST_POWER_STAGES[Math.min(hostAttacksLanded, HOST_POWER_STAGES.length-1)];
+    els["host-avatar-box"].classList.add("power-up");
+    setTimeout(()=>{ els["host-avatar-box"].classList.remove("power-up"); }, 500);
+  }, 500);
 }
 
 function showScreen(name){
@@ -2501,6 +2588,8 @@ function setupActions(){
     questionIds = data.ids;
     scores = {host:0, guest:0};
     myMissesThisRound = [];
+    resetAvatars();
+    setupAvatarLabels();
     showScreen("screen-battle");
     showQuestion(0);
   };
@@ -2548,6 +2637,8 @@ function setupActions(){
       gameStarted = true;
       scores = {host:0, guest:0};
       myMissesThisRound = [];
+      resetAvatars();
+      setupAvatarLabels();
       showScreen("screen-battle");
       hostAdvanceAndArm(0);
     }else{
@@ -2621,6 +2712,8 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
   hostSkippedIds = new Set(session.hostSkippedIds || []);
   myMissesThisRound = [];
   gameStarted = true; // a peer joining now is a reconnect, not a fresh start
+  resetAvatars(); // the power-up level is cosmetic only and not persisted
+  setupAvatarLabels();
   try{
     room = joinRoom({appId: APP_ID}, session.code);
     setupActions();
