@@ -1036,13 +1036,16 @@
         <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
 
-      <div class="section-title">二人対戦用: 考える時間（時間が来ると自動で進みます）</div>
+      <div class="section-title">二人対戦用: 考える時間（時間が来ると自動でスキップします）</div>
       <div class="toggle-row" id="headstart-row">
         <div class="toggle headstart-choice" data-headstart="0">なし</div>
         <div class="toggle headstart-choice" data-headstart="2">2秒</div>
         <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
         <div class="toggle headstart-choice" data-headstart="5">5秒</div>
         <div class="toggle headstart-choice" data-headstart="10">10秒</div>
+        <div class="toggle headstart-choice" data-headstart="15">15秒</div>
+        <div class="toggle headstart-choice" data-headstart="20">20秒</div>
+        <div class="toggle headstart-choice" data-headstart="30">30秒</div>
       </div>
 
       <div class="start-row">
@@ -1215,7 +1218,8 @@
         <div class="avatar-label" id="host-avatar-label">あなた</div>
       </div>
       <div class="avatar-box" id="guest-avatar-box">
-        <div class="avatar-char" id="guest-avatar">😊</div>
+        <div class="avatar-char" id="guest-avatar">🙂</div>
+        <div class="avatar-level" id="guest-avatar-level"></div>
         <div class="avatar-label" id="guest-avatar-label">相手</div>
       </div>
     </div>
@@ -1316,7 +1320,7 @@ const els = {};
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
- "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-label",
+ "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "buzz-btn","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
@@ -1371,17 +1375,17 @@ function playAttackSound(){
     osc.stop(now+0.25);
   }catch(e){ /* ignore, audio is a nice-to-have */ }
 }
-// host's avatar visibly gets stronger over the round as attacks land, and
-// keeps climbing forever via the level badge even after the emoji stages run
-// out; guest's avatar settles into a progressively more worn-out face each
-// hit instead of always bouncing back to normal (still just a cosmetic,
-// per-round reaction -- no HP, no defeat text, resets fresh next round)
-const HOST_POWER_STAGES = [
+// both avatars visibly get stronger over the round as their own side
+// answers correctly (symmetric -- getting one right always evolves your own
+// character, win or lose the race). Separately, landing an attack (host
+// correct AND guest incorrect on the same question) plays its own flourish
+// on top of that -- still no HP, no defeat text, resets fresh next round.
+const POWER_STAGES = [
   "🙂","😀","😎","💪","🔥","⚡","🥋","🦸","🐉","🚀",
   "🌟","💫","🌈","👑","🏆","💎","🌠","☄️","🌌","🐲👑"
 ];
-const GUEST_WEAKEN_STAGES = ["😊","🙂","😐","😕","😟","😖","😣","😩","🥺","🥵","😵","🫠"];
-let hostAttacksLanded = 0;
+let hostPowerCount = 0;
+let guestPowerCount = 0;
 
 function setupAvatarLabels(){
   els["host-avatar-label"].textContent = role === "host" ? "あなた" : "相手";
@@ -1389,14 +1393,35 @@ function setupAvatarLabels(){
 }
 
 function resetAvatars(){
-  hostAttacksLanded = 0;
-  els["host-avatar"].textContent = HOST_POWER_STAGES[0];
+  hostPowerCount = 0;
+  guestPowerCount = 0;
+  els["host-avatar"].textContent = POWER_STAGES[0];
   els["host-avatar-level"].textContent = "";
-  els["guest-avatar"].textContent = GUEST_WEAKEN_STAGES[0];
+  els["guest-avatar"].textContent = POWER_STAGES[0];
+  els["guest-avatar-level"].textContent = "";
 }
 
-function currentGuestRestFace(){
-  return GUEST_WEAKEN_STAGES[Math.min(hostAttacksLanded, GUEST_WEAKEN_STAGES.length-1)];
+function stageFor(count){
+  const idx = Math.min(count, POWER_STAGES.length-1);
+  const level = count > (POWER_STAGES.length-1) ? "Lv."+(count-(POWER_STAGES.length-1)+1) : "";
+  return {emoji: POWER_STAGES[idx], level};
+}
+
+function evolveAvatar(boxEl, charEl, levelEl, newCount){
+  const stage = stageFor(newCount);
+  charEl.textContent = stage.emoji;
+  levelEl.textContent = stage.level;
+  boxEl.classList.add("power-up");
+  setTimeout(()=>{ boxEl.classList.remove("power-up"); }, 500);
+}
+
+function evolveHost(){
+  hostPowerCount++;
+  evolveAvatar(els["host-avatar-box"], els["host-avatar"], els["host-avatar-level"], hostPowerCount);
+}
+function evolveGuest(){
+  guestPowerCount++;
+  evolveAvatar(els["guest-avatar-box"], els["guest-avatar"], els["guest-avatar-level"], guestPowerCount);
 }
 
 function triggerAttackEffect(){
@@ -1409,26 +1434,15 @@ function triggerAttackEffect(){
   els["battle-avatars"].appendChild(el);
   setTimeout(()=>{
     el.remove();
-    hostAttacksLanded++;
-
-    // land the hit: guest avatar reacts, then settles into its new
-    // (more worn-out) resting face instead of bouncing back to normal
+    // land the hit: guest avatar reacts briefly, then settles back to
+    // whatever her current look already is (not a separate "weakened" state)
     els["guest-avatar-box"].classList.add("hit");
+    const restFace = els["guest-avatar"].textContent;
     els["guest-avatar"].textContent = "😵";
     setTimeout(()=>{
       els["guest-avatar-box"].classList.remove("hit");
-      els["guest-avatar"].textContent = currentGuestRestFace();
+      els["guest-avatar"].textContent = restFace;
     }, 500);
-
-    // host avatar powers up; once the emoji stages run out, keep climbing
-    // via a level number so it never stops visibly growing
-    const stageIdx = Math.min(hostAttacksLanded, HOST_POWER_STAGES.length-1);
-    els["host-avatar"].textContent = HOST_POWER_STAGES[stageIdx];
-    els["host-avatar-level"].textContent = hostAttacksLanded > (HOST_POWER_STAGES.length-1)
-      ? "Lv."+(hostAttacksLanded - (HOST_POWER_STAGES.length-1) + 1)
-      : "";
-    els["host-avatar-box"].classList.add("power-up");
-    setTimeout(()=>{ els["host-avatar-box"].classList.remove("power-up"); }, 500);
   }, 500);
 }
 
@@ -2879,7 +2893,10 @@ function hostAdvanceAndArm(idx){
   showQuestion(idx, true);
   saveBattleSession();
   clearTimeout(pendingSendTimer);
-  pendingSendTimer = setTimeout(doAdvance, headStartSec*1000);
+  // if neither スキップ nor 進める is tapped in time, treat it the same as a
+  // skip (not a forced advance) -- a kid who spaced out shouldn't get
+  // dropped into a race they weren't ready for
+  pendingSendTimer = setTimeout(performSkip, headStartSec*1000);
 }
 
 // ---- host-only: resend the current question immediately (used when a peer
@@ -2909,7 +2926,7 @@ function doAdvance(){
 }
 els["advance-btn"].addEventListener("click", doAdvance);
 
-els["skip-btn"].addEventListener("click", ()=>{
+function performSkip(){
   clearTimeout(pendingSendTimer);
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
@@ -2927,7 +2944,8 @@ els["skip-btn"].addEventListener("click", ()=>{
   els["battle-a-block"].classList.add("show");
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
-});
+}
+els["skip-btn"].addEventListener("click", performSkip);
 
 els["skip-continue-btn"].addEventListener("click", ()=>{
   els["skip-encourage"].style.display = "none";
@@ -2997,10 +3015,13 @@ function maybeFinishQuestion(){
   if(hostCorrect) scores.host += 1;
   if(guestCorrect) scores.guest += 1;
   updateScoreUI();
-  // one-directional on purpose: the attack flourish is a kid-empowerment
-  // gimmick (host is the kid), so it only fires when the kid got it right
-  // and the parent didn't -- not the other way around, and not just for
-  // getting it right regardless of how the parent did
+  // avatar evolution is symmetric -- each side's character grows whenever
+  // that side got it right, regardless of the other's result
+  if(hostCorrect) evolveHost();
+  if(guestCorrect) evolveGuest();
+  // the attack flourish stays one-directional on top of that (kid-
+  // empowerment gimmick, host is the kid): only when the kid got it right
+  // and the parent didn't, not just for getting it right in general
   if(hostCorrect && !guestCorrect) triggerAttackEffect();
   if(role === "host"){
     els["next-btn"].classList.add("show");
