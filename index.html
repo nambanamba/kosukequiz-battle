@@ -391,6 +391,13 @@
     margin-bottom:12px;
     letter-spacing:.03em;
   }
+  .source-tag{
+    display:block;
+    font-size:11px;
+    color:var(--ink-soft);
+    margin-bottom:12px;
+    margin-top:-6px;
+  }
   .q-id-tag{
     display:inline-block;
     font-size:11px;
@@ -1480,6 +1487,7 @@
 
     <span class="unit-tag" id="calc-unit-tag"></span>
     <span class="q-id-tag" id="calc-q-id"></span>
+    <span class="source-tag" id="calc-source-tag"></span>
     <div class="card">
       <div class="img-wrap" id="calc-img-wrap" style="display:none;">
         <img id="calc-img" src="" alt="資料" />
@@ -1510,6 +1518,7 @@
 
     <span class="unit-tag" id="solo-unit-tag"></span>
     <span class="q-id-tag" id="solo-q-id"></span>
+    <span class="source-tag" id="solo-source-tag"></span>
     <div class="card">
       <div class="img-wrap" id="solo-img-wrap" style="display:none;">
         <img id="solo-img" src="" alt="資料" />
@@ -1608,6 +1617,7 @@
 
     <span class="unit-tag" id="battle-unit-tag"></span>
     <span class="q-id-tag" id="battle-q-id"></span>
+    <span class="source-tag" id="battle-source-tag"></span>
     <div class="card">
       <div class="img-wrap" id="battle-img-wrap" style="display:none;">
         <img id="battle-img" src="" alt="資料" />
@@ -1693,7 +1703,7 @@ const els = {};
  "subject-social","subject-science",
  "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","calc-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
  "calc-setup-back","calc-kai-from","calc-kai-to","calc-kai-clear","calc-count-row","calc-count-custom-row","calc-count-custom-input","calc-setup-error","calc-start-btn","calc-print-problems-btn","calc-print-answers-btn",
- "calc-back","calc-counter","calc-progress-fill","calc-unit-tag","calc-q-id","calc-img-wrap","calc-img","calc-q","calc-a-block","calc-a","calc-sol-label","calc-sol","calc-reveal-btn","calc-next-btn",
+ "calc-back","calc-counter","calc-progress-fill","calc-unit-tag","calc-q-id","calc-source-tag","calc-img-wrap","calc-img","calc-q","calc-a-block","calc-a","calc-sol-label","calc-sol","calc-reveal-btn","calc-next-btn",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
  "count-row","count-custom-row","count-custom-input","review-mix-input","shuffle-toggle","order-toggle","review-mode-toggle",
@@ -1703,13 +1713,13 @@ const els = {};
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
- "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id",
+ "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id","solo-source-tag",
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
- "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","guest-wait-status",
+ "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","battle-source-tag","guest-wait-status",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
@@ -3138,6 +3148,7 @@ function startCalcCard(){
   const d = getQ(idx);
   els["calc-unit-tag"].textContent = d.u;
   els["calc-q-id"].textContent = "No."+d.id;
+  els["calc-source-tag"].textContent = d.note ? "出典："+d.note : "";
   els["calc-q"].textContent = d.q;
   els["calc-a"].textContent = d.a;
   els["calc-sol"].textContent = d.sol || "";
@@ -3187,7 +3198,7 @@ function printProblemHtml(d, no){
 }
 function printAnswerHtml(d, no){
   let html = '<div class="print-q">';
-  html += '<div class="print-q-head">No.'+no+'　'+escapeHtml(d.u)+'</div>';
+  html += '<div class="print-q-head">No.'+no+'　'+escapeHtml(d.u)+(d.note ? '　（'+escapeHtml(d.note)+'）' : '')+'</div>';
   html += '<div class="print-q-text">'+escapeHtml(d.q)+'</div>';
   html += '<div class="print-a-text">こたえ：'+escapeHtml(d.a)+'</div>';
   if(d.sol) html += '<div class="print-sol-text">'+escapeHtml(d.sol)+'</div>';
@@ -3238,6 +3249,7 @@ function startSoloCard(){
   const d = getQ(idx);
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q-id"].textContent = "No."+d.id;
+  els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
   els["solo-q"].textContent = d.q;
   els["solo-a"].textContent = d.a;
   els["solo-view"].style.display = "block";
@@ -3844,6 +3856,7 @@ function showQuestion(idx, hostPrivate){
   els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
   els["battle-unit-tag"].textContent = d.u;
   els["battle-q-id"].textContent = "No."+d.id;
+  els["battle-source-tag"].textContent = d.note ? "出典："+d.note : "";
   els["battle-q"].textContent = d.q;
   els["battle-a"].textContent = d.a;
   els["battle-view"].style.display = "block";
