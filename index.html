@@ -116,6 +116,15 @@
     cursor:pointer;
     -webkit-tap-highlight-color:transparent;
   }
+  .unit-group-check{
+    font-size:18px;
+    line-height:1;
+    color:var(--paper-line);
+    padding:2px;
+  }
+  .unit-group-check.checked{
+    color:var(--navy);
+  }
   .unit-group-label{
     font-size:14px;
     font-weight:700;
@@ -2201,6 +2210,14 @@ function refreshUnitSelection(){
       el.classList.toggle("selected", selectedUnits.has(el.dataset.unit));
     }
   });
+  UNIT_GROUPS.forEach(group=>{
+    const checkEl = document.querySelector('.unit-group-check[data-group-check="'+group.key+'"]');
+    if(!checkEl) return;
+    const groupUnits = allUnits.filter(group.test);
+    const groupAllSelected = groupUnits.length > 0 && groupUnits.every(u => selectedUnits.has(u));
+    checkEl.textContent = groupAllSelected ? "☑" : "☐";
+    checkEl.classList.toggle("checked", groupAllSelected);
+  });
 }
 function refreshCreateButton(){
   const pool = buildPool();
@@ -2219,11 +2236,24 @@ const UNIT_GROUPS = [
   {key:"civics", label:"公民", test:u=>u.startsWith("公民")},
   {key:"history", label:"歴史", test:u=>u.startsWith("第")}
 ];
-function makeUnitGroupHeader(group, count){
+function makeUnitGroupHeader(group, groupUnits, count){
   const div = document.createElement("div");
   div.className = "unit-group-header";
   div.dataset.group = group.key;
-  div.innerHTML = '<span class="unit-group-label">'+escapeHtml(group.label)+'</span><span class="unit-group-count">'+count+'問</span><span class="unit-group-arrow">▸</span>';
+  div.innerHTML = '<span class="unit-group-check" data-group-check="'+group.key+'">☐</span><span class="unit-group-label">'+escapeHtml(group.label)+'</span><span class="unit-group-count">'+count+'問</span><span class="unit-group-arrow">▸</span>';
+  // tapping the checkbox selects/deselects every unit in this group at once
+  // (e.g. "all of 歴史 plus just a couple of 地理" for exam-week study) --
+  // separate from the arrow, which only expands/collapses the list
+  div.querySelector(".unit-group-check").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    const allSelected = groupUnits.length > 0 && groupUnits.every(u => selectedUnits.has(u));
+    if(allSelected) groupUnits.forEach(u => selectedUnits.delete(u));
+    else groupUnits.forEach(u => selectedUnits.add(u));
+    refreshUnitSelection();
+    refreshCreateButton();
+    refreshStatRow();
+    saveSettings();
+  });
   div.addEventListener("click", ()=>{
     const body = els["unit-choices"].querySelector('.unit-group-body[data-group="'+group.key+'"]');
     const opening = body.style.display === "none";
@@ -2241,7 +2271,7 @@ function renderUnitChoices(){
     const groupUnits = allUnits.filter(group.test);
     if(groupUnits.length === 0) return;
     const groupCount = groupUnits.reduce((sum,u)=>sum+unitIndices(u).length, 0);
-    els["unit-choices"].appendChild(makeUnitGroupHeader(group, groupCount));
+    els["unit-choices"].appendChild(makeUnitGroupHeader(group, groupUnits, groupCount));
     const body = document.createElement("div");
     body.className = "unit-group-body choice-grid";
     body.dataset.group = group.key;
