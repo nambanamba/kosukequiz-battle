@@ -1263,6 +1263,8 @@
       <div class="score-box"><div class="who">相手</div><div class="num" id="score-opp">0</div></div>
     </div>
 
+    <div class="status-banner" id="guest-wait-status"></div>
+
     <span class="unit-tag" id="battle-unit-tag"></span>
     <span class="q-id-tag" id="battle-q-id"></span>
     <div class="card">
@@ -1358,7 +1360,7 @@ const els = {};
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
- "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id",
+ "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","guest-wait-status",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
@@ -2667,7 +2669,7 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let startAction, buzzAction, judgeAction, nextAction, endAction;
+let startAction, buzzAction, judgeAction, nextAction, endAction, statusAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
@@ -2698,6 +2700,20 @@ function startCountdown(seconds){
 function stopCountdown(){
   clearInterval(countdownInterval);
   els["think-timer"].style.display = "none";
+}
+
+// ---- guest-only: shows what the host is currently doing (thinking on
+//      question N of Total, or just skipped one) without revealing any
+//      question content ----
+function showGuestWaitStatus(data){
+  const el = els["guest-wait-status"];
+  el.classList.remove("win","lose");
+  el.classList.add("show","info");
+  if(data.type === "skipped"){
+    el.textContent = "相手がこの問題をスキップしました。";
+  }else{
+    el.textContent = "相手が問題を考え中です（"+data.position+" / "+data.total+"問目）";
+  }
 }
 
 function genCode(){
@@ -2737,6 +2753,17 @@ function setupActions(){
   judgeAction = room.makeAction("judge");
   nextAction = room.makeAction("next");
   endAction = room.makeAction("end");
+  statusAction = room.makeAction("status");
+
+  statusAction.onMessage = (data)=>{
+    // host-only info about what it's currently doing, with no question
+    // content in it -- lets the guest see progress/skip without spoiling
+    // the actual question or answer
+    if(role !== "guest") return;
+    showGuestWaitStatus(data);
+    if(data.type === "thinking") startCountdown(data.seconds);
+    else stopCountdown();
+  };
 
   startAction.onMessage = (data)=>{
     if(role !== "guest") return;
@@ -2956,6 +2983,7 @@ function showQuestion(idx, hostPrivate){
   }
   els["skip-encourage"].style.display = "none";
   els["skip-continue-btn"].style.display = "none";
+  els["guest-wait-status"].classList.remove("show","win","lose","info");
   els["status-banner"].classList.remove("show","win","lose","info");
   els["reveal-btn"].style.display = "none";
   els["judge-row"].style.display = "none";
@@ -2983,6 +3011,9 @@ function hostAdvanceAndArm(idx){
   // dropped into a race they weren't ready for
   pendingSendTimer = setTimeout(performSkip, headStartSec*1000);
   startCountdown(headStartSec);
+  if(room){
+    try{ statusAction.send({type: "thinking", position: idx+1, total: questionIds.length, seconds: headStartSec}); }catch(e){}
+  }
 }
 
 // ---- host-only: resend the current question immediately (used when a peer
@@ -3032,6 +3063,9 @@ function performSkip(){
   els["battle-a-block"].classList.add("show");
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
+  if(room){
+    try{ statusAction.send({type: "skipped"}); }catch(e){}
+  }
 }
 els["skip-btn"].addEventListener("click", performSkip);
 
