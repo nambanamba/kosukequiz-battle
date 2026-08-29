@@ -1002,13 +1002,6 @@
     cursor:pointer;
     -webkit-tap-highlight-color:transparent;
   }
-  .edit-link.danger{
-    color:var(--ng);
-  }
-  .stat-clear-row{
-    text-align:center;
-    margin-top:6px;
-  }
   .revert-link{
     font-size:11.5px;
     color:var(--ink-soft);
@@ -1171,7 +1164,6 @@
       <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
       <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
     </div>
-    <div class="stat-clear-row"><span class="edit-link danger" id="stat-clear-link">正誤の記録をぜんぶクリアする</span></div>
 
     <div id="home-setup">
       <button class="btn-secondary" id="resume-solo-btn" style="display:none;">前回の続きから再開する（一人）</button>
@@ -1335,6 +1327,7 @@
       </div>
       <div class="back-link" id="selection-clear" style="margin-top:6px;">選択をクリア</div>
     </div>
+    <div class="back-link" id="stat-clear-link">正誤の記録をぜんぶクリアする</div>
   </section>
 
   <!-- SOLO QUIZ SCREEN -->
