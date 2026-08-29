@@ -1002,6 +1002,13 @@
     cursor:pointer;
     -webkit-tap-highlight-color:transparent;
   }
+  .edit-link.danger{
+    color:var(--ng);
+  }
+  .stat-clear-row{
+    text-align:center;
+    margin-top:6px;
+  }
   .revert-link{
     font-size:11.5px;
     color:var(--ink-soft);
@@ -1164,6 +1171,7 @@
       <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
       <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
     </div>
+    <div class="stat-clear-row"><span class="edit-link danger" id="stat-clear-link">正誤の記録をぜんぶクリアする</span></div>
 
     <div id="home-setup">
       <button class="btn-secondary" id="resume-solo-btn" style="display:none;">前回の続きから再開する（一人）</button>
@@ -1521,7 +1529,7 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","resume-guest-btn","export-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","resume-guest-btn","export-link","import-link","import-file","export-edits-link",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
  "count-row","count-custom-row","count-custom-input","shuffle-toggle","order-toggle","review-mode-toggle",
@@ -1953,6 +1961,14 @@ function refreshStatRow(){
   els["stat-mastered"].textContent = masteredCount;
   els["stat-weak"].textContent = weakCount;
 }
+
+els["stat-clear-link"].addEventListener("click", ()=>{
+  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（この操作は元に戻せません）")) return;
+  stats = {};
+  saveStats();
+  refreshStatRow();
+  refreshCreateButton();
+});
 
 function renderHome(){
   refreshStatRow();
