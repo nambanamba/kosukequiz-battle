@@ -407,6 +407,27 @@
     -webkit-tap-highlight-color:transparent;
   }
   .skip-btn:active{background:#fbf2e2;}
+  .think-timer{
+    margin-top:14px;
+  }
+  .think-timer-bar{
+    height:7px;
+    background:var(--paper-line);
+    border-radius:4px;
+    overflow:hidden;
+  }
+  .think-timer-fill{
+    height:100%;
+    background:var(--gold);
+    width:100%;
+  }
+  .think-timer-text{
+    text-align:center;
+    font-size:12px;
+    font-weight:700;
+    color:var(--ink-soft);
+    margin-top:5px;
+  }
 
   .battle-avatars{
     position:relative;
@@ -1256,7 +1277,11 @@
     </div>
 
     <button class="buzz-btn" id="buzz-btn">わかった！</button>
-    <button class="reveal-btn" id="advance-btn" style="display:none;">進める</button>
+    <div class="think-timer" id="think-timer" style="display:none;">
+      <div class="think-timer-bar"><div class="think-timer-fill" id="think-timer-fill"></div></div>
+      <div class="think-timer-text" id="think-timer-text"></div>
+    </div>
+    <button class="reveal-btn" id="advance-btn" style="display:none;">問題を送る</button>
     <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
     <div class="skip-encourage" id="skip-encourage" style="display:none;">あとでもう一度出てくるよ。がんばって！</div>
     <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
@@ -1323,7 +1348,7 @@ const els = {};
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
- "buzz-btn","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
+ "buzz-btn","think-timer","think-timer-fill","think-timer-text","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -2628,6 +2653,26 @@ let hostSkippedIds = new Set(); // host-only: question ids the host has skipped 
 let myMissesThisRound = []; // this device's own wrong answers this round, for "前回まちがえた問題"
 let gameStarted = false; // host-only: distinguishes the first peer join (start at 0) from a later reconnect (resync current question)
 let pendingSendTimer = null; // host-only: auto-advances a question if 進める/スキップ isn't tapped in time
+let countdownInterval = null; // host-only: drives the visible think-time countdown
+
+function startCountdown(seconds){
+  clearInterval(countdownInterval);
+  const startedAt = Date.now();
+  const durationMs = seconds*1000;
+  els["think-timer"].style.display = "block";
+  els["think-timer-fill"].style.width = "100%";
+  els["think-timer-text"].textContent = "のこり "+seconds+"秒";
+  countdownInterval = setInterval(()=>{
+    const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
+    els["think-timer-fill"].style.width = (remainingMs/durationMs*100)+"%";
+    els["think-timer-text"].textContent = "のこり "+Math.ceil(remainingMs/1000)+"秒";
+    if(remainingMs <= 0) clearInterval(countdownInterval);
+  }, 100);
+}
+function stopCountdown(){
+  clearInterval(countdownInterval);
+  els["think-timer"].style.display = "none";
+}
 
 function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
@@ -2649,6 +2694,7 @@ function leaveRoom(){
     try{ room.leave(); }catch(e){}
   }
   clearTimeout(pendingSendTimer);
+  clearInterval(countdownInterval);
   room = null;
   role = null;
   questionIds = [];
@@ -2835,6 +2881,7 @@ els["join-btn"].addEventListener("click", ()=>{
 
 // ---- battle ----
 function showQuestion(idx, hostPrivate){
+  stopCountdown();
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
   buzzed = false;
@@ -2897,6 +2944,7 @@ function hostAdvanceAndArm(idx){
   // skip (not a forced advance) -- a kid who spaced out shouldn't get
   // dropped into a race they weren't ready for
   pendingSendTimer = setTimeout(performSkip, headStartSec*1000);
+  startCountdown(headStartSec);
 }
 
 // ---- host-only: resend the current question immediately (used when a peer
@@ -2914,6 +2962,7 @@ function hostResyncQuestion(idx){
 
 function doAdvance(){
   clearTimeout(pendingSendTimer);
+  stopCountdown();
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   els["buzz-btn"].style.display = "block";
@@ -2928,6 +2977,7 @@ els["advance-btn"].addEventListener("click", doAdvance);
 
 function performSkip(){
   clearTimeout(pendingSendTimer);
+  stopCountdown();
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   // move this question to the end of the round instead of dropping it, so it
