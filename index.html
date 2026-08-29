@@ -3141,12 +3141,20 @@ function setupActions(){
   startAction.onMessage = (data)=>{
     if(role !== "guest") return;
     questionIds = data.ids;
-    scores = {host:0, guest:0};
     myMissesThisRound = [];
     resetAvatars();
     setupAvatarLabels();
     showScreen("screen-battle");
-    showQuestion(0);
+    if(data.resync){
+      // reconnecting mid-game -- keep the score the host just sent us and
+      // resync to whatever question they're currently on, instead of
+      // wiping the score and restarting from question 0
+      scores = data.scores || {host:0, guest:0};
+      showQuestion(data.index);
+    }else{
+      scores = {host:0, guest:0};
+      showQuestion(0);
+    }
   };
 
   judgeAction.onMessage = (data)=>{
@@ -3196,7 +3204,7 @@ function setupActions(){
       // (we're on the result screen), a peer blipping in and out shouldn't
       // re-open a question that's already been scored
       showScreen("screen-battle");
-      hostResyncQuestion(currentIndex);
+      hostResyncForReconnect(currentIndex);
     }
   };
 
@@ -3406,10 +3414,10 @@ function hostAdvanceAndArm(idx){
   }
 }
 
-// ---- host-only: resend the current question immediately (used when a peer
-//      (re)connects mid-game, or when headStartSec is 0) -- the 進める
-//      decision for this question was already made, so skip straight to the
-//      buzzing phase ----
+// ---- host-only: resend the current question immediately when headStartSec
+//      is 0 (no think-time delay) -- the guest's questionIds is already in
+//      sync from earlier in this same round, so a lightweight {index,id}
+//      patch is enough ----
 function hostResyncQuestion(idx){
   if(idx >= questionIds.length){ endGame(); return; }
   showQuestion(idx, false);
@@ -3417,6 +3425,20 @@ function hostResyncQuestion(idx){
   if(room){
     if(idx === 0) startAction.send({ids: questionIds});
     else nextAction.send({index: idx, id: questionIds[idx]});
+  }
+}
+
+// ---- host-only: resync a peer that just (re)joined mid-game -- unlike
+//      hostResyncQuestion() above, we can't assume the peer already has a
+//      valid questionIds array (they may be reconnecting fresh, e.g. after
+//      a reload or via 前回の対戦を再開する), so always resend the full
+//      array plus the current score, not just a delta patch ----
+function hostResyncForReconnect(idx){
+  if(idx >= questionIds.length){ endGame(); return; }
+  showQuestion(idx, false);
+  saveBattleSession();
+  if(room){
+    startAction.send({ids: questionIds, index: idx, resync: true, scores: scores});
   }
 }
 
