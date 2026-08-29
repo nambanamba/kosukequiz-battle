@@ -3221,10 +3221,13 @@ function setupActions(){
   statusAction = room.makeAction("status");
 
   statusAction.onMessage = (data)=>{
-    // host-only info about what it's currently doing, with no question
-    // content in it -- lets the guest see progress/skip without spoiling
-    // the actual question or answer
+    // host-only info about what it's currently doing (question text, not
+    // the answer) -- lets the guest follow along without spoiling the
+    // answer. this can arrive before the first startAction (e.g. while the
+    // host is still deciding on question 1), so make sure the guest is
+    // actually on screen-battle to see it instead of sitting on 接続待ち
     if(role !== "guest") return;
+    if(currentScreenName !== "screen-battle") showScreen("screen-battle");
     showGuestWaitStatus(data);
     if(data.type === "thinking") startCountdown(data.seconds);
     else stopCountdown();
