@@ -430,31 +430,57 @@
     width:100%;
   }
 
-  .round-countdown{
-    width:92px;
-    height:92px;
-    margin:14px auto 4px;
-    border-radius:50%;
-    background:conic-gradient(var(--gold) calc(var(--pct,100)*1%), var(--paper-line) 0);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    transition:background 0.1s linear;
+  .rocket-countdown{
+    width:100%;
+    margin:16px 0 6px;
   }
-  .round-countdown.urgent{
-    background:conic-gradient(var(--ng) calc(var(--pct,100)*1%), var(--paper-line) 0);
+  .rocket-countdown-track{
+    position:relative;
+    width:100%;
+    height:30px;
+    border-radius:15px;
+    background-color:#fff;
+    background-image:repeating-linear-gradient(90deg, var(--paper-line) 0 8px, transparent 8px 18px);
+    background-position:center;
+    border:1.5px dashed var(--paper-line);
+    overflow:visible;
   }
-  .round-countdown-inner{
-    width:72px;
-    height:72px;
-    border-radius:50%;
-    background:var(--paper);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:34px;
-    font-weight:800;
-    color:var(--navy);
+  .rocket-countdown-trail{
+    position:absolute;
+    top:50%;
+    left:0;
+    height:7px;
+    transform:translateY(-50%);
+    width:0%;
+    border-radius:4px;
+    background:linear-gradient(90deg, transparent, var(--gold));
+  }
+  .rocket-countdown.urgent .rocket-countdown-trail{
+    background:linear-gradient(90deg, transparent, var(--ng));
+  }
+  .rocket-countdown-ship{
+    position:absolute;
+    top:50%;
+    left:0%;
+    transform:translate(-50%,-50%);
+    font-size:26px;
+    line-height:1;
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+  }
+  .rocket-countdown.urgent .rocket-countdown-ship{
+    animation:rocketShake 0.15s infinite;
+  }
+  @keyframes rocketShake{
+    0%,100%{transform:translate(-50%,-50%) rotate(0deg);}
+    25%{transform:translate(-50%,-50%) rotate(-10deg);}
+    75%{transform:translate(-50%,-50%) rotate(10deg);}
+  }
+  .rocket-countdown.launch .rocket-countdown-ship{
+    animation:rocketLaunch 0.26s ease-in forwards;
+  }
+  @keyframes rocketLaunch{
+    0%{transform:translate(-50%,-50%) scale(1); opacity:1;}
+    100%{transform:translate(-50%,-170%) scale(1.7); opacity:0;}
   }
 
   .battle-avatars{
@@ -1320,19 +1346,28 @@
     <div class="skip-encourage" id="skip-encourage" style="display:none;">あとでもう一度出てくるよ。がんばって！</div>
     <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
     <div class="status-banner" id="status-banner"></div>
-    <div class="round-countdown" id="answer-countdown" style="display:none;">
-      <div class="round-countdown-inner" id="answer-countdown-num">8</div>
+    <div class="rocket-countdown" id="answer-countdown" style="display:none;">
+      <div class="rocket-countdown-track">
+        <div class="rocket-countdown-trail" id="answer-countdown-trail"></div>
+        <div class="rocket-countdown-ship" id="answer-countdown-ship">💬</div>
+      </div>
     </div>
-    <div class="round-countdown" id="judge-countdown" style="display:none;">
-      <div class="round-countdown-inner" id="judge-countdown-num">10</div>
+    <div class="rocket-countdown" id="judge-countdown" style="display:none;">
+      <div class="rocket-countdown-track">
+        <div class="rocket-countdown-trail" id="judge-countdown-trail"></div>
+        <div class="rocket-countdown-ship" id="judge-countdown-ship">👀</div>
+      </div>
     </div>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng" id="judge-ng">✕ 相手はまちがい</button>
       <button class="judge-btn ok" id="judge-ok">〇 相手はせいかい</button>
     </div>
     <div class="status-banner" id="my-result" style="display:none;"></div>
-    <div class="round-countdown" id="next-countdown" style="display:none;">
-      <div class="round-countdown-inner" id="next-countdown-num">8</div>
+    <div class="rocket-countdown" id="next-countdown" style="display:none;">
+      <div class="rocket-countdown-track">
+        <div class="rocket-countdown-trail" id="next-countdown-trail"></div>
+        <div class="rocket-countdown-ship" id="next-countdown-ship">🚀</div>
+      </div>
     </div>
     <button class="next-btn" id="next-btn">つぎの問題へ</button>
   </section>
@@ -1391,7 +1426,10 @@ const els = {};
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
- "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","answer-countdown","answer-countdown-num","judge-countdown","judge-countdown-num","judge-row","judge-ng","judge-ok","my-result","next-countdown","next-countdown-num","next-btn",
+ "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
+ "answer-countdown","answer-countdown-trail","answer-countdown-ship",
+ "judge-countdown","judge-countdown-trail","judge-countdown-ship","judge-row","judge-ng","judge-ok","my-result",
+ "next-countdown","next-countdown-trail","next-countdown-ship","next-btn",
  "result-score","result-sub","result-retry-battle-btn","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -2726,103 +2764,84 @@ function stopCountdown(){
   els["think-timer"].style.display = "none";
 }
 
-// ---- big round countdown shown during 〇✕ judging -- the judge (whichever
-//      side didn't just answer out loud) has 10 seconds to tap a verdict; if
-//      time runs out, default to "correct" so a slow-to-press kid never gets
-//      penalized for someone else's hesitation ----
-let judgeCountdownInterval = null;
-let judgeCountdownTimeout = null;
-function startJudgeCountdown(){
-  clearInterval(judgeCountdownInterval);
-  clearTimeout(judgeCountdownTimeout);
-  const seconds = 10;
+// ---- shared "rocket" countdown widget used for the three battle timing
+//      cues (answering out loud, 〇✕ judging, moving to the next question)
+//      -- a ship slides across a runway and launches off when time is up,
+//      instead of a plain numeric timer, so seeing it three times a round
+//      reads as a little game moment rather than clinical countdown UI ----
+const rocketCountdownState = {};
+function startRocketCountdown(key, seconds, onTimeout){
+  const state = rocketCountdownState[key] || (rocketCountdownState[key] = {});
+  clearInterval(state.interval);
+  clearTimeout(state.timeout);
+  clearTimeout(state.launchTimeout);
   const startedAt = Date.now();
   const durationMs = seconds*1000;
-  els["judge-countdown"].style.display = "flex";
-  els["judge-countdown"].classList.remove("urgent");
-  els["judge-countdown"].style.setProperty("--pct", "100");
-  els["judge-countdown-num"].textContent = seconds;
-  judgeCountdownInterval = setInterval(()=>{
+  const wrap = els[key];
+  const trail = els[key+"-trail"];
+  const ship = els[key+"-ship"];
+  wrap.style.display = "block";
+  wrap.classList.remove("urgent","launch");
+  trail.style.width = "0%";
+  ship.style.left = "0%";
+  state.interval = setInterval(()=>{
     const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
-    const remainingSec = Math.ceil(remainingMs/1000);
-    els["judge-countdown"].style.setProperty("--pct", remainingMs/durationMs*100);
-    els["judge-countdown-num"].textContent = remainingSec;
-    els["judge-countdown"].classList.toggle("urgent", remainingSec <= 3);
-    if(remainingMs <= 0) clearInterval(judgeCountdownInterval);
+    const pct = 100 - (remainingMs/durationMs*100);
+    trail.style.width = pct+"%";
+    ship.style.left = pct+"%";
+    wrap.classList.toggle("urgent", remainingMs <= Math.min(2000, durationMs*0.25));
+    if(remainingMs <= 0) clearInterval(state.interval);
   }, 100);
-  judgeCountdownTimeout = setTimeout(()=>{
-    if(myVerdictOfOpponent === null) judgeOpponent(true);
+  state.timeout = setTimeout(()=>{
+    wrap.classList.add("launch");
+    state.launchTimeout = setTimeout(onTimeout, 260); // let the launch flourish play before the phase actually changes
   }, durationMs);
 }
-function stopJudgeCountdown(){
-  clearInterval(judgeCountdownInterval);
-  clearTimeout(judgeCountdownTimeout);
-  els["judge-countdown"].style.display = "none";
+function stopRocketCountdown(key){
+  const state = rocketCountdownState[key];
+  if(state){
+    clearInterval(state.interval);
+    clearTimeout(state.timeout);
+    clearTimeout(state.launchTimeout);
+  }
+  els[key].style.display = "none";
+  els[key].classList.remove("urgent","launch");
 }
 
-// ---- big round countdown shown while both sides say their answer out loud
-//      -- no button to tap, the answer reveals itself automatically once
-//      time is up (both sides finish speaking at roughly the same moment
-//      anyway, so a manual "show the answer" tap was just an extra step) ----
+// ---- 〇✕ judging: the judge (whichever side didn't just answer out loud)
+//      has 10 seconds to tap a verdict; if time runs out, default to
+//      "correct" so a slow-to-press kid never gets penalized for someone
+//      else's hesitation ----
+function startJudgeCountdown(){
+  startRocketCountdown("judge-countdown", 10, ()=>{
+    if(myVerdictOfOpponent === null) judgeOpponent(true);
+  });
+}
+function stopJudgeCountdown(){
+  stopRocketCountdown("judge-countdown");
+}
+
+// ---- both sides say their answer out loud -- no button to tap, the answer
+//      reveals itself automatically once time is up (both sides finish
+//      speaking at roughly the same moment anyway, so a manual "show the
+//      answer" tap was just an extra step) ----
 const ANSWER_TIME_SEC = 8;
-let answerCountdownInterval = null;
-let answerCountdownTimeout = null;
 function startAnswerCountdown(){
-  clearInterval(answerCountdownInterval);
-  clearTimeout(answerCountdownTimeout);
-  const seconds = ANSWER_TIME_SEC;
-  const startedAt = Date.now();
-  const durationMs = seconds*1000;
-  els["answer-countdown"].style.display = "flex";
-  els["answer-countdown"].classList.remove("urgent");
-  els["answer-countdown"].style.setProperty("--pct", "100");
-  els["answer-countdown-num"].textContent = seconds;
-  answerCountdownInterval = setInterval(()=>{
-    const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
-    const remainingSec = Math.ceil(remainingMs/1000);
-    els["answer-countdown"].style.setProperty("--pct", remainingMs/durationMs*100);
-    els["answer-countdown-num"].textContent = remainingSec;
-    els["answer-countdown"].classList.toggle("urgent", remainingSec <= 2);
-    if(remainingMs <= 0) clearInterval(answerCountdownInterval);
-  }, 100);
-  answerCountdownTimeout = setTimeout(revealAnswer, durationMs);
+  startRocketCountdown("answer-countdown", ANSWER_TIME_SEC, revealAnswer);
 }
 function stopAnswerCountdown(){
-  clearInterval(answerCountdownInterval);
-  clearTimeout(answerCountdownTimeout);
-  els["answer-countdown"].style.display = "none";
+  stopRocketCountdown("answer-countdown");
 }
 
-// ---- host-only: big round countdown shown alongside 次の問題へ once a
-//      question is fully scored -- if the host doesn't tap it, the game
-//      keeps moving on its own instead of waiting forever ----
+// ---- host-only: shown alongside 次の問題へ once a question is fully
+//      scored -- if the host doesn't tap it, the game keeps moving on its
+//      own instead of waiting forever ----
 const NEXT_TIME_SEC = 8;
-let nextCountdownInterval = null;
-let nextCountdownTimeout = null;
 function startNextCountdown(){
-  clearInterval(nextCountdownInterval);
-  clearTimeout(nextCountdownTimeout);
-  const seconds = NEXT_TIME_SEC;
-  const startedAt = Date.now();
-  const durationMs = seconds*1000;
-  els["next-countdown"].style.display = "flex";
-  els["next-countdown"].classList.remove("urgent");
-  els["next-countdown"].style.setProperty("--pct", "100");
-  els["next-countdown-num"].textContent = seconds;
-  nextCountdownInterval = setInterval(()=>{
-    const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
-    const remainingSec = Math.ceil(remainingMs/1000);
-    els["next-countdown"].style.setProperty("--pct", remainingMs/durationMs*100);
-    els["next-countdown-num"].textContent = remainingSec;
-    els["next-countdown"].classList.toggle("urgent", remainingSec <= 2);
-    if(remainingMs <= 0) clearInterval(nextCountdownInterval);
-  }, 100);
-  nextCountdownTimeout = setTimeout(goToNextQuestion, durationMs);
+  startRocketCountdown("next-countdown", NEXT_TIME_SEC, goToNextQuestion);
 }
 function stopNextCountdown(){
-  clearInterval(nextCountdownInterval);
-  clearTimeout(nextCountdownTimeout);
-  els["next-countdown"].style.display = "none";
+  stopRocketCountdown("next-countdown");
 }
 
 // ---- guest-only: shows what the host is currently doing (thinking on
@@ -2860,12 +2879,9 @@ function leaveRoom(){
   }
   clearTimeout(pendingSendTimer);
   clearInterval(countdownInterval);
-  clearInterval(judgeCountdownInterval);
-  clearTimeout(judgeCountdownTimeout);
-  clearInterval(answerCountdownInterval);
-  clearTimeout(answerCountdownTimeout);
-  clearInterval(nextCountdownInterval);
-  clearTimeout(nextCountdownTimeout);
+  stopJudgeCountdown();
+  stopAnswerCountdown();
+  stopNextCountdown();
   room = null;
   role = null;
   questionIds = [];
