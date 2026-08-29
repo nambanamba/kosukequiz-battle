@@ -3195,12 +3195,15 @@ function setupActions(){
     // the sender judged MY answer, so this is my own result to record.
     // if I (the host) skipped this question earlier in this round, I already
     // saw the answer, so a correct answer here doesn't reflect real recall --
-    // record it as wrong so it keeps coming up in future practice.
+    // record it as wrong in the persistent 苦手 stats so it keeps coming up
+    // in future practice. but for THIS round's "まちがえた問題をもう一度"
+    // list, go by what actually happened just now -- if it was really
+    // answered correctly, it shouldn't show up as something to retry
     const qid = questionIds[currentIndex];
     const forcedWrong = role === "host" && hostSkippedIds.has(qid);
     const finalCorrect = forcedWrong ? false : data.correct;
     recordResult(qid, finalCorrect);
-    if(!finalCorrect) myMissesThisRound.push(qid);
+    if(!data.correct) myMissesThisRound.push(qid);
     updateMyResultUI(forcedWrong);
     maybeFinishQuestion();
   };
