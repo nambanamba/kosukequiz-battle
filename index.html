@@ -324,6 +324,14 @@
     margin-bottom:12px;
     letter-spacing:.03em;
   }
+  .q-id-tag{
+    display:inline-block;
+    font-size:11px;
+    font-weight:700;
+    color:var(--ink-soft);
+    margin-left:8px;
+    margin-bottom:12px;
+  }
   .card{
     background:#fff;
     border-radius:16px;
@@ -1021,6 +1029,7 @@
     <div id="home-setup">
       <button class="btn-secondary" id="resume-solo-btn" style="display:none;">前回の続きから再開する（一人）</button>
       <button class="btn-secondary" id="resume-battle-btn" style="display:none; margin-top:10px;">前回の対戦を再開する（ホストとして）</button>
+      <button class="btn-secondary" id="resume-guest-btn" style="display:none; margin-top:10px;">前回の部屋に参加する（ゲストとして）</button>
 
       <div class="section-title">単元をえらぶ（複数選択できます）</div>
       <div class="choice-grid" id="unit-choices"></div>
@@ -1159,6 +1168,7 @@
     <div class="progress-bar"><div class="progress-fill" id="solo-progress-fill"></div></div>
 
     <span class="unit-tag" id="solo-unit-tag"></span>
+    <span class="q-id-tag" id="solo-q-id"></span>
     <div class="card">
       <div class="img-wrap" id="solo-img-wrap" style="display:none;">
         <img id="solo-img" src="" alt="資料" />
@@ -1229,7 +1239,10 @@
   <!-- BATTLE SCREEN -->
   <section id="screen-battle" class="screen">
     <div class="quiz-head">
-      <div class="back" id="battle-end-btn">✕ おわる</div>
+      <div>
+        <span class="back" id="battle-pause-btn">⏸ 中断</span>
+        <span class="back" id="battle-end-btn" style="margin-left:12px;">✕ おわる</span>
+      </div>
       <div class="counter" id="battle-counter">1 / 10</div>
     </div>
     <div class="battle-avatars" id="battle-avatars">
@@ -1251,6 +1264,7 @@
     </div>
 
     <span class="unit-tag" id="battle-unit-tag"></span>
+    <span class="q-id-tag" id="battle-q-id"></span>
     <div class="card">
       <div class="img-wrap" id="battle-img-wrap" style="display:none;">
         <img id="battle-img" src="" alt="資料" />
@@ -1328,7 +1342,7 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","resume-guest-btn","export-link","import-link","import-file","export-edits-link",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
  "count-row","shuffle-toggle","order-toggle","review-mode-toggle",
@@ -1338,13 +1352,13 @@ const els = {};
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
- "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag",
+ "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id",
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
- "battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag",
+ "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
@@ -1733,6 +1747,16 @@ function refreshResumeBattleButton(){
   }
 }
 
+function refreshResumeGuestButton(){
+  const code = loadLastCode();
+  if(code){
+    els["resume-guest-btn"].style.display = "block";
+    els["resume-guest-btn"].textContent = "前回の部屋に参加する（ゲストとして・コード "+code+"）";
+  }else{
+    els["resume-guest-btn"].style.display = "none";
+  }
+}
+
 function refreshStatRow(){
   let total = 0, masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
@@ -1751,6 +1775,7 @@ function renderHome(){
   refreshLastMissButton();
   refreshResumeSoloButton();
   refreshResumeBattleButton();
+  refreshResumeGuestButton();
 }
 
 function escapeHtml(s){
@@ -2476,6 +2501,7 @@ function startSoloCard(){
   const idx = quizQueue[quizPos];
   const d = getQ(idx);
   els["solo-unit-tag"].textContent = d.u;
+  els["solo-q-id"].textContent = "No."+d.id;
   els["solo-q"].textContent = d.q;
   els["solo-a"].textContent = d.a;
   els["solo-view"].style.display = "block";
@@ -2856,17 +2882,12 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
 });
 
 // ---- join room (guest) ----
-els["join-btn"].addEventListener("click", ()=>{
-  const code = els["join-code-input"].value.trim();
-  if(!/^\d{4}$/.test(code)){
-    els["join-error"].textContent = "4桁のコードを入力してください。";
-    els["join-error"].classList.add("show");
-    return;
-  }
+function joinRoomAsGuest(code){
   role = "guest";
   els["join-setup"].style.display = "none";
   els["join-waiting"].style.display = "block";
   els["join-error"].classList.remove("show");
+  showScreen("screen-join");
 
   try{
     room = joinRoom({appId: APP_ID}, code);
@@ -2877,6 +2898,22 @@ els["join-btn"].addEventListener("click", ()=>{
     els["join-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\nコードを確認してもう一度お試しください。";
     els["join-error"].classList.add("show");
   }
+}
+
+els["join-btn"].addEventListener("click", ()=>{
+  const code = els["join-code-input"].value.trim();
+  if(!/^\d{4}$/.test(code)){
+    els["join-error"].textContent = "4桁のコードを入力してください。";
+    els["join-error"].classList.add("show");
+    return;
+  }
+  joinRoomAsGuest(code);
+});
+
+els["resume-guest-btn"].addEventListener("click", ()=>{
+  const code = loadLastCode();
+  if(!code) return;
+  joinRoomAsGuest(code);
 });
 
 // ---- battle ----
@@ -2892,6 +2929,7 @@ function showQuestion(idx, hostPrivate){
   const d = getQById(questionIds[idx]);
   els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
   els["battle-unit-tag"].textContent = d.u;
+  els["battle-q-id"].textContent = "No."+d.id;
   els["battle-q"].textContent = d.q;
   els["battle-a"].textContent = d.a;
   els["battle-view"].style.display = "block";
@@ -3083,6 +3121,13 @@ els["battle-end-btn"].addEventListener("click", ()=>{
   if(!confirm("対戦を終えてもよいですか？")) return;
   try{ endAction.send({}); }catch(e){}
   endGame();
+});
+
+els["battle-pause-btn"].addEventListener("click", ()=>{
+  if(!confirm("対戦を中断してホーム画面にもどりますか？（あとで続きから再開できます）")) return;
+  leaveRoom();
+  renderHome();
+  showScreen("screen-home");
 });
 
 els["next-btn"].addEventListener("click", ()=>{
