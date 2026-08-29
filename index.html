@@ -1318,6 +1318,7 @@
       <div class="sub" id="result-sub">相手：0問正解</div>
     </div>
     <div class="result-actions">
+      <button class="btn-secondary" id="result-retry-battle-btn" style="display:none;">まちがえた問題だけもう一勝負</button>
       <button class="start-btn" id="result-home-btn">はじめの画面にもどる</button>
     </div>
   </section>
@@ -1365,7 +1366,7 @@ const els = {};
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "buzz-btn","think-timer","think-timer-fill","think-timer-text","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
- "result-score","result-sub","result-home-btn",
+ "result-score","result-sub","result-retry-battle-btn","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
 
@@ -3188,8 +3189,31 @@ function endGame(){
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
   saveLastMiss(myMissesThisRound);
+  // only the host can start a new round (host is the questionIds authority),
+  // and only if the room connection with the guest is still alive
+  if(role === "host" && room && myMissesThisRound.length > 0){
+    els["result-retry-battle-btn"].style.display = "block";
+    els["result-retry-battle-btn"].textContent = "まちがえた問題だけもう一勝負（"+myMissesThisRound.length+"問）";
+  }else{
+    els["result-retry-battle-btn"].style.display = "none";
+  }
   showScreen("screen-result");
 }
+
+els["result-retry-battle-btn"].addEventListener("click", ()=>{
+  if(role !== "host" || !room) return;
+  let ids = myMissesThisRound.slice();
+  if(ids.length === 0) return;
+  if(currentShuffle) ids = shuffleArray(ids);
+  questionIds = ids;
+  hostSkippedIds = new Set();
+  scores = {host:0, guest:0};
+  myMissesThisRound = [];
+  resetAvatars();
+  setupAvatarLabels();
+  showScreen("screen-battle");
+  hostAdvanceAndArm(0);
+});
 
 // ---- image lightbox (tap to open, then pinch/drag/double-tap/+-buttons to zoom) ----
 let openLightbox = function(){};
