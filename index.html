@@ -1443,6 +1443,7 @@
     <div class="cheese-countdown" id="answer-countdown" style="display:none;">
       <div class="cheese-countdown-track" id="answer-countdown-track"></div>
     </div>
+    <button class="reveal-btn" id="answer-reveal-btn" style="display:none;">答えを見る</button>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng fill-btn" id="judge-ng" data-label="✕ 相手はまちがい"><span class="fill-label">✕ 相手はまちがい</span></button>
       <button class="judge-btn ok fill-btn" id="judge-ok" data-label="〇 相手はせいかい"><span class="fill-label">〇 相手はせいかい</span></button>
@@ -1507,7 +1508,7 @@ const els = {};
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
- "answer-countdown","answer-countdown-track",
+ "answer-countdown","answer-countdown-track","answer-reveal-btn",
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
  "next-btn",
  "result-score","result-sub","result-retry-battle-btn","result-home-btn",
@@ -2920,6 +2921,7 @@ function startAnswerCountdown(){
   pieces.forEach(p=>p.classList.remove("eaten"));
   mouse.style.left = "0%";
   els["answer-countdown"].style.display = "block";
+  els["answer-reveal-btn"].style.display = "block";
   let eaten = 0;
   const stepMs = (answerTimeSec*1000)/CHEESE_COUNT;
   cheeseInterval = setInterval(()=>{
@@ -2935,7 +2937,9 @@ function stopAnswerCountdown(){
   clearInterval(cheeseInterval);
   clearTimeout(cheeseTimeout);
   els["answer-countdown"].style.display = "none";
+  els["answer-reveal-btn"].style.display = "none";
 }
+els["answer-reveal-btn"].addEventListener("click", revealAnswer);
 
 // ---- shared "fill" countdown for 〇✕ judging and 次の問題へ -- the
 //      button's own color sweeps in from the right as time passes, and
