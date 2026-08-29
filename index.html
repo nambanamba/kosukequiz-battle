@@ -429,13 +429,6 @@
     background:var(--gold);
     width:100%;
   }
-  .think-timer-text{
-    text-align:center;
-    font-size:12px;
-    font-weight:700;
-    color:var(--ink-soft);
-    margin-top:5px;
-  }
 
   .battle-avatars{
     position:relative;
@@ -1295,7 +1288,6 @@
     <button class="buzz-btn" id="buzz-btn">わかった！</button>
     <div class="think-timer" id="think-timer" style="display:none;">
       <div class="think-timer-bar"><div class="think-timer-fill" id="think-timer-fill"></div></div>
-      <div class="think-timer-text" id="think-timer-text"></div>
     </div>
     <button class="reveal-btn" id="advance-btn" style="display:none;">問題を送る</button>
     <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
@@ -1365,7 +1357,7 @@ const els = {};
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
- "buzz-btn","think-timer","think-timer-fill","think-timer-text","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
+ "buzz-btn","think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-retry-battle-btn","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -2690,11 +2682,9 @@ function startCountdown(seconds){
   const durationMs = seconds*1000;
   els["think-timer"].style.display = "block";
   els["think-timer-fill"].style.width = "100%";
-  els["think-timer-text"].textContent = "のこり "+seconds+"秒";
   countdownInterval = setInterval(()=>{
     const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
     els["think-timer-fill"].style.width = (remainingMs/durationMs*100)+"%";
-    els["think-timer-text"].textContent = "のこり "+Math.ceil(remainingMs/1000)+"秒";
     if(remainingMs <= 0) clearInterval(countdownInterval);
   }, 100);
 }
