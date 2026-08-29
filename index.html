@@ -129,7 +129,7 @@
     background:#fbf2e2;
     color:#7a561f;
   }
-  .time-choice-custom{
+  .time-choice-custom, .count-choice-custom{
     border-style:dashed;
   }
   .time-custom-row{
@@ -1192,7 +1192,9 @@
         <div class="toggle count-choice" data-count="20">20問</div>
         <div class="toggle count-choice" data-count="30">30問</div>
         <div class="toggle count-choice on" data-count="all">全部</div>
+        <div class="toggle count-choice-custom" data-count="custom">自由入力</div>
       </div>
+      <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
 
       <div class="section-title">出題順</div>
       <div class="toggle-row">
@@ -1522,7 +1524,7 @@ const els = {};
  "stat-total","stat-mastered","stat-weak","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","resume-guest-btn","export-link","import-link","import-file","export-edits-link",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
- "count-row","shuffle-toggle","order-toggle","review-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","shuffle-toggle","order-toggle","review-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","create-cancel","room-code-display","room-code-change","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
@@ -2041,10 +2043,19 @@ function applySettingsUI(){
   els["shuffle-toggle"].classList.toggle("on", currentShuffle === true);
   els["order-toggle"].classList.toggle("on", currentShuffle === false);
   els["review-mode-toggle"].classList.toggle("on", reviewMode === true);
+  const presetCounts = ["10","20","30","all"];
+  const isPreset = presetCounts.includes(String(questionCount));
   document.querySelectorAll(".count-choice").forEach(el=>{
     const val = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
     el.classList.toggle("on", val === questionCount);
   });
+  els["count-row"].querySelector(".count-choice-custom").classList.toggle("on", !isPreset);
+  if(isPreset){
+    els["count-custom-row"].style.display = "none";
+  }else{
+    els["count-custom-row"].style.display = "flex";
+    els["count-custom-input"].value = questionCount;
+  }
   TIME_SETTINGS.forEach(applyTimeSettingUI);
 }
 
@@ -2181,11 +2192,27 @@ function renderUnitChoices(){
 document.querySelectorAll(".count-choice").forEach(el=>{
   el.addEventListener("click", ()=>{
     questionCount = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
-    document.querySelectorAll(".count-choice").forEach(c=>c.classList.remove("on"));
+    document.querySelectorAll(".count-choice, .count-choice-custom").forEach(c=>c.classList.remove("on"));
     el.classList.add("on");
+    els["count-custom-row"].style.display = "none";
     refreshCreateButton();
     saveSettings();
   });
+});
+els["count-row"].querySelector(".count-choice-custom").addEventListener("click", ()=>{
+  document.querySelectorAll(".count-choice, .count-choice-custom").forEach(c=>c.classList.remove("on"));
+  els["count-row"].querySelector(".count-choice-custom").classList.add("on");
+  els["count-custom-row"].style.display = "flex";
+  els["count-custom-input"].value = typeof questionCount === "number" ? questionCount : 10;
+  els["count-custom-input"].focus();
+});
+els["count-custom-input"].addEventListener("change", ()=>{
+  let v = parseInt(els["count-custom-input"].value, 10);
+  if(isNaN(v) || v < 1) v = 1;
+  questionCount = v;
+  els["count-custom-input"].value = v;
+  refreshCreateButton();
+  saveSettings();
 });
 els["shuffle-toggle"].addEventListener("click", ()=>{
   currentShuffle = true;
