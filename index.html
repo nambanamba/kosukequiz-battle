@@ -173,7 +173,7 @@
     background:#fbf2e2;
     color:#7a561f;
   }
-  .time-choice-custom, .count-choice-custom{
+  .time-choice-custom, .count-choice-custom, .calc-count-choice-custom{
     border-style:dashed;
   }
   .time-custom-row{
@@ -1192,6 +1192,59 @@
     color:rgba(246,242,234,0.7);
     pointer-events:none;
   }
+
+  /* ---- 理科: 今日の計算問題の解説（改行を活かして表示） ---- */
+  .calc-sol-text{
+    white-space:pre-wrap;
+    font-size:14.5px;
+    line-height:1.9;
+    font-weight:500;
+    color:var(--ink);
+  }
+
+  /* ---- 印刷用（今日の計算問題）：通常は非表示、印刷時のみ #print-region を表示する ---- */
+  #print-region{display:none;}
+  .print-q{
+    margin-bottom:26px;
+  }
+  .print-q .print-q-head{
+    font-size:14px;
+    font-weight:700;
+    margin-bottom:8px;
+  }
+  .print-q .print-q-text{
+    font-size:14px;
+    line-height:1.8;
+    margin-bottom:8px;
+  }
+  .print-q img{
+    max-width:100%;
+    max-height:260px;
+    display:block;
+    margin-bottom:8px;
+  }
+  .print-scratch{
+    border:1px solid #999;
+    min-height:110px;
+    border-radius:4px;
+  }
+  .print-q .print-a-text{
+    font-size:14px;
+    line-height:1.8;
+    font-weight:700;
+  }
+  .print-q .print-sol-text{
+    white-space:pre-wrap;
+    font-size:13px;
+    line-height:1.8;
+    color:#333;
+    margin-top:4px;
+  }
+  @media print{
+    body > .wrap > *:not(#print-region){ display:none !important; }
+    #print-region{ display:block !important; }
+    #print-region .print-q{ break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
@@ -1203,6 +1256,11 @@
 
   <!-- HOME SCREEN -->
   <section id="screen-home" class="screen active">
+    <div class="toggle-row" id="subject-toggle-row" style="margin-top:0;">
+      <div class="toggle on" id="subject-social" data-subject="社会">社会</div>
+      <div class="toggle" id="subject-science" data-subject="理科">理科</div>
+    </div>
+
     <div class="stat-row">
       <div class="stat-card"><div class="num" id="stat-total">-</div><div class="lbl">全問題数</div></div>
       <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
@@ -1238,6 +1296,9 @@
         <div class="toggle count-choice-custom" data-count="custom">自由入力</div>
       </div>
       <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
+
+      <div class="section-title">復習ミックス（選んでいない単元からランダムに追加）</div>
+      <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
 
       <div class="section-title">出題順</div>
       <div class="toggle-row">
@@ -1300,6 +1361,8 @@
         <button class="start-btn split" id="create-btn">二人で始める</button>
       </div>
       <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
+
+      <button class="btn-secondary" id="calc-setup-btn" style="margin-top:20px; display:none;">今日の計算問題（範囲を決めて解く・印刷する）</button>
 
       <button class="btn-secondary" id="list-btn" style="margin-top:20px;">問題一覧を見る・記録を切りかえる</button>
       <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
@@ -1372,6 +1435,66 @@
       <div class="back-link" id="selection-clear" style="margin-top:6px;">選択をクリア</div>
     </div>
     <div class="back-link" id="stat-clear-link">正誤の記録をぜんぶクリアする</div>
+  </section>
+
+  <!-- CALC SETUP SCREEN (理科: 今日の計算問題) -->
+  <section id="screen-calc-setup" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="calc-setup-back">← もどる</div>
+      <div></div>
+    </div>
+
+    <div class="section-title">回の範囲（例：2〜3）</div>
+    <div class="list-date-row">
+      <input type="number" id="calc-kai-from" class="list-date-input" min="1" placeholder="第 何回から">
+      <span class="list-date-sep">〜</span>
+      <input type="number" id="calc-kai-to" class="list-date-input" min="1" placeholder="第 何回まで">
+      <div class="back-link" id="calc-kai-clear" style="margin-top:0;">クリア（全範囲）</div>
+    </div>
+
+    <div class="section-title">問題数</div>
+    <div class="toggle-row" id="calc-count-row">
+      <div class="toggle calc-count-choice" data-count="5">5問</div>
+      <div class="toggle calc-count-choice on" data-count="10">10問</div>
+      <div class="toggle calc-count-choice" data-count="20">20問</div>
+      <div class="toggle calc-count-choice-custom" data-count="custom">自由入力</div>
+    </div>
+    <div class="time-custom-row" id="calc-count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="calc-count-custom-input" min="1" max="200" /><span>問</span></div>
+
+    <div class="error-note" id="calc-setup-error"></div>
+
+    <div class="start-row">
+      <button class="start-btn" id="calc-start-btn">計算問題を始める</button>
+    </div>
+    <button class="btn-secondary" id="calc-print-problems-btn" style="margin-top:14px;">問題を印刷する</button>
+    <button class="btn-secondary" id="calc-print-answers-btn" style="margin-top:10px;">解答・解説を印刷する</button>
+  </section>
+
+  <!-- CALC PRACTICE SCREEN (理科: 今日の計算問題) -->
+  <section id="screen-calc" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="calc-back">← やめてもどる</div>
+      <div class="counter" id="calc-counter">1 / 10</div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="calc-progress-fill"></div></div>
+
+    <span class="unit-tag" id="calc-unit-tag"></span>
+    <span class="q-id-tag" id="calc-q-id"></span>
+    <div class="card">
+      <div class="img-wrap" id="calc-img-wrap" style="display:none;">
+        <img id="calc-img" src="" alt="資料" />
+      </div>
+      <div class="q-text" id="calc-q"></div>
+      <div class="a-block" id="calc-a-block">
+        <div class="a-label">こたえ</div>
+        <div class="a-text" id="calc-a"></div>
+        <div class="a-label" id="calc-sol-label" style="margin-top:14px;">かいせつ</div>
+        <div class="a-text calc-sol-text" id="calc-sol"></div>
+      </div>
+    </div>
+
+    <button class="reveal-btn" id="calc-reveal-btn">こたえを見る</button>
+    <button class="reveal-btn" id="calc-next-btn" style="display:none;">つぎへ</button>
   </section>
 
   <!-- SOLO QUIZ SCREEN -->
@@ -1543,6 +1666,8 @@
     </div>
   </section>
 
+  <div id="print-region"></div>
+
 </div>
 
 <div class="lightbox-overlay" id="lightbox-overlay">
@@ -1564,11 +1689,14 @@ import {joinRoom} from 'https://esm.run/trystero';
 const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
 const els = {};
-["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result","screen-calc-setup","screen-calc",
+ "subject-social","subject-science",
+ "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","calc-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "calc-setup-back","calc-kai-from","calc-kai-to","calc-kai-clear","calc-count-row","calc-count-custom-row","calc-count-custom-input","calc-setup-error","calc-start-btn","calc-print-problems-btn","calc-print-answers-btn",
+ "calc-back","calc-counter","calc-progress-fill","calc-unit-tag","calc-q-id","calc-img-wrap","calc-img","calc-q","calc-a-block","calc-a","calc-sol-label","calc-sol","calc-reveal-btn","calc-next-btn",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
- "count-row","count-custom-row","count-custom-input","shuffle-toggle","order-toggle","review-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-mix-input","shuffle-toggle","order-toggle","review-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","create-cancel","room-code-display","room-code-change","create-error",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
@@ -1714,7 +1842,7 @@ function triggerAttackEffect(){
 let currentScreenName = "screen-home";
 function showScreen(name){
   currentScreenName = name;
-  ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
+  ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result","screen-calc-setup","screen-calc"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   window.scrollTo(0,0);
@@ -1978,7 +2106,7 @@ function refreshResumeBattleButton(){
 function refreshStatRow(){
   let total = 0, masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
-    if(!selectedUnits.has(d.u)) return;
+    if(d.subj !== currentSubject || !selectedUnits.has(d.u) || d.kind === "calc") return;
     total++;
     if(isMastered(d.id)) masteredCount++;
     if(isWeak(d.id)) weakCount++;
@@ -2007,9 +2135,13 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
+// ---- subject (社会/理科) ----
+let currentSubject = "社会";
+
 // ---- unit selection (create screen) ----
 let selectedUnits = new Set(getUnits()); // every unit selected by default, like a checked "select all"
 let questionCount = "all";
+let reviewMixCount = 0; // extra questions pulled in from NOT-selected units, e.g. a little review from other areas
 let currentShuffle = true;
 let filterUnmastered = false;
 let filterWeak = false;
@@ -2039,12 +2171,14 @@ function loadSettings(){
     const raw = window.localStorage.getItem(SETTINGS_KEY);
     if(!raw) return;
     const s = JSON.parse(raw);
+    if(s.subject === "社会" || s.subject === "理科") currentSubject = s.subject;
     if(Array.isArray(s.units) && s.units.length) selectedUnits = new Set(s.units);
     if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
     if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
     if(s.type) currentType = s.type;
     if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
     if(s.count !== undefined) questionCount = s.count;
+    if(typeof s.reviewMixCount === "number") reviewMixCount = s.reviewMixCount;
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
     if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
     if(typeof s.answerTimeSec === "number") answerTimeSec = s.answerTimeSec;
@@ -2058,12 +2192,14 @@ function loadSettings(){
 function saveSettings(){
   try{
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      subject: currentSubject,
       units: Array.from(selectedUnits),
       filterUnmastered: filterUnmastered,
       filterWeak: filterWeak,
       type: currentType,
       shuffle: currentShuffle,
       count: questionCount,
+      reviewMixCount: reviewMixCount,
       reviewMode: reviewMode,
       headStartSec: headStartSec,
       answerTimeSec: answerTimeSec,
@@ -2076,6 +2212,9 @@ function saveSettings(){
   }
 }
 function applySettingsUI(){
+  els["subject-social"].classList.toggle("on", currentSubject === "社会");
+  els["subject-science"].classList.toggle("on", currentSubject === "理科");
+  els["calc-setup-btn"].style.display = currentSubject === "理科" ? "block" : "none";
   els["mode-unmastered"].classList.toggle("on", filterUnmastered);
   els["mode-weak"].classList.toggle("on", filterWeak);
   els["type-all"].classList.toggle("on", currentType === "all");
@@ -2097,8 +2236,24 @@ function applySettingsUI(){
     els["count-custom-row"].style.display = "flex";
     els["count-custom-input"].value = questionCount;
   }
+  els["review-mix-input"].value = reviewMixCount;
   TIME_SETTINGS.forEach(applyTimeSettingUI);
 }
+
+// ---- subject switch (社会/理科): re-derives the unit list, unit selection
+//      and stat row for the newly chosen subject. 理科の計算問題(kind==="calc")
+//      は buildPool() 側で常に除外されるので、ここでは単に単元集合を作り直すだけでよい ----
+function switchSubject(subject){
+  if(subject === currentSubject) return;
+  currentSubject = subject;
+  selectedUnits = new Set(getUnits());
+  renderUnitChoices();
+  refreshStatRow();
+  applySettingsUI();
+  saveSettings();
+}
+els["subject-social"].addEventListener("click", ()=> switchSubject("社会"));
+els["subject-science"].addEventListener("click", ()=> switchSubject("理科"));
 
 // ---- shared UI wiring for the 5 timer settings (3 preset chips + free
 //      input) -- applyTimeSettingUI() reflects the current value into a
@@ -2152,17 +2307,15 @@ TIME_SETTINGS.forEach(setupTimeSettingRow);
 
 function getUnits(){
   const set = [];
-  QA_DATA.forEach(d=>{ if(!set.includes(d.u)) set.push(d.u); });
+  QA_DATA.forEach(d=>{ if(d.subj !== currentSubject) return; if(!set.includes(d.u)) set.push(d.u); });
   return set;
 }
 function unitIndices(unit){
   const arr = [];
-  QA_DATA.forEach((d,i)=>{ if(unit==="ALL" || d.u===unit) arr.push(i); });
+  QA_DATA.forEach((d,i)=>{ if(d.subj !== currentSubject) return; if(unit==="ALL" || d.u===unit) arr.push(i); });
   return arr;
 }
-function buildPool(){
-  let pool = [];
-  QA_DATA.forEach((d,i)=>{ if(selectedUnits.has(d.u)) pool.push(i); });
+function applyPoolFilters(pool){
   if(filterUnmastered){
     pool = pool.filter(i => !isMastered(QA_DATA[i].id));
   }
@@ -2173,6 +2326,34 @@ function buildPool(){
     pool = pool.filter(i => !!QA_DATA[i].img);
   }else if(currentType === "text"){
     pool = pool.filter(i => !QA_DATA[i].img);
+  }
+  return pool;
+}
+function buildPool(){
+  let pool = [];
+  // 理科の計算問題（kind==="calc"）は対戦・ソロには出さない。「今日の計算問題」
+  // 専用モード（buildCalcPool）でのみ扱う（口頭で答える形式に合わないため）。
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && selectedUnits.has(d.u) && d.kind !== "calc") pool.push(i); });
+  return applyPoolFilters(pool);
+}
+// ---- 復習ミックス: 選んでいない単元からランダムに追加する分の候補プール
+//      （例: 今週のメインは歴史全部、復習として地理・公民から少し混ぜる）----
+function buildReviewPool(){
+  let pool = [];
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && !selectedUnits.has(d.u) && d.kind !== "calc") pool.push(i); });
+  return applyPoolFilters(pool);
+}
+// ---- the pool actually used to start a quiz: selected units (shuffled/
+//      trimmed to questionCount) plus, if set, a review mix pulled from
+//      everything NOT selected ----
+function buildFinalPool(){
+  let pool = buildPool();
+  if(currentShuffle) pool = shuffleArray(pool);
+  if(questionCount !== "all") pool = pool.slice(0, questionCount);
+  if(reviewMixCount > 0){
+    let reviewPool = shuffleArray(buildReviewPool()).slice(0, reviewMixCount);
+    pool = pool.concat(reviewPool);
+    if(currentShuffle) pool = shuffleArray(pool);
   }
   return pool;
 }
@@ -2221,12 +2402,15 @@ function refreshUnitSelection(){
 }
 function refreshCreateButton(){
   const pool = buildPool();
-  const n = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
-  const disabled = pool.length === 0;
+  const mainN = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
+  const reviewN = reviewMixCount > 0 ? Math.min(reviewMixCount, buildReviewPool().length) : 0;
+  const n = mainN + reviewN;
+  const label = reviewN > 0 ? n+"問（復習"+reviewN+"問こみ）" : n+"問";
+  const disabled = n === 0;
   els["solo-start-btn"].disabled = disabled;
-  els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+n+"問）";
+  els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
   els["create-btn"].disabled = disabled;
-  els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+n+"問）";
+  els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+label+"）";
 }
 // ---- units are grouped into 地理/公民/歴史 by their name prefix so the
 //      unit list can be collapsed into an accordion as more units get
@@ -2263,24 +2447,32 @@ function makeUnitGroupHeader(group, groupUnits, count){
   return div;
 }
 function renderUnitChoices(){
-  const total = QA_DATA.length;
+  const allUnits = getUnits();
+  const total = allUnits.reduce((sum,u)=>sum+unitIndices(u).length, 0);
   els["unit-choices"].innerHTML = "";
   els["unit-choices"].appendChild(makeUnitChoice("ALL", "全単元", total));
-  const allUnits = getUnits();
-  UNIT_GROUPS.forEach(group=>{
-    const groupUnits = allUnits.filter(group.test);
-    if(groupUnits.length === 0) return;
-    const groupCount = groupUnits.reduce((sum,u)=>sum+unitIndices(u).length, 0);
-    els["unit-choices"].appendChild(makeUnitGroupHeader(group, groupUnits, groupCount));
-    const body = document.createElement("div");
-    body.className = "unit-group-body choice-grid";
-    body.dataset.group = group.key;
-    body.style.display = "none";
-    groupUnits.forEach(u=>{
-      body.appendChild(makeUnitChoice(u, u, unitIndices(u).length));
+  if(currentSubject === "理科"){
+    // 理科はまだ単元数が少ないので、社会のような地理/公民/歴史アコーディオンには
+    // 分けず、回登場順（=getUnits()の初出順）でフラットに並べる。
+    allUnits.forEach(u=>{
+      els["unit-choices"].appendChild(makeUnitChoice(u, u, unitIndices(u).length));
     });
-    els["unit-choices"].appendChild(body);
-  });
+  }else{
+    UNIT_GROUPS.forEach(group=>{
+      const groupUnits = allUnits.filter(group.test);
+      if(groupUnits.length === 0) return;
+      const groupCount = groupUnits.reduce((sum,u)=>sum+unitIndices(u).length, 0);
+      els["unit-choices"].appendChild(makeUnitGroupHeader(group, groupUnits, groupCount));
+      const body = document.createElement("div");
+      body.className = "unit-group-body choice-grid";
+      body.dataset.group = group.key;
+      body.style.display = "none";
+      groupUnits.forEach(u=>{
+        body.appendChild(makeUnitChoice(u, u, unitIndices(u).length));
+      });
+      els["unit-choices"].appendChild(body);
+    });
+  }
   refreshUnitSelection();
   refreshCreateButton();
 }
@@ -2306,6 +2498,14 @@ els["count-custom-input"].addEventListener("change", ()=>{
   if(isNaN(v) || v < 1) v = 1;
   questionCount = v;
   els["count-custom-input"].value = v;
+  refreshCreateButton();
+  saveSettings();
+});
+els["review-mix-input"].addEventListener("change", ()=>{
+  let v = parseInt(els["review-mix-input"].value, 10);
+  if(isNaN(v) || v < 0) v = 0;
+  reviewMixCount = v;
+  els["review-mix-input"].value = v;
   refreshCreateButton();
   saveSettings();
 });
@@ -2846,16 +3046,186 @@ els["import-file"].addEventListener("change", (e)=>{
   reader.readAsText(file, "UTF-8");
 });
 
+// ---- 理科: 今日の計算問題 (kind==="calc" の問題のみ。対戦・ソロには出さず、
+//      回の範囲＋問題数を指定して出題する専用モード。stats/isMastered の対象にも
+//      しない -- 正誤は解説を見れば自明で、暗記の正誤管理とは混ぜない） ----
+let calcQueue = []; // array of QA_DATA indices, fixed once at start
+let calcPos = 0;
+let calcCount = 10;
+
+function buildCalcPool(kaiFrom, kaiTo){
+  let pool = [];
+  QA_DATA.forEach((d,i)=>{
+    if(d.subj !== "理科" || d.kind !== "calc") return;
+    if(kaiFrom && d.kai < kaiFrom) return;
+    if(kaiTo && d.kai > kaiTo) return;
+    pool.push(i);
+  });
+  return pool;
+}
+
+els["calc-setup-btn"].addEventListener("click", ()=>{
+  els["calc-setup-error"].textContent = "";
+  showScreen("screen-calc-setup");
+});
+els["calc-setup-back"].addEventListener("click", ()=>{
+  renderHome();
+  showScreen("screen-home");
+});
+els["calc-back"].addEventListener("click", ()=>{
+  if(!confirm("今日の計算問題をやめてもどりますか？")) return;
+  showScreen("screen-calc-setup");
+});
+
+els["calc-kai-clear"].addEventListener("click", ()=>{
+  els["calc-kai-from"].value = "";
+  els["calc-kai-to"].value = "";
+});
+
+document.querySelectorAll(".calc-count-choice").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    calcCount = parseInt(el.dataset.count, 10);
+    document.querySelectorAll(".calc-count-choice, .calc-count-choice-custom").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    els["calc-count-custom-row"].style.display = "none";
+  });
+});
+els["calc-count-row"].querySelector(".calc-count-choice-custom").addEventListener("click", ()=>{
+  document.querySelectorAll(".calc-count-choice, .calc-count-choice-custom").forEach(c=>c.classList.remove("on"));
+  els["calc-count-row"].querySelector(".calc-count-choice-custom").classList.add("on");
+  els["calc-count-custom-row"].style.display = "flex";
+  els["calc-count-custom-input"].value = calcCount;
+  els["calc-count-custom-input"].focus();
+});
+els["calc-count-custom-input"].addEventListener("change", ()=>{
+  let v = parseInt(els["calc-count-custom-input"].value, 10);
+  if(isNaN(v) || v < 1) v = 1;
+  calcCount = v;
+  els["calc-count-custom-input"].value = v;
+});
+
+function readCalcRange(){
+  const fromV = parseInt(els["calc-kai-from"].value, 10);
+  const toV = parseInt(els["calc-kai-to"].value, 10);
+  return {
+    kaiFrom: isNaN(fromV) ? null : fromV,
+    kaiTo: isNaN(toV) ? null : toV
+  };
+}
+
+function currentCalcQueue(){
+  const {kaiFrom, kaiTo} = readCalcRange();
+  const pool = buildCalcPool(kaiFrom, kaiTo);
+  if(pool.length === 0){
+    els["calc-setup-error"].textContent = "この範囲に計算問題がありません。範囲を広げてください。";
+    return null;
+  }
+  els["calc-setup-error"].textContent = "";
+  return shuffleArray(pool).slice(0, calcCount);
+}
+
+els["calc-start-btn"].addEventListener("click", ()=>{
+  const queue = currentCalcQueue();
+  if(!queue) return;
+  calcQueue = queue;
+  calcPos = 0;
+  startCalcCard();
+  showScreen("screen-calc");
+});
+
+function startCalcCard(){
+  const idx = calcQueue[calcPos];
+  const d = getQ(idx);
+  els["calc-unit-tag"].textContent = d.u;
+  els["calc-q-id"].textContent = "No."+d.id;
+  els["calc-q"].textContent = d.q;
+  els["calc-a"].textContent = d.a;
+  els["calc-sol"].textContent = d.sol || "";
+  els["calc-sol-label"].style.display = d.sol ? "block" : "none";
+  if(d.img){
+    els["calc-img"].src = "images/"+d.img;
+    els["calc-img-wrap"].style.display = "block";
+  }else{
+    els["calc-img-wrap"].style.display = "none";
+  }
+  els["calc-a-block"].classList.remove("show");
+  els["calc-reveal-btn"].style.display = "block";
+  els["calc-next-btn"].style.display = "none";
+  els["calc-counter"].textContent = (calcPos+1)+" / "+calcQueue.length;
+  els["calc-progress-fill"].style.width = (calcPos/calcQueue.length*100)+"%";
+}
+
+els["calc-reveal-btn"].addEventListener("click", ()=>{
+  els["calc-a-block"].classList.add("show");
+  els["calc-reveal-btn"].style.display = "none";
+  els["calc-next-btn"].style.display = "block";
+});
+
+els["calc-next-btn"].addEventListener("click", ()=>{
+  calcPos++;
+  if(calcPos >= calcQueue.length){
+    alert("全"+calcQueue.length+"問おわりました。");
+    showScreen("screen-calc-setup");
+  }else{
+    startCalcCard();
+  }
+});
+
+els["calc-img"].addEventListener("click", ()=>{
+  if(els["calc-img"].src) openLightbox(els["calc-img"].src);
+});
+
+// ---- 印刷（問題のみ／解答・解説つき） ----
+function printProblemHtml(d, no){
+  let html = '<div class="print-q">';
+  html += '<div class="print-q-head">No.'+no+'　'+escapeHtml(d.u)+'</div>';
+  if(d.img) html += '<img src="images/'+escapeHtml(d.img)+'" alt="資料">';
+  html += '<div class="print-q-text">'+escapeHtml(d.q)+'</div>';
+  html += '<div class="print-scratch"></div>';
+  html += '</div>';
+  return html;
+}
+function printAnswerHtml(d, no){
+  let html = '<div class="print-q">';
+  html += '<div class="print-q-head">No.'+no+'　'+escapeHtml(d.u)+'</div>';
+  html += '<div class="print-q-text">'+escapeHtml(d.q)+'</div>';
+  html += '<div class="print-a-text">こたえ：'+escapeHtml(d.a)+'</div>';
+  if(d.sol) html += '<div class="print-sol-text">'+escapeHtml(d.sol)+'</div>';
+  html += '</div>';
+  return html;
+}
+function renderPrintProblems(queue){
+  const region = document.getElementById("print-region");
+  region.innerHTML = queue.map((idx,i)=> printProblemHtml(getQ(idx), i+1)).join("");
+}
+function renderPrintAnswers(queue){
+  const region = document.getElementById("print-region");
+  region.innerHTML = queue.map((idx,i)=> printAnswerHtml(getQ(idx), i+1)).join("");
+}
+
+els["calc-print-problems-btn"].addEventListener("click", ()=>{
+  const queue = calcQueue.length ? calcQueue : currentCalcQueue();
+  if(!queue) return;
+  calcQueue = queue;
+  renderPrintProblems(calcQueue);
+  window.print();
+});
+els["calc-print-answers-btn"].addEventListener("click", ()=>{
+  const queue = calcQueue.length ? calcQueue : currentCalcQueue();
+  if(!queue) return;
+  calcQueue = queue;
+  renderPrintAnswers(calcQueue);
+  window.print();
+});
+
 // ---- solo quiz ----
 let quizQueue = [];
 let quizPos = 0;
 let quizResults = []; // { idx, correct }
 
 els["solo-start-btn"].addEventListener("click", ()=>{
-  let pool = buildPool();
+  const pool = buildFinalPool();
   if(pool.length === 0) return;
-  if(currentShuffle) pool = shuffleArray(pool);
-  if(questionCount !== "all") pool = pool.slice(0, questionCount);
   quizQueue = pool;
   quizPos = 0;
   quizResults = [];
@@ -3364,9 +3734,7 @@ function hostCreateRoomWithCode(code){
 }
 
 els["create-btn"].addEventListener("click", ()=>{
-  let pool = buildPool();
-  if(currentShuffle) pool = shuffleArray(pool);
-  if(questionCount !== "all") pool = pool.slice(0, questionCount);
+  const pool = buildFinalPool();
   if(pool.length === 0) return;
 
   questionIds = pool.map(i => QA_DATA[i].id);
