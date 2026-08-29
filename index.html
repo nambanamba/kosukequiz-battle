@@ -489,6 +489,7 @@
   .judge-btn.ok.fill-btn::before{ background:var(--ok); }
   .judge-btn.ng.fill-btn::before{ background:var(--ng); }
   .next-btn.fill-btn::before{ background:var(--gold); }
+  #skip-continue-btn.fill-btn::before{ background:var(--gold); }
   .fill-btn .fill-label{
     position:relative;
     z-index:1;
@@ -1193,6 +1194,30 @@
         <div class="toggle headstart-choice" data-headstart="30">30秒</div>
       </div>
 
+      <div class="section-title">二人対戦用: それぞれ声に出して答える時間</div>
+      <div class="toggle-row" id="answertime-row">
+        <div class="toggle answertime-choice" data-answertime="5">5秒</div>
+        <div class="toggle answertime-choice on" data-answertime="8">8秒</div>
+        <div class="toggle answertime-choice" data-answertime="10">10秒</div>
+        <div class="toggle answertime-choice" data-answertime="15">15秒</div>
+      </div>
+
+      <div class="section-title">二人対戦用: 〇✕判定の時間</div>
+      <div class="toggle-row" id="judgetime-row">
+        <div class="toggle judgetime-choice" data-judgetime="5">5秒</div>
+        <div class="toggle judgetime-choice" data-judgetime="8">8秒</div>
+        <div class="toggle judgetime-choice on" data-judgetime="10">10秒</div>
+        <div class="toggle judgetime-choice" data-judgetime="15">15秒</div>
+      </div>
+
+      <div class="section-title">二人対戦用: 次の問題への時間</div>
+      <div class="toggle-row" id="nexttime-row">
+        <div class="toggle nexttime-choice" data-nexttime="5">5秒</div>
+        <div class="toggle nexttime-choice on" data-nexttime="8">8秒</div>
+        <div class="toggle nexttime-choice" data-nexttime="10">10秒</div>
+        <div class="toggle nexttime-choice" data-nexttime="15">15秒</div>
+      </div>
+
       <div class="start-row">
         <button class="start-btn split" id="solo-start-btn">一人で始める</button>
         <button class="start-btn split" id="create-btn">二人で始める</button>
@@ -1413,7 +1438,7 @@
     <button class="buzz-btn" id="advance-btn" style="display:none;">わかった！</button>
     <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
     <div class="skip-encourage" id="skip-encourage" style="display:none;">あとでもう一度出てくるよ。がんばって！</div>
-    <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
+    <button class="reveal-btn fill-btn" id="skip-continue-btn" data-label="つぎの問題へ" style="display:none;"><span class="fill-label">つぎの問題へ</span></button>
     <div class="status-banner" id="status-banner"></div>
     <div class="cheese-countdown" id="answer-countdown" style="display:none;">
       <div class="cheese-countdown-track" id="answer-countdown-track"></div>
@@ -1912,6 +1937,9 @@ let filterUnmastered = false;
 let filterWeak = false;
 let currentType = "all"; // all | image | text
 let headStartSec = 3; // host-only think time before a question auto-advances
+let answerTimeSec = 8; // both sides say their answer out loud before it auto-reveals
+let judgeTimeSec = 10; // time to tap 〇/✕ before it auto-defaults to 正解
+let nextTimeSec = 8; // time before 次の問題へ (and the same after a skip) fires itself
 let reviewMode = false;
 
 // ---- remember the last-used setup filters (kosukequiz's own home screen
@@ -1930,6 +1958,9 @@ function loadSettings(){
     if(s.count !== undefined) questionCount = s.count;
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
     if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
+    if(typeof s.answerTimeSec === "number") answerTimeSec = s.answerTimeSec;
+    if(typeof s.judgeTimeSec === "number") judgeTimeSec = s.judgeTimeSec;
+    if(typeof s.nextTimeSec === "number") nextTimeSec = s.nextTimeSec;
   }catch(e){
     // ignore, keep defaults
   }
@@ -1944,7 +1975,10 @@ function saveSettings(){
       shuffle: currentShuffle,
       count: questionCount,
       reviewMode: reviewMode,
-      headStartSec: headStartSec
+      headStartSec: headStartSec,
+      answerTimeSec: answerTimeSec,
+      judgeTimeSec: judgeTimeSec,
+      nextTimeSec: nextTimeSec
     }));
   }catch(e){
     console.error("save settings failed", e);
@@ -1965,6 +1999,15 @@ function applySettingsUI(){
   });
   document.querySelectorAll(".headstart-choice").forEach(el=>{
     el.classList.toggle("on", parseInt(el.dataset.headstart, 10) === headStartSec);
+  });
+  document.querySelectorAll(".answertime-choice").forEach(el=>{
+    el.classList.toggle("on", parseInt(el.dataset.answertime, 10) === answerTimeSec);
+  });
+  document.querySelectorAll(".judgetime-choice").forEach(el=>{
+    el.classList.toggle("on", parseInt(el.dataset.judgetime, 10) === judgeTimeSec);
+  });
+  document.querySelectorAll(".nexttime-choice").forEach(el=>{
+    el.classList.toggle("on", parseInt(el.dataset.nexttime, 10) === nextTimeSec);
   });
 }
 
@@ -2073,6 +2116,30 @@ document.querySelectorAll(".headstart-choice").forEach(el=>{
   el.addEventListener("click", ()=>{
     headStartSec = parseInt(el.dataset.headstart, 10);
     document.querySelectorAll(".headstart-choice").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    saveSettings();
+  });
+});
+document.querySelectorAll(".answertime-choice").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    answerTimeSec = parseInt(el.dataset.answertime, 10);
+    document.querySelectorAll(".answertime-choice").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    saveSettings();
+  });
+});
+document.querySelectorAll(".judgetime-choice").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    judgeTimeSec = parseInt(el.dataset.judgetime, 10);
+    document.querySelectorAll(".judgetime-choice").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    saveSettings();
+  });
+});
+document.querySelectorAll(".nexttime-choice").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    nextTimeSec = parseInt(el.dataset.nexttime, 10);
+    document.querySelectorAll(".nexttime-choice").forEach(c=>c.classList.remove("on"));
     el.classList.add("on");
     saveSettings();
   });
@@ -2824,7 +2891,6 @@ function stopCountdown(){
 //      reveals itself automatically once all 10 are gone (both sides finish
 //      speaking at roughly the same moment anyway, so a manual "show the
 //      answer" tap was just an extra step) ----
-const ANSWER_TIME_SEC = 8;
 const CHEESE_COUNT = 10;
 let cheeseInterval = null;
 let cheeseTimeout = null;
@@ -2853,7 +2919,7 @@ function startAnswerCountdown(){
   mouse.style.left = "0%";
   els["answer-countdown"].style.display = "block";
   let eaten = 0;
-  const stepMs = (ANSWER_TIME_SEC*1000)/CHEESE_COUNT;
+  const stepMs = (answerTimeSec*1000)/CHEESE_COUNT;
   cheeseInterval = setInterval(()=>{
     if(eaten >= CHEESE_COUNT) return;
     pieces[eaten].classList.add("eaten");
@@ -2861,7 +2927,7 @@ function startAnswerCountdown(){
     mouse.style.left = (eaten/CHEESE_COUNT*100)+"%";
     if(eaten >= CHEESE_COUNT) clearInterval(cheeseInterval);
   }, stepMs);
-  cheeseTimeout = setTimeout(revealAnswer, ANSWER_TIME_SEC*1000);
+  cheeseTimeout = setTimeout(revealAnswer, answerTimeSec*1000);
 }
 function stopAnswerCountdown(){
   clearInterval(cheeseInterval);
@@ -2908,7 +2974,7 @@ function stopFillCountdown(groupKey, buttonKeys){
 //      "correct" so a slow-to-press kid never gets penalized for someone
 //      else's hesitation ----
 function startJudgeCountdown(){
-  startFillCountdown("judge", ["judge-ok","judge-ng"], 10, ()=>{
+  startFillCountdown("judge", ["judge-ok","judge-ng"], judgeTimeSec, ()=>{
     if(myVerdictOfOpponent === null){
       els["judge-ok"].classList.add("auto-press");
       judgeOpponent(true);
@@ -2922,15 +2988,29 @@ function stopJudgeCountdown(){
 // ---- host-only: shown alongside 次の問題へ once a question is fully
 //      scored -- if the host doesn't tap it, the game keeps moving on its
 //      own instead of waiting forever ----
-const NEXT_TIME_SEC = 8;
 function startNextCountdown(){
-  startFillCountdown("next", ["next-btn"], NEXT_TIME_SEC, ()=>{
+  startFillCountdown("next", ["next-btn"], nextTimeSec, ()=>{
     els["next-btn"].classList.add("auto-press");
     goToNextQuestion();
   });
 }
 function stopNextCountdown(){
   stopFillCountdown("next", ["next-btn"]);
+}
+
+// ---- host-only: same fill/auto-press treatment for the つぎの問題へ shown
+//      after a skip, so a skipped question doesn't sit there waiting forever
+//      either ----
+function startSkipContinueCountdown(){
+  startFillCountdown("skip-continue", ["skip-continue-btn"], nextTimeSec, ()=>{
+    els["skip-continue-btn"].classList.add("auto-press");
+    els["skip-encourage"].style.display = "none";
+    els["skip-continue-btn"].style.display = "none";
+    hostAdvanceAndArm(currentIndex);
+  });
+}
+function stopSkipContinueCountdown(){
+  stopFillCountdown("skip-continue", ["skip-continue-btn"]);
 }
 
 // ---- guest-only: shows what the host is currently doing (thinking on
@@ -2971,6 +3051,7 @@ function leaveRoom(){
   stopJudgeCountdown();
   stopAnswerCountdown();
   stopNextCountdown();
+  stopSkipContinueCountdown();
   hideBigVerdict();
   room = null;
   role = null;
@@ -3185,6 +3266,7 @@ function showQuestion(idx, hostPrivate){
   stopJudgeCountdown();
   stopAnswerCountdown();
   stopNextCountdown();
+  stopSkipContinueCountdown();
   hideBigVerdict();
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
@@ -3303,6 +3385,7 @@ function performSkip(){
   els["battle-a-block"].classList.add("show");
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
+  startSkipContinueCountdown();
   if(room){
     try{ statusAction.send({type: "skipped"}); }catch(e){}
   }
@@ -3310,6 +3393,7 @@ function performSkip(){
 els["skip-btn"].addEventListener("click", performSkip);
 
 els["skip-continue-btn"].addEventListener("click", ()=>{
+  stopSkipContinueCountdown();
   els["skip-encourage"].style.display = "none";
   els["skip-continue-btn"].style.display = "none";
   hostAdvanceAndArm(currentIndex);
