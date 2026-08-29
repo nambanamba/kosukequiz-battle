@@ -105,6 +105,41 @@
   .choice .name{font-size:15px; font-weight:600;}
   .choice .count{font-size:12px; color:var(--ink-soft);}
 
+  .unit-group-header{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:#fbf7ef;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    padding:12px 15px;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .unit-group-label{
+    font-size:14px;
+    font-weight:700;
+    color:var(--navy-deep);
+  }
+  .unit-group-count{
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-left:auto;
+  }
+  .unit-group-arrow{
+    font-size:12px;
+    color:var(--ink-soft);
+    transition:transform .15s;
+  }
+  .unit-group-header.open .unit-group-arrow{
+    transform:rotate(90deg);
+  }
+  .unit-group-body{
+    padding-left:10px;
+    border-left:2px solid var(--paper-line);
+    margin-left:6px;
+  }
+
   .toggle-row{
     display:flex;
     flex-wrap:wrap;
@@ -2176,12 +2211,45 @@ function refreshCreateButton(){
   els["create-btn"].disabled = disabled;
   els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+n+"問）";
 }
+// ---- units are grouped into 地理/公民/歴史 by their name prefix so the
+//      unit list can be collapsed into an accordion as more units get
+//      added over time, instead of one long flat list ----
+const UNIT_GROUPS = [
+  {key:"geo", label:"地理", test:u=>!u.startsWith("公民") && !u.startsWith("第")},
+  {key:"civics", label:"公民", test:u=>u.startsWith("公民")},
+  {key:"history", label:"歴史", test:u=>u.startsWith("第")}
+];
+function makeUnitGroupHeader(group, count){
+  const div = document.createElement("div");
+  div.className = "unit-group-header";
+  div.dataset.group = group.key;
+  div.innerHTML = '<span class="unit-group-label">'+escapeHtml(group.label)+'</span><span class="unit-group-count">'+count+'問</span><span class="unit-group-arrow">▸</span>';
+  div.addEventListener("click", ()=>{
+    const body = els["unit-choices"].querySelector('.unit-group-body[data-group="'+group.key+'"]');
+    const opening = body.style.display === "none";
+    body.style.display = opening ? "flex" : "none";
+    div.classList.toggle("open", opening);
+  });
+  return div;
+}
 function renderUnitChoices(){
   const total = QA_DATA.length;
   els["unit-choices"].innerHTML = "";
   els["unit-choices"].appendChild(makeUnitChoice("ALL", "全単元", total));
-  getUnits().forEach(u=>{
-    els["unit-choices"].appendChild(makeUnitChoice(u, u, unitIndices(u).length));
+  const allUnits = getUnits();
+  UNIT_GROUPS.forEach(group=>{
+    const groupUnits = allUnits.filter(group.test);
+    if(groupUnits.length === 0) return;
+    const groupCount = groupUnits.reduce((sum,u)=>sum+unitIndices(u).length, 0);
+    els["unit-choices"].appendChild(makeUnitGroupHeader(group, groupCount));
+    const body = document.createElement("div");
+    body.className = "unit-group-body choice-grid";
+    body.dataset.group = group.key;
+    body.style.display = "none";
+    groupUnits.forEach(u=>{
+      body.appendChild(makeUnitChoice(u, u, unitIndices(u).length));
+    });
+    els["unit-choices"].appendChild(body);
   });
   refreshUnitSelection();
   refreshCreateButton();
@@ -3103,7 +3171,7 @@ function showGuestWaitStatus(data){
   el.classList.remove("win","lose");
   el.classList.add("show","info");
   if(data.type === "skipped"){
-    el.textContent = "相手がこの問題をスキップしました。";
+    el.innerHTML = "相手がこの問題をスキップしました。<br>"+escapeHtml(data.q)+"<br>こたえ："+escapeHtml(data.a);
   }else{
     el.textContent = "相手が問題を考え中です（"+data.position+" / "+data.total+"問目）";
   }
@@ -3500,7 +3568,10 @@ function performSkip(){
   els["skip-continue-btn"].style.display = "block";
   startSkipContinueCountdown();
   if(room){
-    try{ statusAction.send({type: "skipped"}); }catch(e){}
+    // the host already saw this question's answer the moment they skipped
+    // it, so there's no secrecy left to protect -- share it with the guest
+    // too instead of just saying "skipped"
+    try{ statusAction.send({type: "skipped", q: skipped.q, a: skipped.a}); }catch(e){}
   }
 }
 els["skip-btn"].addEventListener("click", performSkip);
