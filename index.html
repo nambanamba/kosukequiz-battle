@@ -129,6 +129,29 @@
     background:#fbf2e2;
     color:#7a561f;
   }
+  .time-choice-custom{
+    border-style:dashed;
+  }
+  .time-custom-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-top:8px;
+  }
+  .time-custom-input{
+    width:80px;
+    padding:9px 10px;
+    border:1.5px solid var(--gold);
+    border-radius:10px;
+    font-size:14px;
+    color:#7a561f;
+    background:#fbf2e2;
+  }
+  .time-custom-row span{
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-soft);
+  }
 
   .start-btn{
     width:100%;
@@ -1183,40 +1206,49 @@
       </div>
 
       <div class="section-title">二人対戦用: 考える時間（時間が来ると自動でスキップします）</div>
-      <div class="toggle-row" id="headstart-row">
-        <div class="toggle headstart-choice" data-headstart="0">なし</div>
-        <div class="toggle headstart-choice" data-headstart="2">2秒</div>
-        <div class="toggle headstart-choice on" data-headstart="3">3秒</div>
-        <div class="toggle headstart-choice" data-headstart="5">5秒</div>
-        <div class="toggle headstart-choice" data-headstart="10">10秒</div>
-        <div class="toggle headstart-choice" data-headstart="15">15秒</div>
-        <div class="toggle headstart-choice" data-headstart="20">20秒</div>
-        <div class="toggle headstart-choice" data-headstart="30">30秒</div>
+      <div class="toggle-row time-setting-row" data-time-key="headstart">
+        <div class="toggle time-choice" data-value="5">5秒</div>
+        <div class="toggle time-choice" data-value="8">8秒</div>
+        <div class="toggle time-choice" data-value="20">20秒</div>
+        <div class="toggle time-choice-custom" data-value="custom">自由入力</div>
       </div>
+      <div class="time-custom-row" style="display:none;"><input type="number" class="time-custom-input" min="0" max="300" /><span>秒</span></div>
 
       <div class="section-title">二人対戦用: それぞれ声に出して答える時間</div>
-      <div class="toggle-row" id="answertime-row">
-        <div class="toggle answertime-choice" data-answertime="5">5秒</div>
-        <div class="toggle answertime-choice on" data-answertime="8">8秒</div>
-        <div class="toggle answertime-choice" data-answertime="10">10秒</div>
-        <div class="toggle answertime-choice" data-answertime="15">15秒</div>
+      <div class="toggle-row time-setting-row" data-time-key="answertime">
+        <div class="toggle time-choice" data-value="5">5秒</div>
+        <div class="toggle time-choice" data-value="8">8秒</div>
+        <div class="toggle time-choice" data-value="20">20秒</div>
+        <div class="toggle time-choice-custom" data-value="custom">自由入力</div>
       </div>
+      <div class="time-custom-row" style="display:none;"><input type="number" class="time-custom-input" min="0" max="300" /><span>秒</span></div>
 
       <div class="section-title">二人対戦用: 〇✕判定の時間</div>
-      <div class="toggle-row" id="judgetime-row">
-        <div class="toggle judgetime-choice" data-judgetime="5">5秒</div>
-        <div class="toggle judgetime-choice" data-judgetime="8">8秒</div>
-        <div class="toggle judgetime-choice on" data-judgetime="10">10秒</div>
-        <div class="toggle judgetime-choice" data-judgetime="15">15秒</div>
+      <div class="toggle-row time-setting-row" data-time-key="judgetime">
+        <div class="toggle time-choice" data-value="5">5秒</div>
+        <div class="toggle time-choice" data-value="8">8秒</div>
+        <div class="toggle time-choice" data-value="20">20秒</div>
+        <div class="toggle time-choice-custom" data-value="custom">自由入力</div>
       </div>
+      <div class="time-custom-row" style="display:none;"><input type="number" class="time-custom-input" min="0" max="300" /><span>秒</span></div>
 
       <div class="section-title">二人対戦用: 次の問題への時間</div>
-      <div class="toggle-row" id="nexttime-row">
-        <div class="toggle nexttime-choice" data-nexttime="5">5秒</div>
-        <div class="toggle nexttime-choice on" data-nexttime="8">8秒</div>
-        <div class="toggle nexttime-choice" data-nexttime="10">10秒</div>
-        <div class="toggle nexttime-choice" data-nexttime="15">15秒</div>
+      <div class="toggle-row time-setting-row" data-time-key="nexttime">
+        <div class="toggle time-choice" data-value="5">5秒</div>
+        <div class="toggle time-choice" data-value="8">8秒</div>
+        <div class="toggle time-choice" data-value="20">20秒</div>
+        <div class="toggle time-choice-custom" data-value="custom">自由入力</div>
       </div>
+      <div class="time-custom-row" style="display:none;"><input type="number" class="time-custom-input" min="0" max="300" /><span>秒</span></div>
+
+      <div class="section-title">二人対戦用: スキップ後の「次の問題へ」の時間</div>
+      <div class="toggle-row time-setting-row" data-time-key="skipnexttime">
+        <div class="toggle time-choice" data-value="5">5秒</div>
+        <div class="toggle time-choice" data-value="8">8秒</div>
+        <div class="toggle time-choice" data-value="20">20秒</div>
+        <div class="toggle time-choice-custom" data-value="custom">自由入力</div>
+      </div>
+      <div class="time-custom-row" style="display:none;"><input type="number" class="time-custom-input" min="0" max="300" /><span>秒</span></div>
 
       <div class="start-row">
         <button class="start-btn split" id="solo-start-btn">一人で始める</button>
@@ -1942,8 +1974,19 @@ let currentType = "all"; // all | image | text
 let headStartSec = 3; // host-only think time before a question auto-advances
 let answerTimeSec = 8; // both sides say their answer out loud before it auto-reveals
 let judgeTimeSec = 10; // time to tap 〇/✕ before it auto-defaults to 正解
-let nextTimeSec = 8; // time before 次の問題へ (and the same after a skip) fires itself
+let nextTimeSec = 8; // time before 次の問題へ fires itself
+let skipNextTimeSec = 8; // time before the 次の問題へ shown after a skip fires itself
 let reviewMode = false;
+
+// ---- the 5 battle timer settings all share the same UI: 3 preset chips
+//      plus a free-input option, keyed by the row's data-time-key ----
+const TIME_SETTINGS = [
+  {key:"headstart", get:()=>headStartSec, set:v=>{headStartSec=v;}},
+  {key:"answertime", get:()=>answerTimeSec, set:v=>{answerTimeSec=v;}},
+  {key:"judgetime", get:()=>judgeTimeSec, set:v=>{judgeTimeSec=v;}},
+  {key:"nexttime", get:()=>nextTimeSec, set:v=>{nextTimeSec=v;}},
+  {key:"skipnexttime", get:()=>skipNextTimeSec, set:v=>{skipNextTimeSec=v;}}
+];
 
 // ---- remember the last-used setup filters (kosukequiz's own home screen
 //      does the same) so the same settings don't need reselecting every time ----
@@ -1964,6 +2007,7 @@ function loadSettings(){
     if(typeof s.answerTimeSec === "number") answerTimeSec = s.answerTimeSec;
     if(typeof s.judgeTimeSec === "number") judgeTimeSec = s.judgeTimeSec;
     if(typeof s.nextTimeSec === "number") nextTimeSec = s.nextTimeSec;
+    if(typeof s.skipNextTimeSec === "number") skipNextTimeSec = s.skipNextTimeSec;
   }catch(e){
     // ignore, keep defaults
   }
@@ -1981,7 +2025,8 @@ function saveSettings(){
       headStartSec: headStartSec,
       answerTimeSec: answerTimeSec,
       judgeTimeSec: judgeTimeSec,
-      nextTimeSec: nextTimeSec
+      nextTimeSec: nextTimeSec,
+      skipNextTimeSec: skipNextTimeSec
     }));
   }catch(e){
     console.error("save settings failed", e);
@@ -2000,19 +2045,58 @@ function applySettingsUI(){
     const val = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
     el.classList.toggle("on", val === questionCount);
   });
-  document.querySelectorAll(".headstart-choice").forEach(el=>{
-    el.classList.toggle("on", parseInt(el.dataset.headstart, 10) === headStartSec);
+  TIME_SETTINGS.forEach(applyTimeSettingUI);
+}
+
+// ---- shared UI wiring for the 5 timer settings (3 preset chips + free
+//      input) -- applyTimeSettingUI() reflects the current value into a
+//      row's chips/input, setupTimeSettingRow() wires up its click/input
+//      handlers once at page load ----
+function applyTimeSettingUI(setting){
+  const row = document.querySelector('.time-setting-row[data-time-key="'+setting.key+'"]');
+  const customRow = row.nextElementSibling;
+  const input = customRow.querySelector(".time-custom-input");
+  const val = setting.get();
+  const chips = row.querySelectorAll(".toggle");
+  const presetChip = row.querySelector('.time-choice[data-value="'+val+'"]');
+  chips.forEach(c=>c.classList.remove("on"));
+  if(presetChip){
+    presetChip.classList.add("on");
+    customRow.style.display = "none";
+  }else{
+    row.querySelector(".time-choice-custom").classList.add("on");
+    customRow.style.display = "flex";
+    input.value = val;
+  }
+}
+function setupTimeSettingRow(setting){
+  const row = document.querySelector('.time-setting-row[data-time-key="'+setting.key+'"]');
+  const customRow = row.nextElementSibling;
+  const input = customRow.querySelector(".time-custom-input");
+  row.querySelectorAll(".time-choice").forEach(chip=>{
+    chip.addEventListener("click", ()=>{
+      setting.set(parseInt(chip.dataset.value, 10));
+      applyTimeSettingUI(setting);
+      saveSettings();
+    });
   });
-  document.querySelectorAll(".answertime-choice").forEach(el=>{
-    el.classList.toggle("on", parseInt(el.dataset.answertime, 10) === answerTimeSec);
+  row.querySelector(".time-choice-custom").addEventListener("click", ()=>{
+    row.querySelectorAll(".toggle").forEach(c=>c.classList.remove("on"));
+    row.querySelector(".time-choice-custom").classList.add("on");
+    customRow.style.display = "flex";
+    input.value = setting.get();
+    input.focus();
   });
-  document.querySelectorAll(".judgetime-choice").forEach(el=>{
-    el.classList.toggle("on", parseInt(el.dataset.judgetime, 10) === judgeTimeSec);
-  });
-  document.querySelectorAll(".nexttime-choice").forEach(el=>{
-    el.classList.toggle("on", parseInt(el.dataset.nexttime, 10) === nextTimeSec);
+  input.addEventListener("change", ()=>{
+    let v = parseInt(input.value, 10);
+    if(isNaN(v)) v = setting.get();
+    v = Math.max(0, Math.min(300, v));
+    setting.set(v);
+    input.value = v;
+    saveSettings();
   });
 }
+TIME_SETTINGS.forEach(setupTimeSettingRow);
 
 function getUnits(){
   const set = [];
@@ -2114,38 +2198,6 @@ els["order-toggle"].addEventListener("click", ()=>{
   els["order-toggle"].classList.add("on");
   els["shuffle-toggle"].classList.remove("on");
   saveSettings();
-});
-document.querySelectorAll(".headstart-choice").forEach(el=>{
-  el.addEventListener("click", ()=>{
-    headStartSec = parseInt(el.dataset.headstart, 10);
-    document.querySelectorAll(".headstart-choice").forEach(c=>c.classList.remove("on"));
-    el.classList.add("on");
-    saveSettings();
-  });
-});
-document.querySelectorAll(".answertime-choice").forEach(el=>{
-  el.addEventListener("click", ()=>{
-    answerTimeSec = parseInt(el.dataset.answertime, 10);
-    document.querySelectorAll(".answertime-choice").forEach(c=>c.classList.remove("on"));
-    el.classList.add("on");
-    saveSettings();
-  });
-});
-document.querySelectorAll(".judgetime-choice").forEach(el=>{
-  el.addEventListener("click", ()=>{
-    judgeTimeSec = parseInt(el.dataset.judgetime, 10);
-    document.querySelectorAll(".judgetime-choice").forEach(c=>c.classList.remove("on"));
-    el.classList.add("on");
-    saveSettings();
-  });
-});
-document.querySelectorAll(".nexttime-choice").forEach(el=>{
-  el.addEventListener("click", ()=>{
-    nextTimeSec = parseInt(el.dataset.nexttime, 10);
-    document.querySelectorAll(".nexttime-choice").forEach(c=>c.classList.remove("on"));
-    el.classList.add("on");
-    saveSettings();
-  });
 });
 document.querySelectorAll(".mode-filter").forEach(el=>{
   el.addEventListener("click", ()=>{
@@ -3008,7 +3060,7 @@ function stopNextCountdown(){
 //      after a skip, so a skipped question doesn't sit there waiting forever
 //      either ----
 function startSkipContinueCountdown(){
-  startFillCountdown("skip-continue", ["skip-continue-btn"], nextTimeSec, ()=>{
+  startFillCountdown("skip-continue", ["skip-continue-btn"], skipNextTimeSec, ()=>{
     els["skip-continue-btn"].classList.add("auto-press");
     els["skip-encourage"].style.display = "none";
     els["skip-continue-btn"].style.display = "none";
