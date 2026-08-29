@@ -3171,7 +3171,7 @@ function showGuestWaitStatus(data){
   el.classList.remove("win","lose");
   el.classList.add("show","info");
   if(data.type === "skipped"){
-    el.innerHTML = "相手がこの問題をスキップしました。<br>"+escapeHtml(data.q)+"<br>こたえ："+escapeHtml(data.a);
+    el.innerHTML = "相手がこの問題をスキップしました。<br>"+escapeHtml(data.q);
   }else{
     el.textContent = "相手が問題を考え中です（"+data.position+" / "+data.total+"問目）";
   }
@@ -3568,10 +3568,9 @@ function performSkip(){
   els["skip-continue-btn"].style.display = "block";
   startSkipContinueCountdown();
   if(room){
-    // the host already saw this question's answer the moment they skipped
-    // it, so there's no secrecy left to protect -- share it with the guest
-    // too instead of just saying "skipped"
-    try{ statusAction.send({type: "skipped", q: skipped.q, a: skipped.a}); }catch(e){}
+    // let the guest know what's being skipped, but not the answer -- they
+    // haven't seen this question yet either
+    try{ statusAction.send({type: "skipped", q: skipped.q}); }catch(e){}
   }
 }
 els["skip-btn"].addEventListener("click", performSkip);
