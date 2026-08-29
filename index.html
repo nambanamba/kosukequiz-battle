@@ -430,6 +430,33 @@
     width:100%;
   }
 
+  .judge-countdown{
+    width:92px;
+    height:92px;
+    margin:12px auto 4px;
+    border-radius:50%;
+    background:conic-gradient(var(--gold) calc(var(--pct,100)*1%), var(--paper-line) 0);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:background 0.1s linear;
+  }
+  .judge-countdown.urgent{
+    background:conic-gradient(var(--ng) calc(var(--pct,100)*1%), var(--paper-line) 0);
+  }
+  .judge-countdown-inner{
+    width:72px;
+    height:72px;
+    border-radius:50%;
+    background:var(--paper);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:34px;
+    font-weight:800;
+    color:var(--navy);
+  }
+
   .battle-avatars{
     position:relative;
     display:flex;
@@ -1295,6 +1322,9 @@
     <button class="reveal-btn" id="skip-continue-btn" style="display:none;">つぎの問題へ</button>
     <div class="status-banner" id="status-banner"></div>
     <button class="reveal-btn" id="reveal-btn" style="display:none;">こたえを見る</button>
+    <div class="judge-countdown" id="judge-countdown" style="display:none;">
+      <div class="judge-countdown-inner" id="judge-countdown-num">10</div>
+    </div>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng" id="judge-ng">✕ 相手はまちがい</button>
       <button class="judge-btn ok" id="judge-ok">〇 相手はせいかい</button>
@@ -1357,7 +1387,7 @@ const els = {};
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
- "buzz-btn","think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-row","judge-ng","judge-ok","my-result","next-btn",
+ "buzz-btn","think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","reveal-btn","judge-countdown","judge-countdown-num","judge-row","judge-ng","judge-ok","my-result","next-btn",
  "result-score","result-sub","result-retry-battle-btn","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -2693,6 +2723,40 @@ function stopCountdown(){
   els["think-timer"].style.display = "none";
 }
 
+// ---- big round countdown shown during 〇✕ judging -- the judge (whichever
+//      side didn't just answer out loud) has 10 seconds to tap a verdict; if
+//      time runs out, default to "correct" so a slow-to-press kid never gets
+//      penalized for someone else's hesitation ----
+let judgeCountdownInterval = null;
+let judgeCountdownTimeout = null;
+function startJudgeCountdown(){
+  clearInterval(judgeCountdownInterval);
+  clearTimeout(judgeCountdownTimeout);
+  const seconds = 10;
+  const startedAt = Date.now();
+  const durationMs = seconds*1000;
+  els["judge-countdown"].style.display = "flex";
+  els["judge-countdown"].classList.remove("urgent");
+  els["judge-countdown"].style.setProperty("--pct", "100");
+  els["judge-countdown-num"].textContent = seconds;
+  judgeCountdownInterval = setInterval(()=>{
+    const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
+    const remainingSec = Math.ceil(remainingMs/1000);
+    els["judge-countdown"].style.setProperty("--pct", remainingMs/durationMs*100);
+    els["judge-countdown-num"].textContent = remainingSec;
+    els["judge-countdown"].classList.toggle("urgent", remainingSec <= 3);
+    if(remainingMs <= 0) clearInterval(judgeCountdownInterval);
+  }, 100);
+  judgeCountdownTimeout = setTimeout(()=>{
+    if(myVerdictOfOpponent === null) judgeOpponent(true);
+  }, durationMs);
+}
+function stopJudgeCountdown(){
+  clearInterval(judgeCountdownInterval);
+  clearTimeout(judgeCountdownTimeout);
+  els["judge-countdown"].style.display = "none";
+}
+
 // ---- guest-only: shows what the host is currently doing (thinking on
 //      question N of Total, or just skipped one) without revealing any
 //      question content ----
@@ -2728,6 +2792,8 @@ function leaveRoom(){
   }
   clearTimeout(pendingSendTimer);
   clearInterval(countdownInterval);
+  clearInterval(judgeCountdownInterval);
+  clearTimeout(judgeCountdownTimeout);
   room = null;
   role = null;
   questionIds = [];
@@ -2937,6 +3003,7 @@ els["resume-guest-btn"].addEventListener("click", ()=>{
 // ---- battle ----
 function showQuestion(idx, hostPrivate){
   stopCountdown();
+  stopJudgeCountdown();
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
   buzzed = false;
@@ -3087,10 +3154,12 @@ els["reveal-btn"].addEventListener("click", ()=>{
   els["reveal-btn"].style.display = "none";
   els["battle-a-block"].classList.add("show");
   els["judge-row"].style.display = "flex";
+  startJudgeCountdown();
 });
 
 function judgeOpponent(correct){
   if(myVerdictOfOpponent !== null) return;
+  stopJudgeCountdown();
   myVerdictOfOpponent = correct;
   judgeAction.send({idx: currentIndex, correct: correct});
   els["judge-row"].style.display = "none";
