@@ -1176,7 +1176,6 @@
     <div id="home-setup">
       <button class="btn-secondary" id="resume-solo-btn" style="display:none;">前回の続きから再開する（一人）</button>
       <button class="btn-secondary" id="resume-battle-btn" style="display:none; margin-top:10px;">前回の対戦を再開する（ホストとして）</button>
-      <button class="btn-secondary" id="resume-guest-btn" style="display:none; margin-top:10px;">前回の部屋に参加する（ゲストとして）</button>
 
       <div class="section-title">単元をえらぶ（複数選択できます）</div>
       <div class="choice-grid" id="unit-choices"></div>
@@ -1529,7 +1528,7 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","resume-guest-btn","export-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
  "count-row","count-custom-row","count-custom-input","shuffle-toggle","order-toggle","review-mode-toggle",
@@ -1939,16 +1938,6 @@ function refreshResumeBattleButton(){
   }
 }
 
-function refreshResumeGuestButton(){
-  const code = loadLastCode();
-  if(code){
-    els["resume-guest-btn"].style.display = "block";
-    els["resume-guest-btn"].textContent = "前回の部屋に参加する（ゲストとして・コード "+code+"）";
-  }else{
-    els["resume-guest-btn"].style.display = "none";
-  }
-}
-
 function refreshStatRow(){
   let total = 0, masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
@@ -1975,7 +1964,6 @@ function renderHome(){
   refreshLastMissButton();
   refreshResumeSoloButton();
   refreshResumeBattleButton();
-  refreshResumeGuestButton();
 }
 
 function escapeHtml(s){
@@ -3372,11 +3360,6 @@ els["join-btn"].addEventListener("click", ()=>{
   joinRoomAsGuest(code);
 });
 
-els["resume-guest-btn"].addEventListener("click", ()=>{
-  const code = loadLastCode();
-  if(!code) return;
-  joinRoomAsGuest(code);
-});
 
 // ---- battle ----
 function showQuestion(idx, hostPrivate){
