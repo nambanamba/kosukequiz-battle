@@ -1632,7 +1632,9 @@ function triggerAttackEffect(){
   }, 500);
 }
 
+let currentScreenName = "screen-home";
 function showScreen(name){
+  currentScreenName = name;
   ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
@@ -3131,10 +3133,12 @@ function setupActions(){
       setupAvatarLabels();
       showScreen("screen-battle");
       hostAdvanceAndArm(0);
-    }else{
+    }else if(currentScreenName !== "screen-result"){
       // a peer (re)joined a game already in progress (e.g. reconnecting after
       // a reload) -- resync them to the current question instead of
-      // restarting from 0
+      // restarting from 0. if the round already legitimately finished
+      // (we're on the result screen), a peer blipping in and out shouldn't
+      // re-open a question that's already been scored
       showScreen("screen-battle");
       hostResyncQuestion(currentIndex);
     }
@@ -3195,6 +3199,13 @@ els["room-code-change"].addEventListener("click", ()=>{
 els["resume-battle-btn"].addEventListener("click", ()=>{
   const session = loadBattleSession();
   if(!session) return;
+  if(!Array.isArray(session.questionIds) || session.currentIndex >= session.questionIds.length){
+    // stale/invalid session (e.g. the previous round actually finished) --
+    // don't resume into a broken state, just drop it
+    clearBattleSession();
+    refreshResumeBattleButton();
+    return;
+  }
   role = "host";
   questionIds = session.questionIds;
   currentIndex = session.currentIndex;
@@ -3321,6 +3332,7 @@ function showQuestion(idx, hostPrivate){
 //      passes without either being tapped, it advances on its own so a kid
 //      who spaces out doesn't stall the game ----
 function hostAdvanceAndArm(idx){
+  if(idx >= questionIds.length){ endGame(); return; }
   if(headStartSec <= 0){
     hostResyncQuestion(idx); // no think-time at all
     return;
@@ -3343,6 +3355,7 @@ function hostAdvanceAndArm(idx){
 //      decision for this question was already made, so skip straight to the
 //      buzzing phase ----
 function hostResyncQuestion(idx){
+  if(idx >= questionIds.length){ endGame(); return; }
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
