@@ -1331,6 +1331,9 @@
       <button class="judge-btn ok" id="judge-ok">〇 相手はせいかい</button>
     </div>
     <div class="status-banner" id="my-result" style="display:none;"></div>
+    <div class="round-countdown" id="next-countdown" style="display:none;">
+      <div class="round-countdown-inner" id="next-countdown-num">8</div>
+    </div>
     <button class="next-btn" id="next-btn">つぎの問題へ</button>
   </section>
 
@@ -1388,7 +1391,7 @@ const els = {};
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
  "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
- "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","answer-countdown","answer-countdown-num","judge-countdown","judge-countdown-num","judge-row","judge-ng","judge-ok","my-result","next-btn",
+ "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner","answer-countdown","answer-countdown-num","judge-countdown","judge-countdown-num","judge-row","judge-ng","judge-ok","my-result","next-countdown","next-countdown-num","next-btn",
  "result-score","result-sub","result-retry-battle-btn","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -2790,6 +2793,38 @@ function stopAnswerCountdown(){
   els["answer-countdown"].style.display = "none";
 }
 
+// ---- host-only: big round countdown shown alongside 次の問題へ once a
+//      question is fully scored -- if the host doesn't tap it, the game
+//      keeps moving on its own instead of waiting forever ----
+const NEXT_TIME_SEC = 8;
+let nextCountdownInterval = null;
+let nextCountdownTimeout = null;
+function startNextCountdown(){
+  clearInterval(nextCountdownInterval);
+  clearTimeout(nextCountdownTimeout);
+  const seconds = NEXT_TIME_SEC;
+  const startedAt = Date.now();
+  const durationMs = seconds*1000;
+  els["next-countdown"].style.display = "flex";
+  els["next-countdown"].classList.remove("urgent");
+  els["next-countdown"].style.setProperty("--pct", "100");
+  els["next-countdown-num"].textContent = seconds;
+  nextCountdownInterval = setInterval(()=>{
+    const remainingMs = Math.max(0, durationMs - (Date.now()-startedAt));
+    const remainingSec = Math.ceil(remainingMs/1000);
+    els["next-countdown"].style.setProperty("--pct", remainingMs/durationMs*100);
+    els["next-countdown-num"].textContent = remainingSec;
+    els["next-countdown"].classList.toggle("urgent", remainingSec <= 2);
+    if(remainingMs <= 0) clearInterval(nextCountdownInterval);
+  }, 100);
+  nextCountdownTimeout = setTimeout(goToNextQuestion, durationMs);
+}
+function stopNextCountdown(){
+  clearInterval(nextCountdownInterval);
+  clearTimeout(nextCountdownTimeout);
+  els["next-countdown"].style.display = "none";
+}
+
 // ---- guest-only: shows what the host is currently doing (thinking on
 //      question N of Total, or just skipped one) without revealing any
 //      question content ----
@@ -2829,6 +2864,8 @@ function leaveRoom(){
   clearTimeout(judgeCountdownTimeout);
   clearInterval(answerCountdownInterval);
   clearTimeout(answerCountdownTimeout);
+  clearInterval(nextCountdownInterval);
+  clearTimeout(nextCountdownTimeout);
   room = null;
   role = null;
   questionIds = [];
@@ -3041,6 +3078,7 @@ function showQuestion(idx, hostPrivate){
   stopCountdown();
   stopJudgeCountdown();
   stopAnswerCountdown();
+  stopNextCountdown();
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
   myVerdictOfOpponent = null;
@@ -3238,6 +3276,7 @@ function maybeFinishQuestion(){
   if(role === "host"){
     els["next-btn"].classList.add("show");
     saveBattleSession();
+    startNextCountdown();
   }
 }
 
@@ -3254,7 +3293,8 @@ els["battle-pause-btn"].addEventListener("click", ()=>{
   showScreen("screen-home");
 });
 
-els["next-btn"].addEventListener("click", ()=>{
+function goToNextQuestion(){
+  stopNextCountdown();
   const newIndex = currentIndex + 1;
   if(newIndex >= questionIds.length){
     nextAction.send({index: newIndex});
@@ -3262,7 +3302,8 @@ els["next-btn"].addEventListener("click", ()=>{
     return;
   }
   hostAdvanceAndArm(newIndex);
-});
+}
+els["next-btn"].addEventListener("click", goToNextQuestion);
 
 function updateScoreUI(){
   const my = role === "host" ? scores.host : scores.guest;
