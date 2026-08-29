@@ -2989,7 +2989,16 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
     return;
   }
   showScreen("screen-battle");
-  hostResyncQuestion(currentIndex);
+  // show the question privately and just wait -- don't start sending/
+  // answering-phase countdowns until the guest has actually reconnected.
+  // onPeerJoin's reconnect branch calls hostResyncQuestion() once they do,
+  // which starts the real (synced) flow for both sides at that point
+  showQuestion(currentIndex, true);
+  els["skip-btn"].style.display = "none";
+  els["advance-btn"].style.display = "none";
+  els["status-banner"].classList.remove("win","lose");
+  els["status-banner"].classList.add("show","info");
+  els["status-banner"].textContent = "ゲストの再接続を待っています…（つながったら自動で再開します）";
 });
 
 // ---- join room (guest) ----
