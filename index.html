@@ -3164,8 +3164,8 @@ function stopSkipContinueCountdown(){
 }
 
 // ---- guest-only: shows what the host is currently doing (thinking on
-//      question N of Total, or just skipped one) without revealing any
-//      question content ----
+//      question N of Total, or just skipped one) -- shares the question
+//      text but never the answer ----
 function showGuestWaitStatus(data){
   const el = els["guest-wait-status"];
   el.classList.remove("win","lose");
@@ -3173,7 +3173,7 @@ function showGuestWaitStatus(data){
   if(data.type === "skipped"){
     el.innerHTML = "相手がこの問題をスキップしました。<br>"+escapeHtml(data.q);
   }else{
-    el.textContent = "相手が問題を考え中です（"+data.position+" / "+data.total+"問目）";
+    el.innerHTML = "相手が問題を考え中です（"+data.position+" / "+data.total+"問目）<br>"+escapeHtml(data.q);
   }
 }
 
@@ -3500,7 +3500,11 @@ function hostAdvanceAndArm(idx){
   pendingSendTimer = setTimeout(performSkip, headStartSec*1000);
   startCountdown(headStartSec);
   if(room){
-    try{ statusAction.send({type: "thinking", position: idx+1, total: questionIds.length, seconds: headStartSec}); }catch(e){}
+    // share the question text (not the answer) with the guest even while
+    // the host is still deciding スキップ vs 進める, so they're not left
+    // completely in the dark during the think-time countdown
+    const q = getQById(questionIds[idx]).q;
+    try{ statusAction.send({type: "thinking", position: idx+1, total: questionIds.length, seconds: headStartSec, q: q}); }catch(e){}
   }
 }
 
