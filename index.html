@@ -832,6 +832,11 @@
     border-radius:100px;
     margin-bottom:6px;
   }
+  .list-item .list-source{
+    font-size:11px;
+    color:var(--ink-soft);
+    margin-bottom:8px;
+  }
   .list-item .list-img-wrap{
     margin-bottom:8px;
     text-align:center;
@@ -2751,6 +2756,7 @@ function renderListItems(){
         '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
         '<input type="checkbox" class="q-select-checkbox" '+(selectedQuestionIds.has(base.id) ? "checked" : "")+'>'+
       '</div>'+
+      (d.note ? '<div class="list-source">出典：'+escapeHtml(d.note)+'</div>' : '')+
       (d.img ? '<div class="list-img-wrap"><img src="images/'+escapeHtml(d.img)+'" alt="資料"></div>' : '')+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
