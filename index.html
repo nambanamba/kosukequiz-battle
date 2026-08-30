@@ -832,6 +832,18 @@
     border-radius:100px;
     margin-bottom:6px;
   }
+  .list-item .list-img-wrap{
+    margin-bottom:8px;
+    text-align:center;
+  }
+  .list-item .list-img-wrap img{
+    max-width:100%;
+    max-height:160px;
+    border-radius:8px;
+    border:1px solid var(--paper-line);
+    background:#fff;
+    cursor:zoom-in;
+  }
   .list-item .list-q{
     font-size:13.5px;
     line-height:1.6;
@@ -1512,7 +1524,7 @@
       <div class="counter" id="solo-counter">1 / 10</div>
     </div>
     <div class="undo-row" id="solo-undo-row" style="display:none;">
-      <span id="solo-undo-link">↩ ひとつ前の判定をやり直す</span>
+      <span id="solo-undo-link">↩ 前の問題にもどる</span>
     </div>
     <div class="progress-bar"><div class="progress-fill" id="solo-progress-fill"></div></div>
 
@@ -2739,6 +2751,7 @@ function renderListItems(){
         '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
         '<input type="checkbox" class="q-select-checkbox" '+(selectedQuestionIds.has(base.id) ? "checked" : "")+'>'+
       '</div>'+
+      (d.img ? '<div class="list-img-wrap"><img src="images/'+escapeHtml(d.img)+'" alt="資料"></div>' : '')+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       '<div class="list-last-answered">最終回答：'+(s.lastAnswered ? formatDate(s.lastAnswered) : "未回答")+'</div>'+
@@ -2769,6 +2782,8 @@ function renderListItems(){
         '<span class="edit-link">✎ 文章を直す</span>'+
         (isEdited ? '<span class="revert-link">元にもどす</span>' : '')+
       '</div>';
+    const listImg = item.querySelector(".list-img-wrap img");
+    if(listImg) listImg.addEventListener("click", ()=> openLightbox(listImg.src));
     item.querySelectorAll(".status-btn").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         setStatus(base.id, btn.dataset.status);
@@ -3277,7 +3292,8 @@ function startSoloCard(){
   }
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
-  els["solo-undo-row"].style.display = (!reviewMode && quizResults.length > 0) ? "block" : "none";
+  els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
+  els["solo-undo-row"].style.display = (quizPos > 0) ? "block" : "none";
   saveSoloSession();
 }
 
@@ -3334,11 +3350,16 @@ els["solo-judge-ok"].addEventListener("click", ()=>judgeSolo(true));
 els["solo-judge-ng"].addEventListener("click", ()=>judgeSolo(false));
 
 els["solo-undo-link"].addEventListener("click", ()=>{
-  if(quizResults.length === 0) return;
-  const last = quizResults.pop();
-  const qid = QA_DATA[last.idx].id;
-  adjustStat(qid, last.correct ? "correct" : "wrong", -1);
-  quizPos = Math.max(0, quizPos - 1);
+  if(quizPos === 0) return;
+  if(reviewMode){
+    quizPos--;
+  }else{
+    if(quizResults.length === 0) return;
+    const last = quizResults.pop();
+    const qid = QA_DATA[last.idx].id;
+    adjustStat(qid, last.correct ? "correct" : "wrong", -1);
+    quizPos = Math.max(0, quizPos - 1);
+  }
   startSoloCard();
 });
 
