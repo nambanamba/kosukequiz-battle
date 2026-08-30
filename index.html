@@ -3229,19 +3229,31 @@ function renderPrintAnswers(queue){
   const region = document.getElementById("print-region");
   region.innerHTML = queue.map((idx,i)=> printAnswerHtml(getQ(idx), i+1)).join("");
 }
+function waitForPrintImages(){
+  const imgs = Array.from(document.getElementById("print-region").querySelectorAll("img"));
+  return Promise.all(imgs.map(img=>{
+    if(img.complete) return Promise.resolve();
+    return new Promise(resolve=>{
+      img.addEventListener("load", resolve, {once:true});
+      img.addEventListener("error", resolve, {once:true});
+    });
+  }));
+}
 
-els["calc-print-problems-btn"].addEventListener("click", ()=>{
+els["calc-print-problems-btn"].addEventListener("click", async ()=>{
   const queue = calcQueue.length ? calcQueue : currentCalcQueue();
   if(!queue) return;
   calcQueue = queue;
   renderPrintProblems(calcQueue);
+  await waitForPrintImages();
   window.print();
 });
-els["calc-print-answers-btn"].addEventListener("click", ()=>{
+els["calc-print-answers-btn"].addEventListener("click", async ()=>{
   const queue = calcQueue.length ? calcQueue : currentCalcQueue();
   if(!queue) return;
   calcQueue = queue;
   renderPrintAnswers(calcQueue);
+  await waitForPrintImages();
   window.print();
 });
 
