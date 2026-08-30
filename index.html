@@ -1311,6 +1311,22 @@
         <div class="toggle" id="type-text" data-type="text">文章問題だけ</div>
       </div>
 
+      <div class="section-title">優先度（データにない問題は対象外になります）</div>
+      <div class="toggle-row">
+        <div class="toggle on" id="priority-all" data-priority="all">すべて</div>
+        <div class="toggle" id="priority-high" data-priority="高">高</div>
+        <div class="toggle" id="priority-mid" data-priority="中">中</div>
+        <div class="toggle" id="priority-low" data-priority="低">低</div>
+      </div>
+
+      <div class="section-title">難易度（データにない問題は対象外になります）</div>
+      <div class="toggle-row">
+        <div class="toggle on" id="level-all" data-level="all">すべて</div>
+        <div class="toggle" id="level-basic" data-level="基礎">基礎</div>
+        <div class="toggle" id="level-standard" data-level="標準">標準</div>
+        <div class="toggle" id="level-advanced" data-level="発展">発展</div>
+      </div>
+
       <div class="section-title">問題数</div>
       <div class="toggle-row" id="count-row">
         <div class="toggle count-choice" data-count="10">10問</div>
@@ -1321,7 +1337,7 @@
       </div>
       <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
 
-      <div class="section-title">復習ミックス（選んでいない単元からランダムに追加）</div>
+      <div class="section-title">復習ミックス（選んでいない単元から、苦手な問題を優先して追加）</div>
       <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
 
       <div class="section-title">出題順</div>
@@ -1723,6 +1739,8 @@ const els = {};
  "calc-back","calc-counter","calc-progress-fill","calc-unit-tag","calc-q-id","calc-source-tag","calc-img-wrap","calc-img","calc-q","calc-a-block","calc-a","calc-sol-label","calc-sol","calc-reveal-btn","calc-next-btn",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
+ "priority-all","priority-high","priority-mid","priority-low",
+ "level-all","level-basic","level-standard","level-advanced",
  "count-row","count-custom-row","count-custom-input","review-mix-input","shuffle-toggle","order-toggle","review-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","create-cancel","room-code-display","room-code-change","create-error",
@@ -2173,6 +2191,8 @@ let currentShuffle = true;
 let filterUnmastered = false;
 let filterWeak = false;
 let currentType = "all"; // all | image | text
+let currentPriority = "all"; // all | 高 | 中 | 低
+let currentLevel = "all"; // all | 基礎 | 標準 | 発展
 let headStartSec = 3; // host-only think time before a question auto-advances
 let answerTimeSec = 8; // both sides say their answer out loud before it auto-reveals
 let judgeTimeSec = 10; // time to tap 〇/✕ before it auto-defaults to 正解
@@ -2203,6 +2223,8 @@ function loadSettings(){
     if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
     if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
     if(s.type) currentType = s.type;
+    if(s.priority) currentPriority = s.priority;
+    if(s.level) currentLevel = s.level;
     if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
     if(s.count !== undefined) questionCount = s.count;
     if(typeof s.reviewMixCount === "number") reviewMixCount = s.reviewMixCount;
@@ -2224,6 +2246,8 @@ function saveSettings(){
       filterUnmastered: filterUnmastered,
       filterWeak: filterWeak,
       type: currentType,
+      priority: currentPriority,
+      level: currentLevel,
       shuffle: currentShuffle,
       count: questionCount,
       reviewMixCount: reviewMixCount,
@@ -2247,6 +2271,14 @@ function applySettingsUI(){
   els["type-all"].classList.toggle("on", currentType === "all");
   els["type-image"].classList.toggle("on", currentType === "image");
   els["type-text"].classList.toggle("on", currentType === "text");
+  els["priority-all"].classList.toggle("on", currentPriority === "all");
+  els["priority-high"].classList.toggle("on", currentPriority === "高");
+  els["priority-mid"].classList.toggle("on", currentPriority === "中");
+  els["priority-low"].classList.toggle("on", currentPriority === "低");
+  els["level-all"].classList.toggle("on", currentLevel === "all");
+  els["level-basic"].classList.toggle("on", currentLevel === "基礎");
+  els["level-standard"].classList.toggle("on", currentLevel === "標準");
+  els["level-advanced"].classList.toggle("on", currentLevel === "発展");
   els["shuffle-toggle"].classList.toggle("on", currentShuffle === true);
   els["order-toggle"].classList.toggle("on", currentShuffle === false);
   els["review-mode-toggle"].classList.toggle("on", reviewMode === true);
@@ -2354,6 +2386,12 @@ function applyPoolFilters(pool){
   }else if(currentType === "text"){
     pool = pool.filter(i => !QA_DATA[i].img);
   }
+  if(currentPriority !== "all"){
+    pool = pool.filter(i => QA_DATA[i].priority === currentPriority);
+  }
+  if(currentLevel !== "all"){
+    pool = pool.filter(i => QA_DATA[i].level === currentLevel);
+  }
   return pool;
 }
 function buildPool(){
@@ -2378,7 +2416,12 @@ function buildFinalPool(){
   if(currentShuffle) pool = shuffleArray(pool);
   if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(reviewMixCount > 0){
-    let reviewPool = shuffleArray(buildReviewPool()).slice(0, reviewMixCount);
+    // 苦手な問題（前回まちがえた問題）を優先して復習ミックスに入れる。
+    // 足りない分だけ、残りからランダムに補う。
+    const reviewCandidates = buildReviewPool();
+    const weakOnes = shuffleArray(reviewCandidates.filter(i => isWeak(QA_DATA[i].id)));
+    const others = shuffleArray(reviewCandidates.filter(i => !isWeak(QA_DATA[i].id)));
+    let reviewPool = weakOnes.concat(others).slice(0, reviewMixCount);
     pool = pool.concat(reviewPool);
     if(currentShuffle) pool = shuffleArray(pool);
   }
@@ -2581,6 +2624,26 @@ els["type-text"].addEventListener("click", ()=>{
   refreshCreateButton();
   saveSettings();
 });
+// ---- 優先度・難易度: どちらも「すべて／値」の単一選択トグル群、同じ形なので共通処理にする ----
+function setupSingleChoiceGroup(elIds, dataKey, setCurrent){
+  elIds.forEach(id=>{
+    els[id].addEventListener("click", ()=>{
+      setCurrent(els[id].dataset[dataKey]);
+      elIds.forEach(otherId=> els[otherId].classList.toggle("on", otherId === id));
+      refreshCreateButton();
+      saveSettings();
+    });
+  });
+}
+setupSingleChoiceGroup(
+  ["priority-all","priority-high","priority-mid","priority-low"],
+  "priority", v=>{ currentPriority = v; }
+);
+setupSingleChoiceGroup(
+  ["level-all","level-basic","level-standard","level-advanced"],
+  "level", v=>{ currentLevel = v; }
+);
+
 els["review-mode-toggle"].addEventListener("click", ()=>{
   reviewMode = !reviewMode;
   els["review-mode-toggle"].classList.toggle("on", reviewMode);
