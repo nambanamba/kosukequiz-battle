@@ -1337,7 +1337,7 @@
       </div>
       <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
 
-      <div class="section-title">復習ミックス（選んでいない単元から、苦手な問題を優先して追加）</div>
+      <div class="section-title">復習ミックス（選んでいない単元から、未正解の問題→間隔が来た問題の順で優先して追加）</div>
       <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
 
       <div class="section-title">出題順</div>
@@ -1915,23 +1915,44 @@ function isMastered(id){
   const s = stats[id];
   return !!(s && (s.correct||0) > 0);
 }
+// ---- 間隔反復（スペースドリピティション）: 正解するたび「箱」を1つ進めて
+//      次に出す間隔を伸ばし、間違えたら箱を0に戻す。box自体が「直近の連続
+//      正解数」を兼ねるので、苦手判定にもそのまま使える ----
+const BOX_INTERVAL_DAYS = [1, 2, 4, 8, 16, 32, 64, 120];
 function isWeak(id){
   const s = stats[id];
   if(!s) return false;
-  return (s.wrong||0) > 0 && (s.wrong||0) >= (s.correct||0);
+  return (s.wrong||0) > 0 && (s.box||0) <= 1;
+}
+function isDue(id){
+  const s = stats[id];
+  if(!s || !s.nextDue) return true; // 一度も間隔管理されていない（未回答含む）＝いつでも復習対象
+  return Date.now() >= s.nextDue;
+}
+function scheduleNext(s, correct){
+  s.box = correct ? Math.min((s.box||0) + 1, BOX_INTERVAL_DAYS.length - 1) : 0;
+  s.nextDue = Date.now() + BOX_INTERVAL_DAYS[s.box] * 24 * 60 * 60 * 1000;
 }
 function recordResult(id, correct){
   const s = stats[id] || {correct:0, wrong:0};
   if(correct) s.correct = (s.correct||0) + 1;
   else s.wrong = (s.wrong||0) + 1;
   s.lastAnswered = Date.now();
+  scheduleNext(s, correct);
   stats[id] = s;
   saveStats();
 }
 function setStatus(id, status){
   if(status === "unseen") delete stats[id];
-  else if(status === "mastered") stats[id] = {correct:1, wrong:0, lastAnswered: Date.now()};
-  else if(status === "weak") stats[id] = {correct:0, wrong:1, lastAnswered: Date.now()};
+  else if(status === "mastered"){
+    const s = {correct:1, wrong:0, lastAnswered: Date.now()};
+    scheduleNext(s, true);
+    stats[id] = s;
+  }else if(status === "weak"){
+    const s = {correct:0, wrong:1, lastAnswered: Date.now()};
+    scheduleNext(s, false);
+    stats[id] = s;
+  }
   saveStats();
 }
 function adjustStat(qid, field, delta){
@@ -2416,12 +2437,14 @@ function buildFinalPool(){
   if(currentShuffle) pool = shuffleArray(pool);
   if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(reviewMixCount > 0){
-    // 苦手な問題（前回まちがえた問題）を優先して復習ミックスに入れる。
-    // 足りない分だけ、残りからランダムに補う。
+    // 復習ミックスの優先順位: ①まだ一度も正解できていない問題（未着手も含む）
+    // ②正解したことはあるが、間隔反復でそろそろ忘れかけている問題
+    // ③まだ間隔が来ていない問題（足りない分の穴埋め）
     const reviewCandidates = buildReviewPool();
-    const weakOnes = shuffleArray(reviewCandidates.filter(i => isWeak(QA_DATA[i].id)));
-    const others = shuffleArray(reviewCandidates.filter(i => !isWeak(QA_DATA[i].id)));
-    let reviewPool = weakOnes.concat(others).slice(0, reviewMixCount);
+    const neverCorrect = shuffleArray(reviewCandidates.filter(i => !isMastered(QA_DATA[i].id)));
+    const dueForReview = shuffleArray(reviewCandidates.filter(i => isMastered(QA_DATA[i].id) && isDue(QA_DATA[i].id)));
+    const notDueYet = shuffleArray(reviewCandidates.filter(i => isMastered(QA_DATA[i].id) && !isDue(QA_DATA[i].id)));
+    let reviewPool = neverCorrect.concat(dueForReview).concat(notDueYet).slice(0, reviewMixCount);
     pool = pool.concat(reviewPool);
     if(currentShuffle) pool = shuffleArray(pool);
   }
