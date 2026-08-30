@@ -1548,6 +1548,7 @@
       <div></div>
     </div>
     <div class="section-title">今日の漢字プリント（社会）</div>
+    <div class="counter" id="kanji-pool-count" style="margin-bottom:10px;"></div>
 
     <div id="kanji-setup-block">
       <div class="section-title">毎日の問題数</div>
@@ -1559,6 +1560,8 @@
       </div>
       <div class="time-custom-row" id="kanji-count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="kanji-count-custom-input" min="1" max="30" /><span>問</span></div>
       <button class="start-btn" id="kanji-make-btn" style="margin-top:14px;">今日の分をつくる</button>
+      <div class="back-link" id="kanji-list-link" style="margin-top:14px;">抽出した漢字の一覧を見る</div>
+      <div class="list-items" id="kanji-list-view" style="display:none; margin-top:10px;"></div>
     </div>
 
     <div id="kanji-today-block" style="display:none;">
@@ -1770,7 +1773,7 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result","screen-calc-setup","screen-calc","screen-kanji",
  "subject-social","subject-science",
  "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
- "kanji-back","kanji-setup-block","kanji-count-row","kanji-count-custom-row","kanji-count-custom-input","kanji-make-btn","kanji-today-block","kanji-today-count","kanji-print-problems-btn","kanji-print-answers-btn","kanji-check-list","kanji-save-btn","kanji-remake-link",
+ "kanji-back","kanji-pool-count","kanji-setup-block","kanji-count-row","kanji-count-custom-row","kanji-count-custom-input","kanji-make-btn","kanji-list-link","kanji-list-view","kanji-today-block","kanji-today-count","kanji-print-problems-btn","kanji-print-answers-btn","kanji-check-list","kanji-save-btn","kanji-remake-link",
  "calc-setup-back","calc-kai-from","calc-kai-to","calc-kai-clear","calc-count-row","calc-count-custom-row","calc-count-custom-input","calc-setup-error","calc-start-btn","calc-print-problems-btn","calc-print-answers-btn",
  "calc-back","calc-counter","calc-progress-fill","calc-unit-tag","calc-q-id","calc-source-tag","calc-img-wrap","calc-img","calc-q","calc-a-block","calc-a","calc-sol-label","calc-sol","calc-reveal-btn","calc-next-btn",
  "unit-choices","mode-unmastered","mode-weak",
@@ -3430,8 +3433,15 @@ function todayStr(){
   const d = new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
-function buildTodayKanjiSet(count){
+// クイズ側で選んでいる単元と同じ単元の漢字だけを対象にする（社会タブを見ているとき）。
+// 理科タブを見ている間は単元の対応づけができないので、社会全単元を対象にする。
+function getKanjiCandidatesForSelection(){
   const all = getKanjiCandidates();
+  if(currentSubject !== "社会") return all;
+  return all.filter(c => selectedUnits.has(c.u));
+}
+function buildTodayKanjiSet(count){
+  const all = getKanjiCandidatesForSelection();
   const byId = new Map(all.map(c=>[c.id, c]));
   const seenIds = Object.keys(kanjiState.stats);
   const wrongOnes = seenIds.filter(id => kanjiState.stats[id].lastResult === "wrong" && byId.has(id)).map(id=>byId.get(id));
@@ -3448,8 +3458,27 @@ function todaysKanjiItems(){
   const byId = new Map(getKanjiCandidates().map(c=>[c.id, c]));
   return kanjiState.today.ids.map(id=>byId.get(id)).filter(Boolean);
 }
+function renderKanjiListView(){
+  const pool = getKanjiCandidatesForSelection();
+  els["kanji-list-view"].innerHTML = "";
+  pool.forEach(c=>{
+    const div = document.createElement("div");
+    div.className = "list-item";
+    div.innerHTML =
+      '<div class="list-unit-tag">'+escapeHtml(c.u)+'</div>'+
+      '<div class="list-q">'+escapeHtml(c.q)+'</div>'+
+      '<div class="list-a">こたえ：'+escapeHtml(c.term)+'</div>';
+    els["kanji-list-view"].appendChild(div);
+  });
+}
 function renderKanjiScreen(){
   const items = todaysKanjiItems();
+  const poolCount = getKanjiCandidatesForSelection().length;
+  els["kanji-pool-count"].textContent = currentSubject === "社会"
+    ? "選んでいる単元から抽出できた漢字："+poolCount+"語"
+    : "社会の全単元から抽出できた漢字："+poolCount+"語（理科タブでは単元を絞れません）";
+  els["kanji-list-view"].style.display = "none";
+  els["kanji-list-link"].textContent = "抽出した漢字の一覧を見る";
   document.querySelectorAll("#kanji-count-row .kanji-count-choice").forEach(el=>{
     el.classList.toggle("on", parseInt(el.dataset.count, 10) === kanjiState.count);
   });
@@ -3530,6 +3559,17 @@ els["kanji-count-custom-input"].addEventListener("change", ()=>{
 els["kanji-make-btn"].addEventListener("click", ()=>{
   buildTodayKanjiSet(kanjiState.count);
   renderKanjiScreen();
+});
+els["kanji-list-link"].addEventListener("click", ()=>{
+  const showing = els["kanji-list-view"].style.display !== "none";
+  if(showing){
+    els["kanji-list-view"].style.display = "none";
+    els["kanji-list-link"].textContent = "抽出した漢字の一覧を見る";
+  }else{
+    renderKanjiListView();
+    els["kanji-list-view"].style.display = "flex";
+    els["kanji-list-link"].textContent = "一覧を閉じる";
+  }
 });
 els["kanji-remake-link"].addEventListener("click", ()=>{
   kanjiState.today = {date:"", ids:[]};
