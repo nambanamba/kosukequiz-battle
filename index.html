@@ -3214,6 +3214,7 @@ function printProblemHtml(d, no){
 function printAnswerHtml(d, no){
   let html = '<div class="print-q">';
   html += '<div class="print-q-head">No.'+no+'　'+escapeHtml(d.u)+(d.note ? '　（'+escapeHtml(d.note)+'）' : '')+'</div>';
+  if(d.img) html += '<img src="images/'+escapeHtml(d.img)+'" alt="資料">';
   html += '<div class="print-q-text">'+escapeHtml(d.q)+'</div>';
   html += '<div class="print-a-text">こたえ：'+escapeHtml(d.a)+'</div>';
   if(d.sol) html += '<div class="print-sol-text">'+escapeHtml(d.sol)+'</div>';
