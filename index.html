@@ -564,6 +564,7 @@
   .judge-btn.ng.fill-btn::before{ background:var(--ng); }
   .next-btn.fill-btn::before{ background:var(--gold); }
   #skip-continue-btn.fill-btn::before{ background:var(--gold); }
+  #result-retry-battle-btn.fill-btn::before{ background:var(--gold); }
   .fill-btn .fill-label{
     position:relative;
     z-index:1;
@@ -1737,7 +1738,8 @@
       <div class="sub" id="result-sub">相手：0問正解</div>
     </div>
     <div class="result-actions">
-      <button class="btn-secondary" id="result-retry-battle-btn" style="display:none;">まちがえた問題だけもう一勝負</button>
+      <button class="btn-secondary fill-btn" id="result-retry-battle-btn" data-label="まちがえた問題だけもう一勝負" style="display:none;"><span class="fill-label">まちがえた問題だけもう一勝負</span></button>
+      <div class="status-banner" id="result-retry-wait-status"></div>
       <button class="start-btn" id="result-home-btn">はじめの画面にもどる</button>
     </div>
   </section>
@@ -1796,7 +1798,7 @@ const els = {};
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
  "next-btn",
- "result-score","result-sub","result-retry-battle-btn","result-home-btn",
+ "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
 
@@ -3772,6 +3774,7 @@ let myMissesThisRound = []; // this device's own wrong answers this round, for "
 let gameStarted = false; // host-only: distinguishes the first peer join (start at 0) from a later reconnect (resync current question)
 let pendingSendTimer = null; // host-only: auto-advances a question if 進める/スキップ isn't tapped in time
 let countdownInterval = null; // host-only: drives the visible think-time countdown
+let guestRetryCountdownInterval = null; // guest-only: drives the visible "もう一勝負" auto-start countdown on screen-result
 
 function startCountdown(seconds){
   clearInterval(countdownInterval);
@@ -3921,17 +3924,58 @@ function stopSkipContinueCountdown(){
 }
 
 // ---- guest-only: shows what the host is currently doing (thinking on
-//      question N of Total, or just skipped one) -- shares the question
-//      text but never the answer ----
+//      question N of Total, or just skipped one). while the host is still
+//      deciding スキップ vs 進める, don't reveal the question at all (it might
+//      get skipped/reordered) -- hide the previous question's card too, so
+//      nothing stale lingers on screen. only once a skip actually happens is
+//      the skipped question shown ----
 function showGuestWaitStatus(data){
   const el = els["guest-wait-status"];
   el.classList.remove("win","lose");
   el.classList.add("show","info");
+  els["battle-view"].style.display = "none";
+  els["battle-img-wrap"].style.display = "none";
+  els["judge-row"].style.display = "none";
+  els["my-result"].style.display = "none";
+  els["my-result"].classList.remove("show");
+  els["status-banner"].classList.remove("show","win","lose","info");
+  els["answer-countdown"].style.display = "none";
+  hideBigVerdict();
   if(data.type === "skipped"){
     el.innerHTML = "相手がこの問題をスキップしました。<br>"+escapeHtml(data.q);
   }else{
-    el.innerHTML = "相手が問題を考え中です（"+data.position+" / "+data.total+"問目）<br>"+escapeHtml(data.q);
+    el.innerHTML = "つぎの問題の準備中…（"+data.position+" / "+data.total+"問目）";
   }
+}
+
+// ---- guest-only: mirrors the host's auto-start countdown for "まちがえた
+//      問題だけもう一勝負" while both sides sit on screen-result -- purely a
+//      local ticking display, the actual round start still arrives via the
+//      normal thinking/start messages a few seconds later ----
+function showGuestRetryCountdown(seconds){
+  clearInterval(guestRetryCountdownInterval);
+  const el = els["result-retry-wait-status"];
+  let remaining = seconds;
+  const render = ()=>{
+    el.classList.remove("win","lose");
+    el.classList.add("show","info");
+    el.textContent = remaining > 0
+      ? "まちがえた問題だけ、まもなくもう一勝負がはじまります…（"+remaining+"）"
+      : "まちがえた問題だけ、もう一勝負がはじまります…";
+  };
+  render();
+  guestRetryCountdownInterval = setInterval(()=>{
+    remaining -= 1;
+    if(remaining <= 0){
+      clearInterval(guestRetryCountdownInterval);
+      remaining = 0;
+    }
+    render();
+  }, 1000);
+}
+function hideGuestRetryCountdown(){
+  clearInterval(guestRetryCountdownInterval);
+  els["result-retry-wait-status"].classList.remove("show","win","lose","info");
 }
 
 function genCode(){
@@ -3959,6 +4003,8 @@ function leaveRoom(){
   stopAnswerCountdown();
   stopNextCountdown();
   stopSkipContinueCountdown();
+  stopResultRetryCountdown();
+  hideGuestRetryCountdown();
   hideBigVerdict();
   room = null;
   role = null;
@@ -3978,12 +4024,18 @@ function setupActions(){
   statusAction = room.makeAction("status");
 
   statusAction.onMessage = (data)=>{
+    if(role !== "guest") return;
+    if(data.type === "retryCountdown"){
+      // host is about to auto-start a "まちがえた問題だけもう一勝負" round --
+      // stays on screen-result, just shows a matching countdown there
+      showGuestRetryCountdown(data.seconds);
+      return;
+    }
     // host-only info about what it's currently doing (question text, not
     // the answer) -- lets the guest follow along without spoiling the
     // answer. this can arrive before the first startAction (e.g. while the
     // host is still deciding on question 1), so make sure the guest is
     // actually on screen-battle to see it instead of sitting on 接続待ち
-    if(role !== "guest") return;
     if(currentScreenName !== "screen-battle") showScreen("screen-battle");
     showGuestWaitStatus(data);
     if(data.type === "thinking") startCountdown(data.seconds);
@@ -4468,6 +4520,8 @@ function updateScoreUI(){
   els["score-opp"].textContent = opp;
 }
 
+const RETRY_COUNTDOWN_SEC = 3;
+
 function endGame(){
   clearBattleSession();
   const my = role === "host" ? scores.host : scores.guest;
@@ -4475,19 +4529,26 @@ function endGame(){
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
   saveLastMiss(myMissesThisRound);
+  stopResultRetryCountdown();
+  hideGuestRetryCountdown();
   // only the host can start a new round (host is the questionIds authority),
-  // and only if the room connection with the guest is still alive
+  // and only if the room connection with the guest is still alive. when
+  // eligible, don't wait for a tap -- fill-countdown the button and auto-start,
+  // and let the guest follow along via a synced countdown of its own
   if(role === "host" && room && myMissesThisRound.length > 0){
+    const label = "まちがえた問題だけもう一勝負（"+myMissesThisRound.length+"問）";
     els["result-retry-battle-btn"].style.display = "block";
-    els["result-retry-battle-btn"].textContent = "まちがえた問題だけもう一勝負（"+myMissesThisRound.length+"問）";
+    els["result-retry-battle-btn"].dataset.label = label;
+    els["result-retry-battle-btn"].querySelector(".fill-label").textContent = label;
+    startResultRetryCountdown();
+    try{ statusAction.send({type: "retryCountdown", seconds: RETRY_COUNTDOWN_SEC}); }catch(e){}
   }else{
     els["result-retry-battle-btn"].style.display = "none";
   }
   showScreen("screen-result");
 }
 
-els["result-retry-battle-btn"].addEventListener("click", ()=>{
-  if(role !== "host" || !room) return;
+function startMissRetryRound(){
   let ids = myMissesThisRound.slice();
   if(ids.length === 0) return;
   if(currentShuffle) ids = shuffleArray(ids);
@@ -4499,6 +4560,22 @@ els["result-retry-battle-btn"].addEventListener("click", ()=>{
   setupAvatarLabels();
   showScreen("screen-battle");
   hostAdvanceAndArm(0);
+}
+
+function startResultRetryCountdown(){
+  startFillCountdown("result-retry", ["result-retry-battle-btn"], RETRY_COUNTDOWN_SEC, ()=>{
+    els["result-retry-battle-btn"].classList.add("auto-press");
+    startMissRetryRound();
+  });
+}
+function stopResultRetryCountdown(){
+  stopFillCountdown("result-retry", ["result-retry-battle-btn"]);
+}
+
+els["result-retry-battle-btn"].addEventListener("click", ()=>{
+  if(role !== "host" || !room) return;
+  stopResultRetryCountdown();
+  startMissRetryRound();
 });
 
 // ---- image lightbox (tap to open, then pinch/drag/double-tap/+-buttons to zoom) ----
