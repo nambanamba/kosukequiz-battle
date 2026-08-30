@@ -3389,8 +3389,10 @@ els["calc-print-answers-btn"].addEventListener("click", async ()=>{
 });
 
 // ---- 今日の漢字プリント（社会）----
-// 単語リストを別途持たず、既存の問題データの答え（例:「〜を（根釧台地）といいます」）
-// からカッコ内の語（または短い答えそのもの）を自動抽出して使う。
+// クイズ作成側が問題データに"kanjiWord"（この語を漢字練習の対象にする）や
+// "kanjiSkip"（対象外にする）を明示していれば、それをそのまま使う。
+// まだ明示されていない問題は、答え（例:「〜を（根釧台地）といいます」）から
+// カッコ内の語（または短い答えそのもの）を自動抽出したものをフォールバックとして使う。
 let kanjiCandidatesCache = null;
 function getKanjiCandidates(){
   if(kanjiCandidatesCache) return kanjiCandidatesCache;
@@ -3400,6 +3402,11 @@ function getKanjiCandidates(){
   const list = [];
   QA_DATA.forEach(d=>{
     if(d.subj !== "社会" || d.kind === "calc") return;
+    if(d.kanjiSkip) return;
+    if(d.kanjiWord){
+      list.push({id: d.id, u: d.u, q: d.q, term: d.kanjiWord, curated: true});
+      return;
+    }
     const a = d.a || "";
     let term = null;
     const m = a.match(parenRe);
@@ -3410,7 +3417,7 @@ function getKanjiCandidates(){
     if(term.length < 2 || term.length > 12) return;
     if(!kanjiRe.test(term)) return;
     if(dateLikeRe.test(term)) return;
-    list.push({id: d.id, u: d.u, q: d.q, term: term});
+    list.push({id: d.id, u: d.u, q: d.q, term: term, curated: false});
   });
   kanjiCandidatesCache = list;
   return list;
@@ -3460,12 +3467,14 @@ function todaysKanjiItems(){
 }
 function renderKanjiListView(){
   const pool = getKanjiCandidatesForSelection();
-  els["kanji-list-view"].innerHTML = "";
+  const curatedCount = pool.filter(c=>c.curated).length;
+  els["kanji-list-view"].innerHTML =
+    '<div class="empty-note">選定ずみ：'+curatedCount+'語／自動抽出：'+(pool.length-curatedCount)+'語</div>';
   pool.forEach(c=>{
     const div = document.createElement("div");
     div.className = "list-item";
     div.innerHTML =
-      '<div class="list-unit-tag">'+escapeHtml(c.u)+'</div>'+
+      '<div class="list-unit-tag">'+escapeHtml(c.u)+(c.curated ? '<span class="edited-badge">選定ずみ</span>' : '')+'</div>'+
       '<div class="list-q">'+escapeHtml(c.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(c.term)+'</div>';
     els["kanji-list-view"].appendChild(div);
