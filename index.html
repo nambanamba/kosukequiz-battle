@@ -565,6 +565,7 @@
   .next-btn.fill-btn::before{ background:var(--gold); }
   #skip-continue-btn.fill-btn::before{ background:var(--gold); }
   #result-retry-battle-btn.fill-btn::before{ background:var(--gold); }
+  #start-together-btn.fill-btn::before{ background:var(--gold); }
   .fill-btn .fill-label{
     position:relative;
     z-index:1;
@@ -1486,7 +1487,8 @@
         <div class="code-label">この番号を相手に伝えてください</div>
         <div class="code-num" id="room-code-display">----</div>
       </div>
-      <div class="waiting-note"><span class="spinner"></span>相手の参加を待っています…</div>
+      <div class="waiting-note" id="home-waiting-note"><span class="spinner"></span>相手の参加を待っています…</div>
+      <button class="start-btn fill-btn" id="start-together-btn" data-label="二人で開始する" style="display:none; margin-top:14px;"><span class="fill-label">二人で開始する</span></button>
       <div class="error-note" id="create-error"></div>
       <div class="back-link" id="room-code-change">別のコードにする</div>
       <div class="back-link" id="create-cancel">✕ やめる</div>
@@ -1507,7 +1509,7 @@
     </div>
 
     <div id="join-waiting" style="display:none;">
-      <div class="waiting-note"><span class="spinner"></span>接続しています…</div>
+      <div class="waiting-note" id="join-waiting-note"><span class="spinner"></span>接続しています…</div>
       <div class="error-note" id="join-error"></div>
     </div>
   </section>
@@ -1863,7 +1865,7 @@ const els = {};
  "level-all","level-basic","level-standard","level-advanced",
  "count-row","count-custom-row","count-custom-input","review-mix-input","shuffle-toggle","order-toggle","review-mode-toggle",
  "solo-start-btn","create-btn","go-join",
- "home-setup","home-waiting","create-cancel","room-code-display","room-code-change","create-error",
+ "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
@@ -4220,6 +4222,34 @@ function hideGuestRetryCountdown(){
   els["result-retry-wait-status"].classList.remove("show","win","lose","info");
 }
 
+// ---- guest-only: mirrors the host's "二人で開始する" auto-start countdown
+//      while both sides sit on screen-join/home-waiting -- purely a local
+//      ticking display, the actual battle start still arrives via the
+//      normal startAction a few seconds later ----
+let guestStartCountdownInterval = null;
+function showGuestStartCountdown(seconds){
+  clearInterval(guestStartCountdownInterval);
+  const el = els["join-waiting-note"];
+  let remaining = seconds;
+  const render = ()=>{
+    el.innerHTML = remaining > 0
+      ? "相手が参加しました！まもなく開始します…（"+remaining+"）"
+      : "まもなく開始します…";
+  };
+  render();
+  guestStartCountdownInterval = setInterval(()=>{
+    remaining -= 1;
+    if(remaining <= 0){
+      clearInterval(guestStartCountdownInterval);
+      remaining = 0;
+    }
+    render();
+  }, 1000);
+}
+function hideGuestStartCountdown(){
+  clearInterval(guestStartCountdownInterval);
+}
+
 function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
 }
@@ -4247,6 +4277,8 @@ function leaveRoom(){
   stopSkipContinueCountdown();
   stopResultRetryCountdown();
   hideGuestRetryCountdown();
+  stopStartTogetherCountdown();
+  hideGuestStartCountdown();
   hideBigVerdict();
   room = null;
   role = null;
@@ -4271,6 +4303,12 @@ function setupActions(){
       // host is about to auto-start a "まちがえた問題だけもう一勝負" round --
       // stays on screen-result, just shows a matching countdown there
       showGuestRetryCountdown(data.seconds);
+      return;
+    }
+    if(data.type === "peerReady"){
+      // host has seen us join and is about to start (button or auto-start) --
+      // stay on screen-join/join-waiting, just show a matching countdown there
+      showGuestStartCountdown(data.seconds);
       return;
     }
     // host-only info about what it's currently doing (question text, not
@@ -4340,12 +4378,10 @@ function setupActions(){
     if(role !== "host") return;
     if(!gameStarted){
       gameStarted = true;
-      scores = {host:0, guest:0};
-      myMissesThisRound = [];
-      resetAvatars();
-      setupAvatarLabels();
-      showScreen("screen-battle");
-      hostAdvanceAndArm(0);
+      els["home-waiting-note"].innerHTML = "相手が参加しました！";
+      els["start-together-btn"].style.display = "block";
+      try{ statusAction.send({type: "peerReady", seconds: START_TOGETHER_COUNTDOWN_SEC}); }catch(e){}
+      startStartTogetherCountdown();
     }else if(currentScreenName !== "screen-result"){
       // a peer (re)joined a game already in progress (e.g. reconnecting after
       // a reload) -- resync them to the current question instead of
@@ -4393,6 +4429,8 @@ els["create-btn"].addEventListener("click", ()=>{
 
   els["home-setup"].style.display = "none";
   els["home-waiting"].style.display = "block";
+  els["home-waiting-note"].innerHTML = '<span class="spinner"></span>相手の参加を待っています…';
+  els["start-together-btn"].style.display = "none";
 
   const code = loadLastCode() || genCode();
   hostCreateRoomWithCode(code);
@@ -4452,6 +4490,7 @@ function joinRoomAsGuest(code){
   role = "guest";
   els["join-setup"].style.display = "none";
   els["join-waiting"].style.display = "block";
+  els["join-waiting-note"].innerHTML = '<span class="spinner"></span>接続しています…';
   els["join-error"].classList.remove("show");
   showScreen("screen-join");
 
@@ -4818,6 +4857,33 @@ els["result-retry-battle-btn"].addEventListener("click", ()=>{
   if(role !== "host" || !room) return;
   stopResultRetryCountdown();
   startMissRetryRound();
+});
+
+// ---- host-only: 二人そろってから、明示的なボタン（またはその自動開始
+//      カウントダウン）で対戦を始める。同時参加直後にいきなり始まらない
+//      ようにするための「二人で開始する」フロー ----
+const START_TOGETHER_COUNTDOWN_SEC = 3;
+function startBattleNow(){
+  scores = {host:0, guest:0};
+  myMissesThisRound = [];
+  resetAvatars();
+  setupAvatarLabels();
+  showScreen("screen-battle");
+  hostAdvanceAndArm(0);
+}
+function startStartTogetherCountdown(){
+  startFillCountdown("start-together", ["start-together-btn"], START_TOGETHER_COUNTDOWN_SEC, ()=>{
+    els["start-together-btn"].classList.add("auto-press");
+    startBattleNow();
+  });
+}
+function stopStartTogetherCountdown(){
+  stopFillCountdown("start-together", ["start-together-btn"]);
+}
+els["start-together-btn"].addEventListener("click", ()=>{
+  if(role !== "host" || !room) return;
+  stopStartTogetherCountdown();
+  startBattleNow();
 });
 
 // ---- image lightbox (tap to open, then pinch/drag/double-tap/+-buttons to zoom) ----
