@@ -2396,6 +2396,11 @@ function renderHome(){
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
+// 漢字問題の q は「【漢字】よみがな\nヒント」のように改行を含むことがあるので、
+// 表示時は改行を<br>に変換する
+function escapeHtmlNl(s){
+  return escapeHtml(s).replace(/\n/g, "<br>");
+}
 
 // ---- subject (社会/理科) ----
 let currentSubject = "社会";
@@ -3666,37 +3671,10 @@ els["calc-print-answers-btn"].addEventListener("click", async ()=>{
 });
 
 // ---- 今日の漢字プリント（社会）----
-// クイズ作成側が問題データに"kanjiWord"（この語を漢字練習の対象にする）や
-// "kanjiSkip"（対象外にする）を明示していれば、それをそのまま使う。
-// まだ明示されていない問題は、答えから自動抽出したものをフォールバックとして使う。
-let kanjiCandidatesCache = null;
+// 対戦クイズ（QA_DATA）とは完全に独立した専用データ（KANJI_DATA、クイズ作成担当が
+// 別ファイルで用意）をそのまま使う。単元名（u）だけは対戦クイズ側と共通の表記。
 function getKanjiCandidates(){
-  if(kanjiCandidatesCache) return kanjiCandidatesCache;
-  const kanjiRe = /[一-鿿]/;
-  const parenRe = /[（(]([^）)]{1,14})[）)]/;
-  const dateLikeRe = /^[0-9零一二三四五六七八九十百千万紀元前後年世紀ごろ]+$/;
-  const list = [];
-  QA_DATA.forEach(d=>{
-    if(d.subj !== "社会" || d.kind === "calc") return;
-    if(d.kanjiSkip) return;
-    if(d.kanjiWord){
-      list.push({id: d.id, u: d.u, q: d.q, term: d.kanjiWord, curated: true});
-      return;
-    }
-    const a = d.a || "";
-    let term = null;
-    const m = a.match(parenRe);
-    if(m) term = m[1];
-    else if(a.length <= 12 && !/[。、]/.test(a)) term = a;
-    if(!term) return;
-    term = term.replace(/^[①-⑳㉑-㊿]/, "").replace(/^[アイウエオ](?=.)/, "").trim();
-    if(term.length < 2 || term.length > 12) return;
-    if(!kanjiRe.test(term)) return;
-    if(dateLikeRe.test(term)) return;
-    list.push({id: d.id, u: d.u, q: d.q, term: term, curated: false});
-  });
-  kanjiCandidatesCache = list;
-  return list;
+  return KANJI_DATA.map(d => ({id: d.id, u: d.u, q: d.q, term: d.a}));
 }
 
 const KANJI_KEY = "kq_kanji_state_v1";
@@ -3717,6 +3695,48 @@ function todayStr(){
   const d = new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
+
+// ---- 漢字専用の正誤記録: クイズ本体のstats（苦手判定）とは別ストレージで管理する
+//      （id体系が完全に別なので混ざりようがないが、念のため独立させる）。
+//      判定の「方法」自体はクイズ本体と共通にするため、間隔反復のスケジューリングは
+//      共通のscheduleNext()をそのまま再利用する ----
+const KANJI_STATS_KEY = "kq_kanji_stats_v1";
+let kanjiStats = {};
+function loadKanjiStats(){
+  try{
+    const raw = window.localStorage.getItem(KANJI_STATS_KEY);
+    kanjiStats = raw ? JSON.parse(raw) : {};
+  }catch(e){
+    kanjiStats = {};
+  }
+}
+function saveKanjiStats(){
+  try{ window.localStorage.setItem(KANJI_STATS_KEY, JSON.stringify(kanjiStats)); }catch(e){ console.error("save kanji stats failed", e); }
+}
+function isKanjiMastered(id){
+  const s = kanjiStats[id];
+  return !!(s && (s.correct||0) > 0);
+}
+function isKanjiWeak(id){
+  const s = kanjiStats[id];
+  if(!s) return false;
+  return (s.wrong||0) > 0 && (s.box||0) <= 1;
+}
+function isKanjiDue(id){
+  const s = kanjiStats[id];
+  if(!s || !s.nextDue) return true;
+  return Date.now() >= s.nextDue;
+}
+function recordKanjiResult(id, correct){
+  const s = kanjiStats[id] || {correct:0, wrong:0};
+  if(correct) s.correct = (s.correct||0) + 1;
+  else s.wrong = (s.wrong||0) + 1;
+  s.lastAnswered = Date.now();
+  scheduleNext(s, correct);
+  kanjiStats[id] = s;
+  saveKanjiStats();
+}
+
 // 漢字プリントの対象単元＝ホーム画面で選ばれている（直近の）社会の単元と常に連動する
 function currentKanjiUnits(){
   return socialSelectedUnitsSnapshot || new Set(getUnitsForSubject("社会"));
@@ -3725,8 +3745,8 @@ function currentKanjiUnits(){
 function getKanjiCandidatesForSelection(){
   const units = currentKanjiUnits();
   let list = getKanjiCandidates().filter(c => units.has(c.u));
-  if(kanjiState.filterUnmastered) list = list.filter(c => !isMastered(c.id));
-  if(kanjiState.filterWeak) list = list.filter(c => isWeak(c.id));
+  if(kanjiState.filterUnmastered) list = list.filter(c => !isKanjiMastered(c.id));
+  if(kanjiState.filterWeak) list = list.filter(c => isKanjiWeak(c.id));
   return list;
 }
 
@@ -3737,9 +3757,9 @@ function buildTodayKanjiSet(count){
     return;
   }
   // クイズ本体の復習ミックスと同じ優先順位: ①未正解・苦手 → ②間隔が来た問題 → ③まだ間隔が来ていない問題
-  const neverOrWeak = shuffleArray(all.filter(c => !isMastered(c.id) || isWeak(c.id)));
-  const dueForReview = shuffleArray(all.filter(c => isMastered(c.id) && !isWeak(c.id) && isDue(c.id)));
-  const notDueYet = shuffleArray(all.filter(c => isMastered(c.id) && !isWeak(c.id) && !isDue(c.id)));
+  const neverOrWeak = shuffleArray(all.filter(c => !isKanjiMastered(c.id) || isKanjiWeak(c.id)));
+  const dueForReview = shuffleArray(all.filter(c => isKanjiMastered(c.id) && !isKanjiWeak(c.id) && isKanjiDue(c.id)));
+  const notDueYet = shuffleArray(all.filter(c => isKanjiMastered(c.id) && !isKanjiWeak(c.id) && !isKanjiDue(c.id)));
   const pool = neverOrWeak.concat(dueForReview).concat(notDueYet);
   const picked = pool.slice(0, count);
   kanjiState.today = {date: todayStr(), ids: picked.map(c=>c.id)};
@@ -3752,15 +3772,14 @@ function todaysKanjiItems(){
 }
 function renderKanjiListView(){
   const pool = getKanjiCandidatesForSelection();
-  const curatedCount = pool.filter(c=>c.curated).length;
   els["kanji-list-view"].innerHTML =
-    '<div class="empty-note">対象：全'+pool.length+'問（選定ずみ：'+curatedCount+'問／自動抽出：'+(pool.length-curatedCount)+'問）</div>';
+    '<div class="empty-note">対象：全'+pool.length+'問</div>';
   pool.forEach((c, idx)=>{
     const div = document.createElement("div");
     div.className = "list-item";
     div.innerHTML =
-      '<div class="list-unit-tag">No.'+(idx+1)+'　'+escapeHtml(c.u)+(c.curated ? '<span class="edited-badge">厳選</span>' : '')+'</div>'+
-      '<div class="list-q">'+escapeHtml(c.q)+'</div>'+
+      '<div class="list-unit-tag">No.'+(idx+1)+'　'+escapeHtml(c.u)+'</div>'+
+      '<div class="list-q">'+escapeHtmlNl(c.q)+'</div>'+
       '<div class="list-a">こたえ：<strong style="color:var(--navy-deep);">'+escapeHtml(c.term)+'</strong></div>';
     els["kanji-list-view"].appendChild(div);
   });
@@ -3798,7 +3817,7 @@ function renderKanjiScreen(){
     div.dataset.id = c.id;
     div.innerHTML =
       '<div class="list-unit-tag">No.'+(idx+1)+'　'+escapeHtml(c.u)+'</div>'+
-      '<div class="list-q">'+escapeHtml(c.q)+'</div>'+
+      '<div class="list-q">'+escapeHtmlNl(c.q)+'</div>'+
       '<div class="list-a">こたえ：<strong style="color:var(--navy-deep);">'+escapeHtml(c.term)+'</strong></div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn ok" data-result="correct">〇 かけた</div>'+
@@ -3830,7 +3849,7 @@ function generatePrintHeaderHtml(title, unitNames, totalCount){
 }
 function kanjiTestItemHtml(c, no){
   return '<div class="kanji-test-item">'+
-    '<div class="kanji-test-q-text"><b>' + no + '.</b> ' + escapeHtml(c.q) + '<div class="kanji-test-unit-hint">[' + escapeHtml(c.u) + ']</div></div>'+
+    '<div class="kanji-test-q-text"><b>' + no + '.</b> ' + escapeHtmlNl(c.q) + '<div class="kanji-test-unit-hint">[' + escapeHtml(c.u) + ']</div></div>'+
     '<div class="kanji-test-ans-box"></div>'+
   '</div>';
 }
@@ -3953,10 +3972,9 @@ els["kanji-save-btn"].addEventListener("click", ()=>{
     if(!activeBtn){ unanswered++; return; }
     const id = row.dataset.id;
     const result = activeBtn.dataset.result;
-    // クイズ本体と共通の正誤記録に書き込む（苦手判定・復習ミックスにもそのまま反映される）
-    recordResult(id, result === "correct");
+    // クイズ本体とは独立した漢字専用の正誤記録に書き込む（判定方法・苦手判定はクイズと同じ間隔反復方式）
+    recordKanjiResult(id, result === "correct");
   });
-  refreshStatRow();
   if(unanswered > 0){
     alert(unanswered+"問、〇✕が未入力です。入力した分だけ記録しました。");
   }else{
@@ -5235,6 +5253,7 @@ loadEdits();
 loadLastMiss();
 loadSettings();
 loadKanjiState();
+loadKanjiStats();
 renderHome();
 renderUnitChoices();
 applySettingsUI();
