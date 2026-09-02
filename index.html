@@ -1407,6 +1407,17 @@
 
       <div class="section-title">復習ミックス（選んでいない単元から、未正解の問題→間隔が来た問題の順で優先して追加）</div>
       <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
+      <div class="section-title" style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
+        <span style="font-size:13px; font-weight:normal;">復習する単元</span>
+        <span class="back-link" id="review-unit-reset-link" style="display:none;">自動（全部）に戻す</span>
+      </div>
+      <div class="choice-grid" id="review-unit-choices"></div>
+      <div class="toggle-row" id="review-priority-row" style="margin-top:8px;">
+        <div class="toggle on" data-review-priority="all">優先度：すべて</div>
+        <div class="toggle" data-review-priority="高">優先度：高のみ</div>
+        <div class="toggle" data-review-priority="中">優先度：中のみ</div>
+        <div class="toggle" data-review-priority="低">優先度：低のみ</div>
+      </div>
 
       <div class="section-title">出題順</div>
       <div class="toggle-row">
@@ -1419,7 +1430,12 @@
         <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
 
-      <div class="section-title">二人対戦用: 考える時間（時間が来ると自動でスキップします）</div>
+      <div class="section-title">二人対戦用: 対戦モード</div>
+      <div class="toggle-row">
+        <div class="toggle" id="fair-mode-toggle">こどもどうし公平モード（ホストの先読み・スキップなし、単元は双方の希望を反映）</div>
+      </div>
+
+      <div class="section-title">二人対戦用: 考える時間（時間が来ると自動でスキップします／公平モードでは使いません）</div>
       <div class="toggle-row time-setting-row" data-time-key="headstart">
         <div class="toggle time-choice" data-value="5">5秒</div>
         <div class="toggle time-choice" data-value="8">8秒</div>
@@ -1511,6 +1527,10 @@
     <div id="join-waiting" style="display:none;">
       <div class="waiting-note" id="join-waiting-note"><span class="spinner"></span>接続しています…</div>
       <div class="error-note" id="join-error"></div>
+      <div id="join-fair-units" style="display:none; margin-top:16px;">
+        <div class="section-title">公平モード：あなたも出したい単元を選べます</div>
+        <div class="choice-grid" id="join-fair-unit-choices"></div>
+      </div>
     </div>
   </section>
 
@@ -1616,18 +1636,19 @@
       <div></div>
     </div>
     <div class="section-title">社会 漢字プリント</div>
-    <div class="counter" id="kanji-pool-count" style="margin-bottom:10px;"></div>
-
     <div class="section-title" style="display:flex; justify-content:space-between; align-items:baseline;">
-      <span>単元を選ぶ</span>
-      <div style="font-size:12px; font-weight:normal;">
-        <span class="back-link" id="kanji-unit-all" style="margin:0 8px 0 0; display:inline;">すべて選ぶ</span>
-        <span class="back-link" id="kanji-unit-clear" style="margin:0; display:inline;">クリア</span>
-      </div>
+      <span>対象の単元（ホーム画面の単元選択と連動）</span>
+      <span class="back-link" id="kanji-unit-change-link">ホーム画面で単元を変更</span>
     </div>
-    <div class="choice-grid" id="kanji-unit-choices" style="margin-bottom:16px;"></div>
+    <div class="counter" id="kanji-pool-count" style="margin-bottom:16px;"></div>
 
     <div id="kanji-setup-block">
+      <div class="section-title">出題モード</div>
+      <div class="toggle-row">
+        <div class="toggle" id="kanji-mode-unmastered">正解ずみを除く</div>
+        <div class="toggle" id="kanji-mode-weak">苦手な問題だけ</div>
+      </div>
+
       <div class="section-title">毎日の練習プリント</div>
       <div class="toggle-row" id="kanji-count-row">
         <div class="toggle kanji-count-choice" data-count="3">3問</div>
@@ -1856,16 +1877,16 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result","screen-calc-setup","screen-calc","screen-kanji",
  "subject-social","subject-science",
  "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
- "kanji-back","kanji-pool-count","kanji-unit-all","kanji-unit-clear","kanji-unit-choices","kanji-setup-block","kanji-count-row","kanji-count-custom-row","kanji-count-custom-input","kanji-make-btn","kanji-print-all-problems-btn","kanji-print-all-answers-btn","kanji-list-link","kanji-list-view","kanji-today-block","kanji-today-count","kanji-print-problems-btn","kanji-print-answers-btn","kanji-check-list","kanji-save-btn","kanji-remake-link",
+ "kanji-back","kanji-pool-count","kanji-unit-change-link","kanji-mode-unmastered","kanji-mode-weak","kanji-setup-block","kanji-count-row","kanji-count-custom-row","kanji-count-custom-input","kanji-make-btn","kanji-print-all-problems-btn","kanji-print-all-answers-btn","kanji-list-link","kanji-list-view","kanji-today-block","kanji-today-count","kanji-print-problems-btn","kanji-print-answers-btn","kanji-check-list","kanji-save-btn","kanji-remake-link",
  "calc-setup-back","calc-kai-from","calc-kai-to","calc-kai-clear","calc-count-row","calc-count-custom-row","calc-count-custom-input","calc-setup-error","calc-start-btn","calc-print-problems-btn","calc-print-answers-btn",
  "calc-back","calc-counter","calc-progress-fill","calc-unit-tag","calc-q-id","calc-source-tag","calc-img-wrap","calc-img","calc-q","calc-a-block","calc-a","calc-sol-label","calc-sol","calc-reveal-btn","calc-next-btn",
  "unit-choices","mode-unmastered","mode-weak",
  "type-all","type-image","type-text",
  "priority-all","priority-high","priority-mid","priority-low",
  "level-all","level-basic","level-standard","level-advanced",
- "count-row","count-custom-row","count-custom-input","review-mix-input","shuffle-toggle","order-toggle","review-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-reset-link","review-priority-row","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
- "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note",
+ "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
@@ -2342,6 +2363,16 @@ let judgeTimeSec = 10; // time to tap 〇/✕ before it auto-defaults to 正解
 let nextTimeSec = 8; // time before 次の問題へ fires itself
 let skipNextTimeSec = 8; // time before the 次の問題へ shown after a skip fires itself
 let reviewMode = false;
+let fairMode = false; // 対戦: こどもどうし公平モード（ホスト先読みなし・単元は双方の希望を合算）
+
+// ---- 漢字プリント画面はホームの「社会」単元選択に常に自動連動する。
+//      currentSubjectが理科の間も直近の社会選択を保持するためのスナップショット ----
+let socialSelectedUnitsSnapshot = null;
+
+// ---- 復習ミックス: 対象単元・優先度を独自に選べる ----
+let reviewSelectedUnits = new Set();
+let reviewUnitsCustomized = false;
+let reviewPriority = "all"; // all | 高 | 中 | 低
 
 // ---- the 5 battle timer settings all share the same UI: 3 preset chips
 //      plus a free-input option, keyed by the row's data-time-key ----
@@ -2372,13 +2403,22 @@ function loadSettings(){
     if(s.count !== undefined) questionCount = s.count;
     if(typeof s.reviewMixCount === "number") reviewMixCount = s.reviewMixCount;
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
+    if(typeof s.fairMode === "boolean") fairMode = s.fairMode;
     if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
     if(typeof s.answerTimeSec === "number") answerTimeSec = s.answerTimeSec;
     if(typeof s.judgeTimeSec === "number") judgeTimeSec = s.judgeTimeSec;
     if(typeof s.nextTimeSec === "number") nextTimeSec = s.nextTimeSec;
     if(typeof s.skipNextTimeSec === "number") skipNextTimeSec = s.skipNextTimeSec;
+    if(Array.isArray(s.socialUnits) && s.socialUnits.length) socialSelectedUnitsSnapshot = new Set(s.socialUnits);
+    if(Array.isArray(s.reviewSelectedUnits)) reviewSelectedUnits = new Set(s.reviewSelectedUnits);
+    if(typeof s.reviewUnitsCustomized === "boolean") reviewUnitsCustomized = s.reviewUnitsCustomized;
+    if(s.reviewPriority) reviewPriority = s.reviewPriority;
   }catch(e){
     // ignore, keep defaults
+  }
+  // 起動直後、社会を一度も操作していない場合のフォールバック初期値
+  if(!socialSelectedUnitsSnapshot){
+    socialSelectedUnitsSnapshot = new Set(currentSubject === "社会" ? selectedUnits : getUnitsForSubject("社会"));
   }
 }
 function saveSettings(){
@@ -2395,12 +2435,18 @@ function saveSettings(){
       count: questionCount,
       reviewMixCount: reviewMixCount,
       reviewMode: reviewMode,
+      fairMode: fairMode,
       headStartSec: headStartSec,
       answerTimeSec: answerTimeSec,
       judgeTimeSec: judgeTimeSec,
       nextTimeSec: nextTimeSec,
-      skipNextTimeSec: skipNextTimeSec
+      skipNextTimeSec: skipNextTimeSec,
+      socialUnits: Array.from(currentSubject === "社会" ? selectedUnits : (socialSelectedUnitsSnapshot || [])),
+      reviewSelectedUnits: Array.from(reviewSelectedUnits),
+      reviewUnitsCustomized: reviewUnitsCustomized,
+      reviewPriority: reviewPriority
     }));
+    if(currentSubject === "社会") socialSelectedUnitsSnapshot = new Set(selectedUnits);
   }catch(e){
     console.error("save settings failed", e);
   }
@@ -2425,6 +2471,7 @@ function applySettingsUI(){
   els["shuffle-toggle"].classList.toggle("on", currentShuffle === true);
   els["order-toggle"].classList.toggle("on", currentShuffle === false);
   els["review-mode-toggle"].classList.toggle("on", reviewMode === true);
+  els["fair-mode-toggle"].classList.toggle("on", fairMode === true);
   const presetCounts = ["10","20","30","all"];
   const isPreset = presetCounts.includes(String(questionCount));
   document.querySelectorAll(".count-choice").forEach(el=>{
@@ -2439,6 +2486,10 @@ function applySettingsUI(){
     els["count-custom-input"].value = questionCount;
   }
   els["review-mix-input"].value = reviewMixCount;
+  document.querySelectorAll("#review-priority-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.reviewPriority === reviewPriority);
+  });
+  renderReviewUnitChoices();
   TIME_SETTINGS.forEach(applyTimeSettingUI);
 }
 
@@ -2507,17 +2558,20 @@ function setupTimeSettingRow(setting){
 }
 TIME_SETTINGS.forEach(setupTimeSettingRow);
 
-function getUnits(){
+function getUnitsForSubject(subject){
   const set = [];
-  QA_DATA.forEach(d=>{ if(d.subj !== currentSubject) return; if(!set.includes(d.u)) set.push(d.u); });
+  QA_DATA.forEach(d=>{ if(d.subj !== subject) return; if(!set.includes(d.u)) set.push(d.u); });
   return set;
+}
+function getUnits(){
+  return getUnitsForSubject(currentSubject);
 }
 function unitIndices(unit){
   const arr = [];
   QA_DATA.forEach((d,i)=>{ if(d.subj !== currentSubject) return; if(unit==="ALL" || d.u===unit) arr.push(i); });
   return arr;
 }
-function applyPoolFilters(pool){
+function applyPoolFiltersExceptPriority(pool){
   if(filterUnmastered){
     pool = pool.filter(i => !isMastered(QA_DATA[i].id));
   }
@@ -2529,11 +2583,15 @@ function applyPoolFilters(pool){
   }else if(currentType === "text"){
     pool = pool.filter(i => !QA_DATA[i].img);
   }
-  if(currentPriority !== "all"){
-    pool = pool.filter(i => QA_DATA[i].priority === currentPriority);
-  }
   if(currentLevel !== "all"){
     pool = pool.filter(i => QA_DATA[i].level === currentLevel);
+  }
+  return pool;
+}
+function applyPoolFilters(pool){
+  pool = applyPoolFiltersExceptPriority(pool);
+  if(currentPriority !== "all"){
+    pool = pool.filter(i => QA_DATA[i].priority === currentPriority);
   }
   return pool;
 }
@@ -2544,12 +2602,25 @@ function buildPool(){
   QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && selectedUnits.has(d.u) && d.kind !== "calc") pool.push(i); });
   return applyPoolFilters(pool);
 }
-// ---- 復習ミックス: 選んでいない単元からランダムに追加する分の候補プール
-//      （例: 今週のメインは歴史全部、復習として地理・公民から少し混ぜる）----
+// ---- 復習ミックス: 選んでいない単元のうち、復習単元として選ばれているものから
+//      追加する分の候補プール（単元・優先度は復習ミックス専用の設定を使う）----
+function availableReviewUnits(){
+  return getUnits().filter(u => !selectedUnits.has(u));
+}
+function currentReviewUnits(){
+  const avail = availableReviewUnits();
+  if(!reviewUnitsCustomized) return new Set(avail);
+  return new Set(avail.filter(u => reviewSelectedUnits.has(u)));
+}
 function buildReviewPool(){
   let pool = [];
-  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && !selectedUnits.has(d.u) && d.kind !== "calc") pool.push(i); });
-  return applyPoolFilters(pool);
+  const units = currentReviewUnits();
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && units.has(d.u) && d.kind !== "calc") pool.push(i); });
+  pool = applyPoolFiltersExceptPriority(pool);
+  if(reviewPriority !== "all"){
+    pool = pool.filter(i => QA_DATA[i].priority === reviewPriority);
+  }
+  return pool;
 }
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
@@ -2614,6 +2685,44 @@ function refreshUnitSelection(){
     checkEl.textContent = groupAllSelected ? "☑" : "☐";
     checkEl.classList.toggle("checked", groupAllSelected);
   });
+  renderReviewUnitChoices();
+}
+// ---- 復習ミックスの対象単元チップ（メインで選ばれていない単元のみが候補）----
+function renderReviewUnitChoices(){
+  const avail = availableReviewUnits();
+  // カスタム選択中でも、メイン選択の変化でもう選べなくなった単元は自動的に外す
+  if(reviewUnitsCustomized){
+    const availSet = new Set(avail);
+    reviewSelectedUnits.forEach(u=>{ if(!availSet.has(u)) reviewSelectedUnits.delete(u); });
+  }
+  const active = currentReviewUnits();
+  els["review-unit-choices"].innerHTML = "";
+  if(avail.length === 0){
+    els["review-unit-choices"].innerHTML = '<div class="empty-note">復習に回せる単元がありません（すべての単元がメインで選ばれています）</div>';
+    els["review-unit-reset-link"].style.display = "none";
+    return;
+  }
+  avail.forEach(u=>{
+    const cnt = unitIndices(u).length;
+    const div = document.createElement("div");
+    div.className = "choice" + (active.has(u) ? " on" : "");
+    div.innerHTML = '<span class="name">'+escapeHtml(u)+'</span><span class="count">'+cnt+'問</span>';
+    div.addEventListener("click", ()=>{
+      if(!reviewUnitsCustomized){
+        // 自動（全部）から手動に切り替わる瞬間: 今見えている「全部オン」状態を
+        // そのまま引き継いでから、押されたチップだけをオフにする
+        reviewUnitsCustomized = true;
+        reviewSelectedUnits = new Set(avail);
+      }
+      if(reviewSelectedUnits.has(u)) reviewSelectedUnits.delete(u);
+      else reviewSelectedUnits.add(u);
+      renderReviewUnitChoices();
+      refreshCreateButton();
+      saveSettings();
+    });
+    els["review-unit-choices"].appendChild(div);
+  });
+  els["review-unit-reset-link"].style.display = reviewUnitsCustomized ? "inline" : "none";
 }
 function refreshCreateButton(){
   const pool = buildPool();
@@ -2724,6 +2833,22 @@ els["review-mix-input"].addEventListener("change", ()=>{
   refreshCreateButton();
   saveSettings();
 });
+els["review-unit-reset-link"].addEventListener("click", ()=>{
+  reviewUnitsCustomized = false;
+  reviewSelectedUnits = new Set();
+  renderReviewUnitChoices();
+  refreshCreateButton();
+  saveSettings();
+});
+document.querySelectorAll("#review-priority-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    reviewPriority = el.dataset.reviewPriority;
+    document.querySelectorAll("#review-priority-row .toggle").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    refreshCreateButton();
+    saveSettings();
+  });
+});
 els["shuffle-toggle"].addEventListener("click", ()=>{
   currentShuffle = true;
   els["shuffle-toggle"].classList.add("on");
@@ -2792,6 +2917,11 @@ setupSingleChoiceGroup(
 els["review-mode-toggle"].addEventListener("click", ()=>{
   reviewMode = !reviewMode;
   els["review-mode-toggle"].classList.toggle("on", reviewMode);
+  saveSettings();
+});
+els["fair-mode-toggle"].addEventListener("click", ()=>{
+  fairMode = !fairMode;
+  els["fair-mode-toggle"].classList.toggle("on", fairMode);
   saveSettings();
 });
 
@@ -3506,13 +3636,12 @@ function getKanjiCandidates(){
 }
 
 const KANJI_KEY = "kq_kanji_state_v1";
-let kanjiState = {stats:{}, today:{date:"", ids:[]}, count:5};
-let kanjiSelectedUnits = new Set(); // 漢字画面独自の単元フィルター
+let kanjiState = {today:{date:"", ids:[]}, count:5, filterUnmastered:false, filterWeak:false};
 
 function loadKanjiState(){
   try{
     const raw = window.localStorage.getItem(KANJI_KEY);
-    if(raw) kanjiState = Object.assign({stats:{}, today:{date:"", ids:[]}, count:5}, JSON.parse(raw));
+    if(raw) kanjiState = Object.assign({today:{date:"", ids:[]}, count:5, filterUnmastered:false, filterWeak:false}, JSON.parse(raw));
   }catch(e){
     // keep defaults
   }
@@ -3524,59 +3653,30 @@ function todayStr(){
   const d = new Date();
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
-// 単元フィルターで選ばれている単元の漢字のみを対象にする
-function getKanjiCandidatesForSelection(){
-  const all = getKanjiCandidates();
-  if(kanjiSelectedUnits.size === 0) return all;
-  return all.filter(c => kanjiSelectedUnits.has(c.u));
+// 漢字プリントの対象単元＝ホーム画面で選ばれている（直近の）社会の単元と常に連動する
+function currentKanjiUnits(){
+  return socialSelectedUnitsSnapshot || new Set(getUnitsForSubject("社会"));
 }
-
-function renderKanjiUnitChoices(){
-  const all = getKanjiCandidates();
-  // 単元ごとの件数を集計
-  const unitCounts = new Map();
-  all.forEach(c=>{
-    unitCounts.set(c.u, (unitCounts.get(c.u) || 0) + 1);
-  });
-  const allUnits = Array.from(unitCounts.keys());
-
-  // 初回、未初期化なら全単元を選択状態にする
-  if(kanjiSelectedUnits.size === 0){
-    allUnits.forEach(u => kanjiSelectedUnits.add(u));
-  }
-
-  els["kanji-unit-choices"].innerHTML = "";
-  allUnits.forEach(u=>{
-    const cnt = unitCounts.get(u);
-    const div = document.createElement("div");
-    div.className = "choice" + (kanjiSelectedUnits.has(u) ? " on" : "");
-    div.innerHTML = escapeHtml(u) + '<span class="kanji-unit-badge">' + cnt + '問</span>';
-    div.addEventListener("click", ()=>{
-      if(kanjiSelectedUnits.has(u)){
-        kanjiSelectedUnits.delete(u);
-      }else{
-        kanjiSelectedUnits.add(u);
-      }
-      renderKanjiUnitChoices();
-      renderKanjiScreen();
-    });
-    els["kanji-unit-choices"].appendChild(div);
-  });
+// 単元フィルター（ホームと連動）＋出題モード（正解ずみを除く／苦手だけ）で絞り込む
+function getKanjiCandidatesForSelection(){
+  const units = currentKanjiUnits();
+  let list = getKanjiCandidates().filter(c => units.has(c.u));
+  if(kanjiState.filterUnmastered) list = list.filter(c => !isMastered(c.id));
+  if(kanjiState.filterWeak) list = list.filter(c => isWeak(c.id));
+  return list;
 }
 
 function buildTodayKanjiSet(count){
   const all = getKanjiCandidatesForSelection();
   if(all.length === 0){
-    alert("選んだ単元に漢字問題がありません。単元を選び直してください。");
+    alert("選んだ条件に漢字問題がありません。単元やフィルターを見直してください。");
     return;
   }
-  const byId = new Map(all.map(c=>[c.id, c]));
-  const seenIds = Object.keys(kanjiState.stats);
-  const wrongOnes = seenIds.filter(id => kanjiState.stats[id].lastResult === "wrong" && byId.has(id)).map(id=>byId.get(id));
-  const seenIdSet = new Set(seenIds);
-  const unseen = all.filter(c => !seenIdSet.has(c.id));
-  const seenCorrect = all.filter(c => seenIdSet.has(c.id) && kanjiState.stats[c.id].lastResult !== "wrong");
-  const pool = shuffleArray(wrongOnes).concat(shuffleArray(unseen)).concat(shuffleArray(seenCorrect));
+  // クイズ本体の復習ミックスと同じ優先順位: ①未正解・苦手 → ②間隔が来た問題 → ③まだ間隔が来ていない問題
+  const neverOrWeak = shuffleArray(all.filter(c => !isMastered(c.id) || isWeak(c.id)));
+  const dueForReview = shuffleArray(all.filter(c => isMastered(c.id) && !isWeak(c.id) && isDue(c.id)));
+  const notDueYet = shuffleArray(all.filter(c => isMastered(c.id) && !isWeak(c.id) && !isDue(c.id)));
+  const pool = neverOrWeak.concat(dueForReview).concat(notDueYet);
   const picked = pool.slice(0, count);
   kanjiState.today = {date: todayStr(), ids: picked.map(c=>c.id)};
   saveKanjiState();
@@ -3605,10 +3705,13 @@ function renderKanjiScreen(){
   const items = todaysKanjiItems();
   const pool = getKanjiCandidatesForSelection();
   const poolCount = pool.length;
-  const unitNames = kanjiSelectedUnits.size === 0 || kanjiSelectedUnits.size === new Set(getKanjiCandidates().map(c=>c.u)).size
+  const units = currentKanjiUnits();
+  const unitNames = units.size === 0 || units.size === new Set(getKanjiCandidates().map(c=>c.u)).size
     ? "全単元"
-    : Array.from(kanjiSelectedUnits).join(" / ");
-  els["kanji-pool-count"].textContent = "選択中の単元から抽出された漢字："+poolCount+"問（"+unitNames+"）";
+    : Array.from(units).join(" / ");
+  els["kanji-pool-count"].textContent = "対象の漢字："+poolCount+"問（"+unitNames+"）";
+  els["kanji-mode-unmastered"].classList.toggle("on", kanjiState.filterUnmastered);
+  els["kanji-mode-weak"].classList.toggle("on", kanjiState.filterWeak);
   els["kanji-list-view"].style.display = "none";
   els["kanji-list-link"].textContent = "抽出した漢字の一覧を見る（"+poolCount+"問）";
   document.querySelectorAll("#kanji-count-row .kanji-count-choice").forEach(el=>{
@@ -3686,7 +3789,6 @@ function generatePrintHeaderHtml(title, unitNames, totalCount, isAnswer){
 }
 
 els["kanji-setup-btn"].addEventListener("click", ()=>{
-  renderKanjiUnitChoices();
   renderKanjiScreen();
   showScreen("screen-kanji");
 });
@@ -3694,15 +3796,18 @@ els["kanji-back"].addEventListener("click", ()=>{
   renderHome();
   showScreen("screen-home");
 });
-els["kanji-unit-all"].addEventListener("click", ()=>{
-  const all = getKanjiCandidates();
-  all.forEach(c => kanjiSelectedUnits.add(c.u));
-  renderKanjiUnitChoices();
+els["kanji-unit-change-link"].addEventListener("click", ()=>{
+  renderHome();
+  showScreen("screen-home");
+});
+els["kanji-mode-unmastered"].addEventListener("click", ()=>{
+  kanjiState.filterUnmastered = !kanjiState.filterUnmastered;
+  saveKanjiState();
   renderKanjiScreen();
 });
-els["kanji-unit-clear"].addEventListener("click", ()=>{
-  kanjiSelectedUnits.clear();
-  renderKanjiUnitChoices();
+els["kanji-mode-weak"].addEventListener("click", ()=>{
+  kanjiState.filterWeak = !kanjiState.filterWeak;
+  saveKanjiState();
   renderKanjiScreen();
 });
 
@@ -3758,13 +3863,10 @@ els["kanji-save-btn"].addEventListener("click", ()=>{
     if(!activeBtn){ unanswered++; return; }
     const id = row.dataset.id;
     const result = activeBtn.dataset.result;
-    const s = kanjiState.stats[id] || {correct:0, wrong:0};
-    if(result === "correct") s.correct = (s.correct||0) + 1;
-    else s.wrong = (s.wrong||0) + 1;
-    s.lastResult = result;
-    kanjiState.stats[id] = s;
+    // クイズ本体と共通の正誤記録に書き込む（苦手判定・復習ミックスにもそのまま反映される）
+    recordResult(id, result === "correct");
   });
-  saveKanjiState();
+  refreshStatRow();
   if(unanswered > 0){
     alert(unanswered+"問、〇✕が未入力です。入力した分だけ記録しました。");
   }else{
@@ -4006,7 +4108,7 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let startAction, judgeAction, nextAction, endAction, statusAction;
+let startAction, judgeAction, nextAction, endAction, statusAction, unitsAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
@@ -4250,6 +4352,27 @@ function hideGuestStartCountdown(){
   clearInterval(guestStartCountdownInterval);
 }
 
+// ---- 公平モード: ゲスト側で、ホストから届いた単元一覧をもとに自分でも
+//      出したい単元を選び、選ぶたびにホストへ送る（初期状態は全部オン）----
+let joinFairUnits = new Set();
+function renderJoinFairUnits(units){
+  if(joinFairUnits.size === 0) units.forEach(u => joinFairUnits.add(u.name));
+  els["join-fair-units"].style.display = "block";
+  els["join-fair-unit-choices"].innerHTML = "";
+  units.forEach(u=>{
+    const div = document.createElement("div");
+    div.className = "choice" + (joinFairUnits.has(u.name) ? " on" : "");
+    div.innerHTML = '<span class="name">'+escapeHtml(u.name)+(u.hostSelected ? '（相手も選択中）' : '')+'</span><span class="count">'+u.count+'問</span>';
+    div.addEventListener("click", ()=>{
+      if(joinFairUnits.has(u.name)) joinFairUnits.delete(u.name);
+      else joinFairUnits.add(u.name);
+      renderJoinFairUnits(units);
+      try{ unitsAction.send({units: Array.from(joinFairUnits)}); }catch(e){}
+    });
+    els["join-fair-unit-choices"].appendChild(div);
+  });
+}
+
 function genCode(){
   return String(Math.floor(1000 + Math.random()*9000));
 }
@@ -4288,6 +4411,8 @@ function leaveRoom(){
   hostSkippedIds = new Set();
   myMissesThisRound = [];
   gameStarted = false;
+  joinFairUnits = new Set();
+  els["join-fair-units"].style.display = "none";
 }
 
 function setupActions(){
@@ -4296,6 +4421,25 @@ function setupActions(){
   nextAction = room.makeAction("next");
   endAction = room.makeAction("end");
   statusAction = room.makeAction("status");
+  unitsAction = room.makeAction("units");
+
+  // ---- 公平モード: ゲストが選んだ単元をホストが受け取り、ホストがまだ
+  //      選んでいない単元の問題を出題プールに追加する（開始前のみ有効）----
+  unitsAction.onMessage = (data)=>{
+    if(role !== "host" || !fairMode) return;
+    if(els["home-waiting"].style.display !== "block") return; // 既に対戦が始まっている
+    const guestUnits = new Set(data.units || []);
+    const extra = [];
+    QA_DATA.forEach((d,i)=>{
+      if(d.subj === currentSubject && d.kind !== "calc" && guestUnits.has(d.u) && !selectedUnits.has(d.u)) extra.push(i);
+    });
+    const extraIds = applyPoolFilters(extra).map(i => QA_DATA[i].id).filter(id => !questionIds.includes(id));
+    if(extraIds.length){
+      questionIds = questionIds.concat(extraIds);
+      if(currentShuffle) questionIds = shuffleArray(questionIds);
+      els["home-waiting-note"].innerHTML = "相手が参加しました！（相手が選んだ単元の問題を"+extraIds.length+"問追加しました）";
+    }
+  };
 
   statusAction.onMessage = (data)=>{
     if(role !== "guest") return;
@@ -4309,6 +4453,7 @@ function setupActions(){
       // host has seen us join and is about to start (button or auto-start) --
       // stay on screen-join/join-waiting, just show a matching countdown there
       showGuestStartCountdown(data.seconds);
+      if(data.fairMode && Array.isArray(data.units)) renderJoinFairUnits(data.units);
       return;
     }
     // host-only info about what it's currently doing (question text, not
@@ -4380,8 +4525,13 @@ function setupActions(){
       gameStarted = true;
       els["home-waiting-note"].innerHTML = "相手が参加しました！";
       els["start-together-btn"].style.display = "block";
-      try{ statusAction.send({type: "peerReady", seconds: START_TOGETHER_COUNTDOWN_SEC}); }catch(e){}
-      startStartTogetherCountdown();
+      const countdownSec = fairMode ? FAIR_START_TOGETHER_COUNTDOWN_SEC : START_TOGETHER_COUNTDOWN_SEC;
+      const readyPayload = {type: "peerReady", seconds: countdownSec, fairMode: fairMode};
+      if(fairMode){
+        readyPayload.units = getUnits().map(u=>({name: u, count: unitIndices(u).length, hostSelected: selectedUnits.has(u)}));
+      }
+      try{ statusAction.send(readyPayload); }catch(e){}
+      startStartTogetherCountdown(countdownSec);
     }else if(currentScreenName !== "screen-result"){
       // a peer (re)joined a game already in progress (e.g. reconnecting after
       // a reload) -- resync them to the current question instead of
@@ -4492,6 +4642,8 @@ function joinRoomAsGuest(code){
   els["join-waiting"].style.display = "block";
   els["join-waiting-note"].innerHTML = '<span class="spinner"></span>接続しています…';
   els["join-error"].classList.remove("show");
+  joinFairUnits = new Set();
+  els["join-fair-units"].style.display = "none";
   showScreen("screen-join");
 
   try{
@@ -4579,8 +4731,10 @@ function showQuestion(idx, hostPrivate){
 //      who spaces out doesn't stall the game ----
 function hostAdvanceAndArm(idx){
   if(idx >= questionIds.length){ endGame(); return; }
-  if(headStartSec <= 0){
-    hostResyncQuestion(idx); // no think-time at all
+  if(fairMode || headStartSec <= 0){
+    // 公平モード: ホストだけが問題を先読みして考える時間のアドバンテージを
+    // 得ないよう、先読み・スキップは行わず即座に両者へ同時配信する
+    hostResyncQuestion(idx);
     return;
   }
   showQuestion(idx, true);
@@ -4863,6 +5017,7 @@ els["result-retry-battle-btn"].addEventListener("click", ()=>{
 //      カウントダウン）で対戦を始める。同時参加直後にいきなり始まらない
 //      ようにするための「二人で開始する」フロー ----
 const START_TOGETHER_COUNTDOWN_SEC = 8;
+const FAIR_START_TOGETHER_COUNTDOWN_SEC = 20; // 公平モード: ゲストが単元を選ぶ時間を確保するため長め
 function startBattleNow(){
   scores = {host:0, guest:0};
   myMissesThisRound = [];
@@ -4871,8 +5026,8 @@ function startBattleNow(){
   showScreen("screen-battle");
   hostAdvanceAndArm(0);
 }
-function startStartTogetherCountdown(){
-  startFillCountdown("start-together", ["start-together-btn"], START_TOGETHER_COUNTDOWN_SEC, ()=>{
+function startStartTogetherCountdown(seconds){
+  startFillCountdown("start-together", ["start-together-btn"], seconds || START_TOGETHER_COUNTDOWN_SEC, ()=>{
     els["start-together-btn"].classList.add("auto-press");
     startBattleNow();
   });
