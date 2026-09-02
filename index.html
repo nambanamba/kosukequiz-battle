@@ -1460,8 +1460,11 @@
       <div class="section-title">復習ミックス（選んでいない単元から、未正解の問題→間隔が来た問題の順で優先して追加）</div>
       <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
-        <span style="font-size:13px; font-weight:normal;">復習する単元</span>
-        <span class="back-link" id="review-unit-reset-link" style="display:none;">自動（全部）に戻す</span>
+        <span style="font-size:13px; font-weight:normal;">復習する単元（青色＝選択中。タップで切りかえ）</span>
+        <div style="font-size:12px; font-weight:normal;">
+          <span class="back-link" id="review-unit-all-link" style="margin:0 8px 0 0; display:inline;">すべて選ぶ</span>
+          <span class="back-link" id="review-unit-clear-link" style="margin:0; display:inline;">クリア</span>
+        </div>
       </div>
       <div class="choice-grid" id="review-unit-choices"></div>
       <div class="toggle-row" id="review-priority-row" style="margin-top:8px;">
@@ -1934,7 +1937,7 @@ const els = {};
  "type-all","type-image","type-text",
  "priority-all","priority-high","priority-mid","priority-low",
  "level-all","level-basic","level-standard","level-advanced",
- "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-reset-link","review-priority-row","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-priority-row","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
@@ -2419,9 +2422,13 @@ let fairMode = false; // 対戦: こどもどうし公平モード（ホスト�
 //      currentSubjectが理科の間も直近の社会選択を保持するためのスナップショット ----
 let socialSelectedUnitsSnapshot = null;
 
-// ---- 復習ミックス: 対象単元・優先度を独自に選べる ----
+// ---- 復習ミックス: 対象単元・優先度を独自に選べる。
+//      reviewSelectedUnitsが常に唯一の正（メイン単元選択と同じ「全部on→タップで外す」方式）。
+//      reviewUnitsKnownは「これまでに一度でも復習候補として現れた単元」の記録。
+//      メインの単元選択を1つずつ外していくたびに新しく復習候補になった単元を、
+//      その都度（最初に現れたときだけ）自動でonにするために使う ----
 let reviewSelectedUnits = new Set();
-let reviewUnitsCustomized = false;
+let reviewUnitsKnown = new Set();
 let reviewPriority = "all"; // all | 高 | 中 | 低
 
 // ---- the 5 battle timer settings all share the same UI: 3 preset chips
@@ -2461,7 +2468,7 @@ function loadSettings(){
     if(typeof s.skipNextTimeSec === "number") skipNextTimeSec = s.skipNextTimeSec;
     if(Array.isArray(s.socialUnits) && s.socialUnits.length) socialSelectedUnitsSnapshot = new Set(s.socialUnits);
     if(Array.isArray(s.reviewSelectedUnits)) reviewSelectedUnits = new Set(s.reviewSelectedUnits);
-    if(typeof s.reviewUnitsCustomized === "boolean") reviewUnitsCustomized = s.reviewUnitsCustomized;
+    if(Array.isArray(s.reviewUnitsKnown)) reviewUnitsKnown = new Set(s.reviewUnitsKnown);
     if(s.reviewPriority) reviewPriority = s.reviewPriority;
   }catch(e){
     // ignore, keep defaults
@@ -2493,7 +2500,7 @@ function saveSettings(){
       skipNextTimeSec: skipNextTimeSec,
       socialUnits: Array.from(currentSubject === "社会" ? selectedUnits : (socialSelectedUnitsSnapshot || [])),
       reviewSelectedUnits: Array.from(reviewSelectedUnits),
-      reviewUnitsCustomized: reviewUnitsCustomized,
+      reviewUnitsKnown: Array.from(reviewUnitsKnown),
       reviewPriority: reviewPriority
     }));
     if(currentSubject === "社会") socialSelectedUnitsSnapshot = new Set(selectedUnits);
@@ -2657,10 +2664,23 @@ function buildPool(){
 function availableReviewUnits(){
   return getUnits().filter(u => !selectedUnits.has(u));
 }
-function currentReviewUnits(){
+// 選べる単元が変わるたびに呼ぶ: 選択できなくなった単元を除外し、新しく復習候補に
+// なった単元（reviewUnitsKnownに未登録のもの）を自動でonにする。メイン単元を
+// 1つずつ外していく操作でも、外すたびにその単元がちゃんとonになる ----
+function syncReviewUnits(){
   const avail = availableReviewUnits();
-  if(!reviewUnitsCustomized) return new Set(avail);
-  return new Set(avail.filter(u => reviewSelectedUnits.has(u)));
+  const availSet = new Set(avail);
+  Array.from(reviewSelectedUnits).forEach(u => { if(!availSet.has(u)) reviewSelectedUnits.delete(u); });
+  avail.forEach(u=>{
+    if(!reviewUnitsKnown.has(u)){
+      reviewUnitsKnown.add(u);
+      reviewSelectedUnits.add(u);
+    }
+  });
+}
+function currentReviewUnits(){
+  syncReviewUnits();
+  return reviewSelectedUnits;
 }
 function buildReviewPool(){
   let pool = [];
@@ -2737,33 +2757,23 @@ function refreshUnitSelection(){
   });
   renderReviewUnitChoices();
 }
-// ---- 復習ミックスの対象単元チップ（メインで選ばれていない単元のみが候補）----
+// ---- 復習ミックスの対象単元チップ（メインで選ばれていない単元のみが候補）。
+//      メインの単元選択（unit-choices）と同じ「チェックした単元＝青色でハイライト、
+//      タップでON/OFF切りかえ」方式。初期状態は選べる単元が全部ON ----
 function renderReviewUnitChoices(){
+  syncReviewUnits();
   const avail = availableReviewUnits();
-  // カスタム選択中でも、メイン選択の変化でもう選べなくなった単元は自動的に外す
-  if(reviewUnitsCustomized){
-    const availSet = new Set(avail);
-    reviewSelectedUnits.forEach(u=>{ if(!availSet.has(u)) reviewSelectedUnits.delete(u); });
-  }
-  const active = currentReviewUnits();
   els["review-unit-choices"].innerHTML = "";
   if(avail.length === 0){
     els["review-unit-choices"].innerHTML = '<div class="empty-note">復習に回せる単元がありません（すべての単元がメインで選ばれています）</div>';
-    els["review-unit-reset-link"].style.display = "none";
     return;
   }
   avail.forEach(u=>{
     const cnt = unitIndices(u).length;
     const div = document.createElement("div");
-    div.className = "choice" + (active.has(u) ? " on" : "");
+    div.className = "choice" + (reviewSelectedUnits.has(u) ? " selected" : "");
     div.innerHTML = '<span class="name">'+escapeHtml(u)+'</span><span class="count">'+cnt+'問</span>';
     div.addEventListener("click", ()=>{
-      if(!reviewUnitsCustomized){
-        // 自動（全部）から手動に切り替わる瞬間: 今見えている「全部オン」状態を
-        // そのまま引き継いでから、押されたチップだけをオフにする
-        reviewUnitsCustomized = true;
-        reviewSelectedUnits = new Set(avail);
-      }
       if(reviewSelectedUnits.has(u)) reviewSelectedUnits.delete(u);
       else reviewSelectedUnits.add(u);
       renderReviewUnitChoices();
@@ -2772,7 +2782,6 @@ function renderReviewUnitChoices(){
     });
     els["review-unit-choices"].appendChild(div);
   });
-  els["review-unit-reset-link"].style.display = reviewUnitsCustomized ? "inline" : "none";
 }
 function refreshCreateButton(){
   const pool = buildPool();
@@ -2883,9 +2892,14 @@ els["review-mix-input"].addEventListener("change", ()=>{
   refreshCreateButton();
   saveSettings();
 });
-els["review-unit-reset-link"].addEventListener("click", ()=>{
-  reviewUnitsCustomized = false;
-  reviewSelectedUnits = new Set();
+els["review-unit-all-link"].addEventListener("click", ()=>{
+  availableReviewUnits().forEach(u => reviewSelectedUnits.add(u));
+  renderReviewUnitChoices();
+  refreshCreateButton();
+  saveSettings();
+});
+els["review-unit-clear-link"].addEventListener("click", ()=>{
+  reviewSelectedUnits.clear();
   renderReviewUnitChoices();
   refreshCreateButton();
   saveSettings();
