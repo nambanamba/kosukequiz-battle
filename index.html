@@ -1457,7 +1457,7 @@
       </div>
       <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
 
-      <div class="section-title">復習ミックス（選んでいない単元から、未正解の問題→間隔が来た問題の順で優先して追加）</div>
+      <div class="section-title">復習ミックス（選んだ復習単元から、苦手な問題を優先して追加）</div>
       <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
         <span style="font-size:13px; font-weight:normal;">復習する単元（青色＝選択中。タップで切りかえ）</span>
@@ -1467,11 +1467,26 @@
         </div>
       </div>
       <div class="choice-grid" id="review-unit-choices"></div>
-      <div class="toggle-row" id="review-priority-row" style="margin-top:8px;">
+
+      <div class="section-title" style="font-size:13px; font-weight:normal; margin-top:10px;">復習の出題タイプ</div>
+      <div class="toggle-row" id="review-type-row">
+        <div class="toggle on" data-review-type="all">文章・図をすべて</div>
+        <div class="toggle" data-review-type="image">図の問題だけ</div>
+        <div class="toggle" data-review-type="text">文章問題だけ</div>
+      </div>
+      <div class="section-title" style="font-size:13px; font-weight:normal; margin-top:10px;">復習の優先度</div>
+      <div class="toggle-row" id="review-priority-row">
         <div class="toggle on" data-review-priority="all">優先度：すべて</div>
         <div class="toggle" data-review-priority="高">優先度：高のみ</div>
         <div class="toggle" data-review-priority="中">優先度：中のみ</div>
         <div class="toggle" data-review-priority="低">優先度：低のみ</div>
+      </div>
+      <div class="section-title" style="font-size:13px; font-weight:normal; margin-top:10px;">復習の難易度</div>
+      <div class="toggle-row" id="review-level-row">
+        <div class="toggle on" data-review-level="all">すべて</div>
+        <div class="toggle" data-review-level="基礎">基礎</div>
+        <div class="toggle" data-review-level="標準">標準</div>
+        <div class="toggle" data-review-level="発展">発展</div>
       </div>
 
       <div class="section-title">出題順</div>
@@ -1937,7 +1952,7 @@ const els = {};
  "type-all","type-image","type-text",
  "priority-all","priority-high","priority-mid","priority-low",
  "level-all","level-basic","level-standard","level-advanced",
- "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-priority-row","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
@@ -2131,8 +2146,12 @@ function scheduleNext(s, correct){
 }
 function recordResult(id, correct){
   const s = stats[id] || {correct:0, wrong:0};
-  if(correct) s.correct = (s.correct||0) + 1;
-  else s.wrong = (s.wrong||0) + 1;
+  if(correct){
+    s.correct = (s.correct||0) + 1;
+    s.lastCorrectAt = Date.now(); // 復習ミックスの「正解したのが一番昔の問題」判定に使う
+  }else{
+    s.wrong = (s.wrong||0) + 1;
+  }
   s.lastAnswered = Date.now();
   scheduleNext(s, correct);
   stats[id] = s;
@@ -2435,6 +2454,8 @@ let socialSelectedUnitsSnapshot = null;
 let reviewSelectedUnits = new Set();
 let reviewUnitsKnown = new Set();
 let reviewPriority = "all"; // all | 高 | 中 | 低
+let reviewLevel = "all"; // all | 基礎 | 標準 | 発展
+let reviewType = "all"; // all | image | text
 
 // ---- the 5 battle timer settings all share the same UI: 3 preset chips
 //      plus a free-input option, keyed by the row's data-time-key ----
@@ -2475,6 +2496,8 @@ function loadSettings(){
     if(Array.isArray(s.reviewSelectedUnits)) reviewSelectedUnits = new Set(s.reviewSelectedUnits);
     if(Array.isArray(s.reviewUnitsKnown)) reviewUnitsKnown = new Set(s.reviewUnitsKnown);
     if(s.reviewPriority) reviewPriority = s.reviewPriority;
+    if(s.reviewLevel) reviewLevel = s.reviewLevel;
+    if(s.reviewType) reviewType = s.reviewType;
   }catch(e){
     // ignore, keep defaults
   }
@@ -2506,7 +2529,9 @@ function saveSettings(){
       socialUnits: Array.from(currentSubject === "社会" ? selectedUnits : (socialSelectedUnitsSnapshot || [])),
       reviewSelectedUnits: Array.from(reviewSelectedUnits),
       reviewUnitsKnown: Array.from(reviewUnitsKnown),
-      reviewPriority: reviewPriority
+      reviewPriority: reviewPriority,
+      reviewLevel: reviewLevel,
+      reviewType: reviewType
     }));
     if(currentSubject === "社会") socialSelectedUnitsSnapshot = new Set(selectedUnits);
   }catch(e){
@@ -2548,8 +2573,14 @@ function applySettingsUI(){
     els["count-custom-input"].value = questionCount;
   }
   els["review-mix-input"].value = reviewMixCount;
+  document.querySelectorAll("#review-type-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.reviewType === reviewType);
+  });
   document.querySelectorAll("#review-priority-row .toggle").forEach(el=>{
     el.classList.toggle("on", el.dataset.reviewPriority === reviewPriority);
+  });
+  document.querySelectorAll("#review-level-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.reviewLevel === reviewLevel);
   });
   renderReviewUnitChoices();
   TIME_SETTINGS.forEach(applyTimeSettingUI);
@@ -2691,11 +2722,33 @@ function buildReviewPool(){
   let pool = [];
   const units = currentReviewUnits();
   QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && units.has(d.u) && d.kind !== "calc") pool.push(i); });
-  pool = applyPoolFiltersExceptPriority(pool);
-  if(reviewPriority !== "all"){
-    pool = pool.filter(i => QA_DATA[i].priority === reviewPriority);
-  }
+  if(reviewType === "image") pool = pool.filter(i => !!QA_DATA[i].img);
+  else if(reviewType === "text") pool = pool.filter(i => !QA_DATA[i].img);
+  if(reviewPriority !== "all") pool = pool.filter(i => QA_DATA[i].priority === reviewPriority);
+  if(reviewLevel !== "all") pool = pool.filter(i => QA_DATA[i].level === reviewLevel);
   return pool;
+}
+// ---- 復習ミックスの並び順（苦手な問題から選ぶ）:
+//      ①正解より失敗が多い問題を、正解したのが一番昔の問題（未正解は最古扱い）から
+//      ②残り（失敗したことがある問題）も同様に、正解したのが一番昔の問題から
+//      ③一度も失敗していない問題（順不同）----
+function orderReviewCandidatesByWeakness(indices){
+  const lastCorrectOf = i => {
+    const s = stats[QA_DATA[i].id];
+    return (s && s.lastCorrectAt) ? s.lastCorrectAt : 0;
+  };
+  const tier1 = [], tier2 = [], tier3 = [];
+  indices.forEach(i=>{
+    const s = stats[QA_DATA[i].id];
+    const wrong = s ? (s.wrong||0) : 0;
+    const correct = s ? (s.correct||0) : 0;
+    if(wrong > correct) tier1.push(i);
+    else if(wrong > 0) tier2.push(i);
+    else tier3.push(i);
+  });
+  tier1.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  tier2.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  return tier1.concat(tier2).concat(shuffleArray(tier3));
 }
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
@@ -2705,14 +2758,8 @@ function buildFinalPool(){
   if(currentShuffle) pool = shuffleArray(pool);
   if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(reviewMixCount > 0){
-    // 復習ミックスの優先順位: ①まだ一度も正解できていない問題（未着手も含む）
-    // ②正解したことはあるが、間隔反復でそろそろ忘れかけている問題
-    // ③まだ間隔が来ていない問題（足りない分の穴埋め）
     const reviewCandidates = buildReviewPool();
-    const neverCorrect = shuffleArray(reviewCandidates.filter(i => !isMastered(QA_DATA[i].id)));
-    const dueForReview = shuffleArray(reviewCandidates.filter(i => isMastered(QA_DATA[i].id) && isDue(QA_DATA[i].id)));
-    const notDueYet = shuffleArray(reviewCandidates.filter(i => isMastered(QA_DATA[i].id) && !isDue(QA_DATA[i].id)));
-    let reviewPool = neverCorrect.concat(dueForReview).concat(notDueYet).slice(0, reviewMixCount);
+    let reviewPool = orderReviewCandidatesByWeakness(reviewCandidates).slice(0, reviewMixCount);
     pool = pool.concat(reviewPool);
     if(currentShuffle) pool = shuffleArray(pool);
   }
@@ -2909,10 +2956,28 @@ els["review-unit-clear-link"].addEventListener("click", ()=>{
   refreshCreateButton();
   saveSettings();
 });
+document.querySelectorAll("#review-type-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    reviewType = el.dataset.reviewType;
+    document.querySelectorAll("#review-type-row .toggle").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    refreshCreateButton();
+    saveSettings();
+  });
+});
 document.querySelectorAll("#review-priority-row .toggle").forEach(el=>{
   el.addEventListener("click", ()=>{
     reviewPriority = el.dataset.reviewPriority;
     document.querySelectorAll("#review-priority-row .toggle").forEach(c=>c.classList.remove("on"));
+    el.classList.add("on");
+    refreshCreateButton();
+    saveSettings();
+  });
+});
+document.querySelectorAll("#review-level-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    reviewLevel = el.dataset.reviewLevel;
+    document.querySelectorAll("#review-level-row .toggle").forEach(c=>c.classList.remove("on"));
     el.classList.add("on");
     refreshCreateButton();
     saveSettings();
