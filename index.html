@@ -1379,13 +1379,15 @@
     z-index:2;
     line-height:1;
   }
+  @page{ margin: 12mm 10mm; }
   @media print{
     .wrap{ max-width:none !important; padding:0 !important; }
     body > .wrap > *:not(#print-region){ display:none !important; }
-    #print-region{ display:block !important; }
+    #print-region{ display:block !important; width:100%; box-sizing:border-box; }
     #print-region .print-q{ break-inside: avoid; }
     #print-region .kanji-p-row{ break-inside: avoid; }
     #print-region thead{ break-after: avoid; }
+    #print-region .kanji-practice-table, #print-region .kanji-test-grid{ width:100%; }
   }
 </style>
 </head>
