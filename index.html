@@ -3139,7 +3139,7 @@ function parseCSV(text){
 }
 
 els["export-link"].addEventListener("click", ()=>{
-  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態"]];
+  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日"]];
   QA_DATA.forEach(d=>{
     const s = stats[d.id] || {correct:0, wrong:0};
     const correct = s.correct||0;
@@ -3147,7 +3147,8 @@ els["export-link"].addEventListener("click", ()=>{
     let status = "未回答";
     if(isWeak(d.id)) status = "苦手";
     else if(isMastered(d.id)) status = "正解ずみ";
-    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status]);
+    const lastCorrect = s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "";
+    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect]);
   });
   const csv = rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
@@ -3214,6 +3215,7 @@ els["import-file"].addEventListener("change", (e)=>{
       const qIdx = header.indexOf("問題");
       const correctIdx = header.indexOf("正解した回数");
       const wrongIdx = header.indexOf("まちがえた回数");
+      const lastCorrectIdx = header.indexOf("最終正答日");
       if(qIdx === -1 || correctIdx === -1 || wrongIdx === -1){
         alert("このCSVの形式を読み取れませんでした。kosukequiz（元のアプリ）またはこの対戦アプリからエクスポートしたファイルを選んでください。");
         return;
@@ -3239,9 +3241,18 @@ els["import-file"].addEventListener("change", (e)=>{
         // outright, so records already in this app are never lost or shrunk
         const mergedCorrect = Math.max(cur.correct||0, importedCorrect);
         const mergedWrong = Math.max(cur.wrong||0, importedWrong);
-        if(mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0)) updated++;
+        let mergedLastCorrectAt = cur.lastCorrectAt;
+        if(lastCorrectIdx !== -1 && row[lastCorrectIdx]){
+          const importedTs = new Date(row[lastCorrectIdx]+"T00:00:00").getTime();
+          if(!isNaN(importedTs) && (!mergedLastCorrectAt || importedTs > mergedLastCorrectAt)){
+            mergedLastCorrectAt = importedTs;
+          }
+        }
+        if(mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0) || mergedLastCorrectAt !== cur.lastCorrectAt) updated++;
         if(mergedCorrect > 0 || mergedWrong > 0){
-          stats[d.id] = {correct: mergedCorrect, wrong: mergedWrong};
+          const next = {correct: mergedCorrect, wrong: mergedWrong};
+          if(mergedLastCorrectAt) next.lastCorrectAt = mergedLastCorrectAt;
+          stats[d.id] = next;
         }
       }
       if(matched === 0){
