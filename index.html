@@ -102,8 +102,13 @@
     border-color:var(--navy);
     background:#eef4f2;
   }
+  .choice-left{display:flex; align-items:center; gap:10px; min-width:0;}
+  .choice-check{display:flex; align-items:center; flex-shrink:0;}
+  .choice-check input[type="checkbox"]{
+    width:18px; height:18px; accent-color:var(--navy); pointer-events:none;
+  }
   .choice .name{font-size:15px; font-weight:600;}
-  .choice .count{font-size:12px; color:var(--ink-soft);}
+  .choice .count{font-size:12px; color:var(--ink-soft); flex-shrink:0; margin-left:10px;}
 
   .unit-group-header{
     display:flex;
@@ -117,13 +122,15 @@
     -webkit-tap-highlight-color:transparent;
   }
   .unit-group-check{
-    font-size:18px;
-    line-height:1;
-    color:var(--paper-line);
+    display:flex;
+    align-items:center;
     padding:2px;
   }
-  .unit-group-check.checked{
-    color:var(--navy);
+  .unit-group-check input[type="checkbox"]{
+    width:18px; height:18px; accent-color:var(--navy); pointer-events:none;
+  }
+  .unit-group-check input[type="checkbox"]:indeterminate{
+    accent-color:#9c9184;
   }
   .unit-group-label{
     font-size:14px;
@@ -148,6 +155,18 @@
     border-left:2px solid var(--paper-line);
     margin-left:6px;
   }
+
+  .pool-count-bar{
+    margin-top:16px;
+    padding:12px 15px;
+    border-radius:10px;
+    background:#eef4f2;
+    border:1.5px solid var(--navy);
+    color:var(--navy-deep);
+    font-size:13px;
+    font-weight:600;
+  }
+  .pool-count-bar b{font-size:16px;}
 
   .toggle-row{
     display:flex;
@@ -1319,6 +1338,8 @@
         <div class="toggle" data-review-level="発展">発展</div>
       </div>
 
+      <div class="pool-count-bar" id="pool-count-bar">現在の選択で出題される問題数：<b id="pool-count-label">0問</b></div>
+
       <div class="section-title">出題順</div>
       <div class="toggle-row">
         <div class="toggle on" id="shuffle-toggle" data-shuffle="1">ランダム順</div>
@@ -1670,7 +1691,7 @@ const els = {};
  "type-all","type-image","type-text",
  "priority-all","priority-high","priority-mid","priority-low",
  "level-all","level-basic","level-standard","level-advanced",
- "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","pool-count-label","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
@@ -2494,7 +2515,7 @@ function makeUnitChoice(key, label, count){
   const div = document.createElement("div");
   div.className = "choice";
   div.dataset.unit = key;
-  div.innerHTML = '<span class="name">'+escapeHtml(label)+'</span><span class="count">'+count+'問</span>';
+  div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"></span><span class="name">'+escapeHtml(label)+'</span></span><span class="count">'+count+'問</span>';
   div.addEventListener("click", ()=>{
     if(key === "ALL"){
       // acts like a normal "select all" checkbox: if everything is already
@@ -2518,19 +2539,19 @@ function refreshUnitSelection(){
   const allUnits = getUnits();
   const isAllSelected = allUnits.length > 0 && allUnits.every(u => selectedUnits.has(u));
   document.querySelectorAll("#unit-choices .choice").forEach(el=>{
-    if(el.dataset.unit === "ALL"){
-      el.classList.toggle("selected", isAllSelected);
-    }else{
-      el.classList.toggle("selected", selectedUnits.has(el.dataset.unit));
-    }
+    const checked = el.dataset.unit === "ALL" ? isAllSelected : selectedUnits.has(el.dataset.unit);
+    el.classList.toggle("selected", checked);
+    const cb = el.querySelector(".choice-check input");
+    if(cb) cb.checked = checked;
   });
   UNIT_GROUPS.forEach(group=>{
-    const checkEl = document.querySelector('.unit-group-check[data-group-check="'+group.key+'"]');
-    if(!checkEl) return;
+    const checkWrap = document.querySelector('.unit-group-check[data-group-check="'+group.key+'"]');
+    if(!checkWrap) return;
+    const cb = checkWrap.querySelector("input");
     const groupUnits = allUnits.filter(group.test);
-    const groupAllSelected = groupUnits.length > 0 && groupUnits.every(u => selectedUnits.has(u));
-    checkEl.textContent = groupAllSelected ? "☑" : "☐";
-    checkEl.classList.toggle("checked", groupAllSelected);
+    const selectedCount = groupUnits.filter(u => selectedUnits.has(u)).length;
+    cb.checked = groupUnits.length > 0 && selectedCount === groupUnits.length;
+    cb.indeterminate = selectedCount > 0 && selectedCount < groupUnits.length;
   });
   renderReviewUnitChoices();
 }
@@ -2547,9 +2568,10 @@ function renderReviewUnitChoices(){
   }
   avail.forEach(u=>{
     const cnt = unitIndices(u).length;
+    const selected = reviewSelectedUnits.has(u);
     const div = document.createElement("div");
-    div.className = "choice" + (reviewSelectedUnits.has(u) ? " selected" : "");
-    div.innerHTML = '<span class="name">'+escapeHtml(u)+'</span><span class="count">'+cnt+'問</span>';
+    div.className = "choice" + (selected ? " selected" : "");
+    div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"'+(selected ? " checked" : "")+'></span><span class="name">'+escapeHtml(u)+'</span></span><span class="count">'+cnt+'問</span>';
     div.addEventListener("click", ()=>{
       if(reviewSelectedUnits.has(u)) reviewSelectedUnits.delete(u);
       else reviewSelectedUnits.add(u);
@@ -2566,6 +2588,7 @@ function refreshCreateButton(){
   const reviewN = reviewMixCount > 0 ? Math.min(reviewMixCount, buildReviewPool().length) : 0;
   const n = mainN + reviewN;
   const label = reviewN > 0 ? n+"問（復習"+reviewN+"問こみ）" : n+"問";
+  els["pool-count-label"].textContent = label;
   const disabled = n === 0;
   els["solo-start-btn"].disabled = disabled;
   els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
@@ -2584,7 +2607,7 @@ function makeUnitGroupHeader(group, groupUnits, count){
   const div = document.createElement("div");
   div.className = "unit-group-header";
   div.dataset.group = group.key;
-  div.innerHTML = '<span class="unit-group-check" data-group-check="'+group.key+'">☐</span><span class="unit-group-label">'+escapeHtml(group.label)+'</span><span class="unit-group-count">'+count+'問</span><span class="unit-group-arrow">▸</span>';
+  div.innerHTML = '<span class="unit-group-check" data-group-check="'+group.key+'"><input type="checkbox" tabindex="-1"></span><span class="unit-group-label">'+escapeHtml(group.label)+'</span><span class="unit-group-count">'+count+'問</span><span class="unit-group-arrow">▸</span>';
   // tapping the checkbox selects/deselects every unit in this group at once
   // (e.g. "all of 歴史 plus just a couple of 地理" for exam-week study) --
   // separate from the arrow, which only expands/collapses the list
