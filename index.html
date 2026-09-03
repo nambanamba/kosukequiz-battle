@@ -2362,7 +2362,8 @@ function saveBattleSession(){
       questionIds: questionIds,
       currentIndex: currentIndex,
       scores: scores,
-      hostSkippedIds: Array.from(hostSkippedIds)
+      hostSkippedIds: Array.from(hostSkippedIds),
+      inMissRetryRound: inMissRetryRound
     }));
   }catch(e){}
 }
@@ -4263,6 +4264,9 @@ let opponentVerdictOfMe = null; // true/false: what my opponent decided about my
 let scored = false;
 let hostSkippedIds = new Set(); // host-only: question ids the host has skipped this game
 let myMissesThisRound = []; // this device's own wrong answers this round, for "前回まちがえた問題"
+let inMissRetryRound = false; // 「まちがえた問題だけもう一勝負」ラウンド中かどうか（host/guest共通）。
+                               // このラウンドは元々間違えた問題だけなので、正解できても
+                               // 持ち越しの正誤記録は「誤り」のまま扱う（+1されない）
 let gameStarted = false; // host-only: distinguishes the first peer join (start at 0) from a later reconnect (resync current question)
 let pendingSendTimer = null; // host-only: auto-advances a question if 進める/スキップ isn't tapped in time
 let countdownInterval = null; // host-only: drives the visible think-time countdown
@@ -4555,6 +4559,7 @@ function leaveRoom(){
   currentIndex = -1;
   scores = {host:0, guest:0};
   hostSkippedIds = new Set();
+  inMissRetryRound = false;
   myMissesThisRound = [];
   gameStarted = false;
   joinFairUnits = new Set();
@@ -4616,6 +4621,7 @@ function setupActions(){
   startAction.onMessage = (data)=>{
     if(role !== "guest") return;
     questionIds = data.ids;
+    inMissRetryRound = !!data.isRetryRound;
     myMissesThisRound = [];
     resetAvatars();
     setupAvatarLabels();
@@ -4640,11 +4646,14 @@ function setupActions(){
     // if I (the host) skipped this question earlier in this round, I already
     // saw the answer, so a correct answer here doesn't reflect real recall --
     // record it as wrong in the persistent 苦手 stats so it keeps coming up
-    // in future practice. but for THIS round's "まちがえた問題をもう一度"
-    // list, go by what actually happened just now -- if it was really
-    // answered correctly, it shouldn't show up as something to retry
+    // in future practice. same idea for a「まちがえた問題だけもう一勝負」
+    // round: these questions were already misses this game, so getting one
+    // right on the redo shouldn't erase that in the persistent stats. but for
+    // THIS round's "まちがえた問題をもう一度" list, go by what actually
+    // happened just now -- if it was really answered correctly, it shouldn't
+    // show up as something to retry
     const qid = questionIds[currentIndex];
-    const forcedWrong = role === "host" && hostSkippedIds.has(qid);
+    const forcedWrong = inMissRetryRound || (role === "host" && hostSkippedIds.has(qid));
     const finalCorrect = forcedWrong ? false : data.correct;
     recordResult(qid, finalCorrect);
     if(!data.correct) myMissesThisRound.push(qid);
@@ -4722,6 +4731,7 @@ els["create-btn"].addEventListener("click", ()=>{
 
   questionIds = pool.map(i => QA_DATA[i].id);
   hostSkippedIds = new Set();
+  inMissRetryRound = false;
 
   els["home-setup"].style.display = "none";
   els["home-waiting"].style.display = "block";
@@ -4756,6 +4766,7 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
   currentIndex = session.currentIndex;
   scores = session.scores;
   hostSkippedIds = new Set(session.hostSkippedIds || []);
+  inMissRetryRound = !!session.inMissRetryRound;
   myMissesThisRound = [];
   gameStarted = true; // a peer joining now is a reconnect, not a fresh start
   resetAvatars(); // the power-up level is cosmetic only and not persisted
@@ -4909,7 +4920,7 @@ function hostResyncQuestion(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    if(idx === 0) startAction.send({ids: questionIds});
+    if(idx === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound});
     else nextAction.send({index: idx, id: questionIds[idx]});
   }
 }
@@ -4924,7 +4935,7 @@ function hostResyncForReconnect(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    startAction.send({ids: questionIds, index: idx, resync: true, scores: scores});
+    startAction.send({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound});
   }
 }
 
@@ -4936,7 +4947,7 @@ function doAdvance(){
   els["advance-btn"].style.display = "none";
   saveBattleSession();
   if(room){
-    if(currentIndex === 0) startAction.send({ids: questionIds});
+    if(currentIndex === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound});
     else nextAction.send({index: currentIndex, id: questionIds[currentIndex]});
   }
   enterAnsweringPhase();
@@ -5019,7 +5030,7 @@ function updateMyResultUI(forcedWrong){
     els["my-result"].textContent = "あなたの結果：相手の判定を待っています…";
   }else if(opponentVerdictOfMe){
     els["my-result"].classList.add("win");
-    els["my-result"].textContent = "あなたの結果：〇 正解でした！"+(forcedWrong ? "（スキップした問題なので、記録は苦手のまま残ります）" : "");
+    els["my-result"].textContent = "あなたの結果：〇 正解でした！"+(forcedWrong ? (inMissRetryRound ? "（まちがえた問題のやり直しなので、記録は苦手のまま残ります）" : "（スキップした問題なので、記録は苦手のまま残ります）") : "");
     showBigVerdict(true);
   }else{
     els["my-result"].classList.add("lose");
@@ -5135,6 +5146,7 @@ function startMissRetryRound(){
   if(currentShuffle) ids = shuffleArray(ids);
   questionIds = ids;
   hostSkippedIds = new Set();
+  inMissRetryRound = true;
   scores = {host:0, guest:0};
   myMissesThisRound = [];
   resetAvatars();
