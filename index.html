@@ -1386,9 +1386,11 @@
       </div>
       <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
 
-      <a class="btn-secondary" id="calc-setup-btn" href="https://nambanamba.github.io/keisan-print-app/" target="_blank" rel="noopener" style="margin-top:20px; display:none; text-align:center; text-decoration:none; box-sizing:border-box;">🧮 今日の計算問題（別アプリで開く）</a>
+      <a class="btn-secondary" id="calc-setup-btn" href="https://nambanamba.github.io/keisan-print-app/" target="_blank" rel="noopener" style="margin-top:20px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🧮 今日の計算問題（別アプリで開く）</a>
 
       <a class="btn-secondary" id="kanji-setup-btn" href="https://nambanamba.github.io/kanji-print-app/" target="_blank" rel="noopener" style="margin-top:10px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">📝 今日の漢字プリント（別アプリで開く）</a>
+
+      <a class="btn-secondary" id="kokugo-setup-btn" href="https://nambanamba.github.io/kanji/" target="_blank" rel="noopener" style="margin-top:10px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">📘 国語 漢字と言葉（別アプリで開く）</a>
 
       <button class="btn-secondary" id="list-btn" style="margin-top:20px;">問題一覧を見る・記録を切りかえる</button>
       <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
@@ -2253,7 +2255,6 @@ function saveSettings(){
 function applySettingsUI(){
   els["subject-social"].classList.toggle("on", currentSubject === "社会");
   els["subject-science"].classList.toggle("on", currentSubject === "理科");
-  els["calc-setup-btn"].style.display = currentSubject === "理科" ? "block" : "none";
   els["mode-unmastered"].classList.toggle("on", filterUnmastered);
   els["mode-weak"].classList.toggle("on", filterWeak);
   els["type-all"].classList.toggle("on", currentType === "all");
@@ -2450,18 +2451,25 @@ function orderReviewCandidatesByWeakness(indices){
     const s = stats[QA_DATA[i].id];
     return (s && s.lastCorrectAt) ? s.lastCorrectAt : 0;
   };
-  const tier1 = [], tier2 = [], tier3 = [];
+  // 4段階の苦手優先順（ランダム要素なし）：
+  // ①一度も正解していない問題（未回答も含む）
+  // ②正解より失敗が多い問題を、最後に正解した日が古い順
+  // ③失敗経験はあるが正解の方が多い問題を、同様に古い順
+  // ④一度も失敗していない問題を、同様に古い順
+  const tierNever = [], tierWorse = [], tierBetter = [], tierClean = [];
   indices.forEach(i=>{
     const s = stats[QA_DATA[i].id];
     const wrong = s ? (s.wrong||0) : 0;
     const correct = s ? (s.correct||0) : 0;
-    if(wrong > correct) tier1.push(i);
-    else if(wrong > 0) tier2.push(i);
-    else tier3.push(i);
+    if(correct === 0) tierNever.push(i);
+    else if(wrong > correct) tierWorse.push(i);
+    else if(wrong > 0) tierBetter.push(i);
+    else tierClean.push(i);
   });
-  tier1.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
-  tier2.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
-  return tier1.concat(tier2).concat(shuffleArray(tier3));
+  tierWorse.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  tierBetter.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  tierClean.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  return tierNever.concat(tierWorse).concat(tierBetter).concat(tierClean);
 }
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
