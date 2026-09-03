@@ -1379,11 +1379,14 @@
     z-index:2;
     line-height:1;
   }
-  @page{ margin: 12mm 10mm; }
+  /* @pageのmarginはプリンタ・OSによって無視されることがあるため、
+     @page自体は0にし、余白は#print-regionのpaddingで確実に管理する */
+  @page{ size: A4 portrait; margin: 0; }
   @media print{
+    body{ margin:0 !important; }
     .wrap{ max-width:none !important; padding:0 !important; }
     body > .wrap > *:not(#print-region){ display:none !important; }
-    #print-region{ display:block !important; width:100%; box-sizing:border-box; }
+    #print-region{ display:block !important; width:100%; box-sizing:border-box; padding:16mm 14mm; }
     #print-region .print-q{ break-inside: avoid; }
     #print-region .kanji-p-row{ break-inside: avoid; }
     #print-region thead{ break-after: avoid; }
