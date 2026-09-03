@@ -2378,10 +2378,14 @@ function unitIndices(unit){
   return arr;
 }
 function applyPoolFiltersExceptPriority(pool){
-  if(filterUnmastered){
+  if(filterUnmastered && filterWeak){
+    // 両方ONの場合は「一度も正解していない」か「苦手」のどちらかに当てはまれば対象（OR）。
+    // 順にfilterするとANDになり、正解済みだが直近間違えている「苦手」問題が両方チェック時に
+    // 消えてしまうため、ここだけ一括でOR判定する。
+    pool = pool.filter(i => !isMastered(QA_DATA[i].id) || isWeak(QA_DATA[i].id));
+  }else if(filterUnmastered){
     pool = pool.filter(i => !isMastered(QA_DATA[i].id));
-  }
-  if(filterWeak){
+  }else if(filterWeak){
     pool = pool.filter(i => isWeak(QA_DATA[i].id));
   }
   if(currentType === "image"){
