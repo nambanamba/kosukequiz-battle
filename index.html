@@ -2467,34 +2467,30 @@ function buildReviewPool(){
   if(reviewLevel !== "all") pool = pool.filter(i => QA_DATA[i].level === reviewLevel);
   return pool;
 }
-// ---- 復習ミックスの並び順（苦手な問題から選ぶ）:
-//      ①正解より失敗が多い問題を、正解したのが一番昔の問題（未正解は最古扱い）から
-//      ②残り（失敗したことがある問題）も同様に、正解したのが一番昔の問題から
-//      ③一度も失敗していない問題（順不同）----
+// ---- 復習ミックスの並び順（苦手な問題から選ぶ）----
 function orderReviewCandidatesByWeakness(indices){
   const lastCorrectOf = i => {
     const s = stats[QA_DATA[i].id];
     return (s && s.lastCorrectAt) ? s.lastCorrectAt : 0;
   };
-  // 4段階の苦手優先順（ランダム要素なし）：
+  // 3段階の苦手優先順（ランダム要素なし）：
   // ①一度も正解していない問題（未回答も含む）
   // ②正解より失敗が多い問題を、最後に正解した日が古い順
-  // ③失敗経験はあるが正解の方が多い問題を、同様に古い順
-  // ④一度も失敗していない問題を、同様に古い順
-  const tierNever = [], tierWorse = [], tierBetter = [], tierClean = [];
+  // ③失敗はあるが正解の方が多い問題～一度も失敗していない問題（クリア済み含む）を、
+  //    同様に最後に正解した日が古い順（②③を分けたままだと復習ミックスの出題数の
+  //    範囲内でクリア済み問題が実質出てこなくなるため、2026-09-04にひとつに統合）
+  const tierNever = [], tierWorse = [], tierRest = [];
   indices.forEach(i=>{
     const s = stats[QA_DATA[i].id];
     const wrong = s ? (s.wrong||0) : 0;
     const correct = s ? (s.correct||0) : 0;
     if(correct === 0) tierNever.push(i);
     else if(wrong > correct) tierWorse.push(i);
-    else if(wrong > 0) tierBetter.push(i);
-    else tierClean.push(i);
+    else tierRest.push(i);
   });
   tierWorse.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
-  tierBetter.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
-  tierClean.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
-  return tierNever.concat(tierWorse).concat(tierBetter).concat(tierClean);
+  tierRest.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  return tierNever.concat(tierWorse).concat(tierRest);
 }
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
