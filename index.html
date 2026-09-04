@@ -2557,7 +2557,50 @@ function refreshUnitSelection(){
 }
 // ---- 復習ミックスの対象単元チップ（メインで選ばれていない単元のみが候補）。
 //      メインの単元選択（unit-choices）と同じ「チェックした単元＝青色でハイライト、
-//      タップでON/OFF切りかえ」方式。初期状態は選べる単元が全部ON ----
+//      タップでON/OFF切りかえ」方式。初期状態は選べる単元が全部ON。
+//      メインと同じく地理/公民/歴史でアコーディオン化し、閉じていても一部だけ
+//      選択中なのが分かるよう、グループのチェックボックスもindeterminate対応
+//      （メインのunit-group-check[data-group-check]とは別属性data-review-group-checkで
+//      名前空間を分け、document.querySelectorの取り違えを防ぐ）----
+const REVIEW_GROUP_OPEN = new Set();
+function makeReviewUnitChoice(u, count){
+  const selected = reviewSelectedUnits.has(u);
+  const div = document.createElement("div");
+  div.className = "choice" + (selected ? " selected" : "");
+  div.dataset.unit = u;
+  div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"'+(selected ? " checked" : "")+'></span><span class="name">'+escapeHtml(u)+'</span></span><span class="count">'+count+'問</span>';
+  div.addEventListener("click", ()=>{
+    if(reviewSelectedUnits.has(u)) reviewSelectedUnits.delete(u);
+    else reviewSelectedUnits.add(u);
+    refreshReviewUnitSelection();
+    refreshCreateButton();
+    saveSettings();
+  });
+  return div;
+}
+function makeReviewUnitGroupHeader(group, groupUnits, count){
+  const div = document.createElement("div");
+  div.className = "unit-group-header" + (REVIEW_GROUP_OPEN.has(group.key) ? " open" : "");
+  div.dataset.reviewGroup = group.key;
+  div.innerHTML = '<span class="unit-group-check" data-review-group-check="'+group.key+'"><input type="checkbox" tabindex="-1"></span><span class="unit-group-label">'+escapeHtml(group.label)+'</span><span class="unit-group-count">'+count+'問</span><span class="unit-group-arrow">▸</span>';
+  div.querySelector(".unit-group-check").addEventListener("click", (e)=>{
+    e.stopPropagation();
+    const allSelected = groupUnits.length > 0 && groupUnits.every(u => reviewSelectedUnits.has(u));
+    if(allSelected) groupUnits.forEach(u => reviewSelectedUnits.delete(u));
+    else groupUnits.forEach(u => reviewSelectedUnits.add(u));
+    refreshReviewUnitSelection();
+    refreshCreateButton();
+    saveSettings();
+  });
+  div.addEventListener("click", ()=>{
+    const body = els["review-unit-choices"].querySelector('.unit-group-body[data-review-group="'+group.key+'"]');
+    const opening = body.style.display === "none";
+    if(opening) REVIEW_GROUP_OPEN.add(group.key); else REVIEW_GROUP_OPEN.delete(group.key);
+    body.style.display = opening ? "flex" : "none";
+    div.classList.toggle("open", opening);
+  });
+  return div;
+}
 function renderReviewUnitChoices(){
   syncReviewUnits();
   const avail = availableReviewUnits();
@@ -2566,20 +2609,44 @@ function renderReviewUnitChoices(){
     els["review-unit-choices"].innerHTML = '<div class="empty-note">復習に回せる単元がありません（すべての単元がメインで選ばれています）</div>';
     return;
   }
-  avail.forEach(u=>{
-    const cnt = unitIndices(u).length;
-    const selected = reviewSelectedUnits.has(u);
-    const div = document.createElement("div");
-    div.className = "choice" + (selected ? " selected" : "");
-    div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"'+(selected ? " checked" : "")+'></span><span class="name">'+escapeHtml(u)+'</span></span><span class="count">'+cnt+'問</span>';
-    div.addEventListener("click", ()=>{
-      if(reviewSelectedUnits.has(u)) reviewSelectedUnits.delete(u);
-      else reviewSelectedUnits.add(u);
-      renderReviewUnitChoices();
-      refreshCreateButton();
-      saveSettings();
+  if(currentSubject === "理科"){
+    avail.forEach(u=>{
+      els["review-unit-choices"].appendChild(makeReviewUnitChoice(u, unitIndices(u).length));
     });
-    els["review-unit-choices"].appendChild(div);
+  }else{
+    UNIT_GROUPS.forEach(group=>{
+      const groupUnits = avail.filter(group.test);
+      if(groupUnits.length === 0) return;
+      const groupCount = groupUnits.reduce((sum,u)=>sum+unitIndices(u).length, 0);
+      els["review-unit-choices"].appendChild(makeReviewUnitGroupHeader(group, groupUnits, groupCount));
+      const body = document.createElement("div");
+      body.className = "unit-group-body choice-grid";
+      body.dataset.reviewGroup = group.key;
+      body.style.display = REVIEW_GROUP_OPEN.has(group.key) ? "flex" : "none";
+      groupUnits.forEach(u=>{
+        body.appendChild(makeReviewUnitChoice(u, unitIndices(u).length));
+      });
+      els["review-unit-choices"].appendChild(body);
+    });
+  }
+  refreshReviewUnitSelection();
+}
+function refreshReviewUnitSelection(){
+  const avail = availableReviewUnits();
+  els["review-unit-choices"].querySelectorAll(".choice").forEach(el=>{
+    const checked = reviewSelectedUnits.has(el.dataset.unit);
+    el.classList.toggle("selected", checked);
+    const cb = el.querySelector(".choice-check input");
+    if(cb) cb.checked = checked;
+  });
+  UNIT_GROUPS.forEach(group=>{
+    const checkWrap = els["review-unit-choices"].querySelector('.unit-group-check[data-review-group-check="'+group.key+'"]');
+    if(!checkWrap) return;
+    const cb = checkWrap.querySelector("input");
+    const groupUnits = avail.filter(group.test);
+    const selectedCount = groupUnits.filter(u => reviewSelectedUnits.has(u)).length;
+    cb.checked = groupUnits.length > 0 && selectedCount === groupUnits.length;
+    cb.indeterminate = selectedCount > 0 && selectedCount < groupUnits.length;
   });
 }
 function refreshCreateButton(){
