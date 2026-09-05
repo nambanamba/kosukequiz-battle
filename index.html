@@ -1717,6 +1717,19 @@ import {joinRoom} from 'https://esm.run/trystero';
 
 const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
+// images/内の各画像の実サイズ。<img>にwidth/height属性を設定することで、
+// 読み込み前でも正しい縦横比の分だけ表示スペースを確保でき、
+// 画像読み込み完了時のレイアウトのガタつき（＝それに伴うタップのすれ違い）を防ぐ。
+const IMG_SIZES = {"img_01.jpg":[581,620],"img_02.jpg":[627,579],"img_03.jpg":[714,417],"img_04.jpg":[514,483],"img_05.jpg":[644,532],"img_06.jpg":[463,429],"img_07.jpg":[1156,446],"img_08.jpg":[573,586],"img_09.jpg":[506,198],"img_10.jpg":[497,146],"img_11.jpg":[503,499],"img_12.jpg":[518,578],"img_13.jpg":[746,621],"img_14.jpg":[713,567],"img_15.jpg":[658,628],"img_16.png":[642,589],"img_17.png":[535,597],"img_18.png":[510,295],"img_19.png":[1399,307],"img_20.png":[448,714],"img_21.png":[648,595],"img_22.png":[244,234],"img_23.jpg":[346,355],"img_24.jpg":[209,263],"img_25.jpg":[228,244],"kai1_01.jpg":[374,356],"kai1_02.jpg":[348,339],"kai1_03.jpg":[492,339],"kai1_04.jpg":[352,340],"kai1_05.jpg":[357,340],"kai1_06.jpg":[261,340],"kai1_07.jpg":[461,340],"kai1_08.jpg":[444,340],"kai1_09.jpg":[357,340],"kai1_10.jpg":[601,340],"kai1_11.jpg":[635,340],"kai1_12.jpg":[2019,1084],"kai1_13.jpg":[516,490],"kai1_14.jpg":[560,254],"kai1_15.jpg":[595,324],"kai1_17.jpg":[2028,783],"kai1_18.jpg":[2019,1084],"kai1_20.jpg":[2019,1084],"kai1_21.jpg":[2019,1084],"kai1_22.jpg":[595,569],"kai1_23.jpg":[595,569],"kai1_24.jpg":[2019,1084],"kai1_25.jpg":[595,569],"kai1_26.jpg":[595,569],"kai1_27.jpg":[700,508],"kai1_28.jpg":[951,720],"kai1_29.jpg":[2240,1180],"kai2_01.jpg":[697,350],"kai2_02.jpg":[769,524],"kai2_03.jpg":[529,297],"kai2_04.jpg":[529,313],"kai3_01.jpg":[530,460],"kai3_02.jpg":[680,460],"kai3_03.jpg":[700,460],"kai3_04.jpg":[675,330],"kai3_05.jpg":[2408,1775],"kaki_r1_01.jpg":[761,180],"kaki_r1_02.jpg":[761,206],"kaki_r1_03.jpg":[796,180],"kaki_r1_04.jpg":[761,179],"kaki_r1_05.jpg":[796,206],"kaki_r1_06.jpg":[830,214],"kaki_r1_07.jpg":[890,624],"kaki_r1_08.jpg":[430,380],"kaki_r1_map01.jpg":[1170,1210],"kaki_r1_map02.jpg":[1170,1210],"kaki_r1_map03.jpg":[1170,1210],"kaki_r1_map04.jpg":[1170,1210],"kaki_r1_map05.jpg":[1170,1210],"kaki_r1_map06.jpg":[1170,1210],"kaki_r1_map07.jpg":[1170,1210],"kaki_r1_map08.jpg":[1170,1210],"kaki_r1_map09.jpg":[1170,1210],"kaki_r1_map10.jpg":[1170,1210],"kaki_r1_map11.jpg":[1170,1210],"kaki_r1_map12.jpg":[1170,1210],"kaki_r1_map13.jpg":[1170,1210],"kaki_r1_map14.jpg":[1170,1210],"kaki_r1_map15.jpg":[1170,1210],"kaki_r2_graph01.jpg":[1215,1340],"kaki_r2_graph02.jpg":[1295,850],"kaki_r2_graph03.jpg":[1265,680],"kaki_r2_graph04.jpg":[1225,320],"kaki_r2_graph06.jpg":[1045,560],"kaki_r2_graph07.jpg":[700,870],"kaki_r2_map01.jpg":[1140,1090],"kaki_r2_map05.jpg":[1035,900],"kaki_r2_map06.jpg":[2315,1650],"kaki_r2_map07.jpg":[2315,1650],"kaki_r2_map08.jpg":[2315,1650],"kaki_r2_map09.jpg":[2315,1650],"kaki_r2_map10.jpg":[2315,1650],"kaki_r2_map11.jpg":[2315,1650],"kaki_r2_map12.jpg":[2315,1650],"kaki_r2_map13.jpg":[2315,1650],"kaki_r2_map14.jpg":[2315,1650],"kaki_r2_map15.jpg":[2315,1650],"kaki_r2_map16.jpg":[2315,1650],"kaki_r2_map17.jpg":[2315,1650],"kaki_r2_map18.jpg":[2315,1650],"kaki_r3_graph01.jpg":[1015,580],"kaki_r3_house01.jpg":[505,355],"kaki_r3_map01.jpg":[2415,3414],"kaki_r3_map02.jpg":[2415,3414],"kaki_r3_map03.jpg":[2415,3414],"kaki_r3_map04.jpg":[2415,3414],"kaki_r3_map05.jpg":[2415,3414],"kaki_r3_map06.jpg":[2415,3414],"kaki_r3_map07.jpg":[2415,3414],"kaki_r3_map08.jpg":[2415,3414],"kaki_r3_map09.jpg":[2415,3414],"kaki_r3_map10.jpg":[2415,3414],"kaki_r3_map11.jpg":[2415,3414],"kaki_r3_map12.jpg":[2415,3414],"kaki_r3_map13.jpg":[2415,3414],"kaki_r3_map14.jpg":[2415,3414],"kaki_r3_map15.jpg":[2415,3414],"kaki_r3_map16.jpg":[2415,3414],"kaki_r3_map17.jpg":[2415,3414],"kaki_r3_map18.jpg":[2415,3414],"kaki_r3_map19.jpg":[2415,3414],"kaki_r3_map20.jpg":[2415,3414],"kaki_r3_map21.jpg":[2415,3414],"kaki_r3_map22.jpg":[2415,3414],"kaki_r3_map23.jpg":[2415,3417],"kaki_r3_map24.jpg":[2415,3417],"kaki_r3_map25.jpg":[2415,3417],"kaki_r3_map26.jpg":[2415,3417],"kaki_r3_map27.jpg":[2415,3417],"kaki_r3_map28.jpg":[2415,3417],"kaki_r3_map29.jpg":[2415,3417],"kaki_r3_map30.jpg":[2415,3417],"kaki_r3_map31.jpg":[2415,3417],"kaki_r3_map32.jpg":[2415,3417],"kaki_r3_map33.jpg":[2415,3417],"kaki_r3_map34.jpg":[2415,3417],"kaki_r3_map35.jpg":[2415,3417],"kaki_r3_map36.jpg":[2415,3417],"kaki_r3_map37.jpg":[1265,910],"kaki_r3_shapes.jpg":[2315,480],"kaki_r4_graph01.jpg":[910,300],"kaki_r4_graph02.jpg":[760,200],"kaki_r4_map01.jpg":[1610,980],"kaki_r4_map02.jpg":[1610,1380],"kaki_r4_map03.jpg":[540,570],"kaki_r4_shapes01.jpg":[1470,520],"r1_01.jpg":[2188,900],"r1_02.jpg":[1130,1070],"r1_03.jpg":[1660,400],"r1_04.jpg":[476,377],"r1_05.jpg":[1299,625],"r1_06.jpg":[950,360],"r2_01.jpg":[689,281],"r2_02.jpg":[322,392],"r2_03.jpg":[420,400],"r2_04.jpg":[594,350],"r2_05.jpg":[514,630],"r2_06.jpg":[360,530],"r2_07.jpg":[479,685],"r2_08.jpg":[440,590],"r2_09.jpg":[580,530],"r2_10.jpg":[680,530],"r2_11.jpg":[532,530],"r2_12.jpg":[550,410],"r2_13.jpg":[480,410],"r2_14.jpg":[562,480],"r2_15.jpg":[570,600],"r2_16.jpg":[500,600],"r2_17.jpg":[520,600],"r2_18.jpg":[780,740],"r2_19.jpg":[800,740],"r2_20.jpg":[590,480],"r2_21.jpg":[580,450],"r2_22.jpg":[730,480],"r2_23.jpg":[590,530],"r2_24.jpg":[570,530],"r2_25.jpg":[809,580],"r2_26.jpg":[540,460],"r2_27.jpg":[530,460],"r2_28.jpg":[688,500],"r2_29.jpg":[748,760],"r2_30.jpg":[480,600],"r2_31.jpg":[460,600],"r2_32.jpg":[450,600],"r2_33.jpg":[500,600],"r2_34.jpg":[470,470],"r2_35.jpg":[460,470],"r2_36.jpg":[460,520],"r2_37.jpg":[538,430],"r2_38.jpg":[798,600],"r2_39.jpg":[770,720],"r2_40.jpg":[1790,1198]};
+
+// 画像を差し替える際、幅・高さの属性も一緒に設定する（IMG_SIZESに無い画像はそのまま）
+function setImgWithSize(imgEl, filename){
+  const sz = IMG_SIZES[filename];
+  if(sz){ imgEl.width = sz[0]; imgEl.height = sz[1]; }
+  else { imgEl.removeAttribute("width"); imgEl.removeAttribute("height"); }
+  imgEl.src = "images/"+filename;
+}
+
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "subject-social","subject-science",
@@ -3074,7 +3087,7 @@ function renderListItems(){
         '<input type="checkbox" class="q-select-checkbox" '+(selectedQuestionIds.has(base.id) ? "checked" : "")+'>'+
       '</div>'+
       (d.note ? '<div class="list-source">出典：'+escapeHtml(d.note)+'</div>' : '')+
-      (d.img ? '<div class="list-img-wrap"><img src="images/'+escapeHtml(d.img)+'" alt="資料"></div>' : '')+
+      (d.img ? '<div class="list-img-wrap"><img src="images/'+escapeHtml(d.img)+'" alt="資料"'+(IMG_SIZES[d.img] ? ' width="'+IMG_SIZES[d.img][0]+'" height="'+IMG_SIZES[d.img][1]+'"' : '')+'></div>' : '')+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
@@ -3434,7 +3447,7 @@ function startSoloCard(){
   els["solo-view"].style.display = "block";
   els["solo-edit-form"].style.display = "none";
   if(d.img){
-    els["solo-img"].src = "images/"+d.img;
+    setImgWithSize(els["solo-img"], d.img);
     els["solo-img-wrap"].style.display = "block";
   }else{
     els["solo-img-wrap"].style.display = "none";
@@ -4197,7 +4210,7 @@ function showQuestion(idx, hostPrivate){
   els["battle-edit-form"].style.display = "none";
   els["battle-a-block"].classList.remove("show");
   if(d.img){
-    els["battle-img"].src = "images/"+d.img;
+    setImgWithSize(els["battle-img"], d.img);
     els["battle-img-wrap"].style.display = "block";
   }else{
     els["battle-img-wrap"].style.display = "none";
