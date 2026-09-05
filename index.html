@@ -471,6 +471,25 @@
     font-weight:700;
     color:var(--navy-deep);
   }
+  .sol-block{
+    margin-top:14px;
+    padding-top:12px;
+    border-top:1px dotted var(--paper-line);
+  }
+  .sol-label{
+    font-size:11px;
+    font-weight:700;
+    color:var(--ink-soft);
+    letter-spacing:.1em;
+    margin-bottom:6px;
+  }
+  .sol-text{
+    font-size:14px;
+    line-height:1.75;
+    font-weight:500;
+    color:var(--ink);
+    white-space:pre-wrap;
+  }
 
   .buzz-btn{
     width:100%;
@@ -880,6 +899,13 @@
     line-height:1.6;
     color:var(--ink-soft);
     margin-bottom:10px;
+  }
+  .list-item .list-sol{
+    font-size:12px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    margin-bottom:10px;
+    white-space:pre-wrap;
   }
   .status-toggle{
     display:flex;
@@ -1514,6 +1540,10 @@
         <div class="a-block" id="solo-a-block">
           <div class="a-label">こたえ</div>
           <div class="a-text" id="solo-a"></div>
+          <div class="sol-block" id="solo-sol-block" style="display:none;">
+            <div class="sol-label">解説</div>
+            <div class="sol-text" id="solo-sol"></div>
+          </div>
         </div>
         <div class="edit-link" id="solo-edit-link" style="margin-top:14px;">✎ 文章を直す</div>
       </div>
@@ -1613,6 +1643,10 @@
         <div class="a-block" id="battle-a-block">
           <div class="a-label">こたえ</div>
           <div class="a-text" id="battle-a"></div>
+          <div class="sol-block" id="battle-sol-block" style="display:none;">
+            <div class="sol-label">解説</div>
+            <div class="sol-text" id="battle-sol"></div>
+          </div>
         </div>
         <div class="edit-link" id="battle-edit-link" style="margin-top:14px;">✎ 文章を直す</div>
       </div>
@@ -1699,14 +1733,14 @@ const els = {};
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
  "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id","solo-source-tag",
- "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a",
+ "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a","solo-sol-block","solo-sol",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","battle-source-tag","guest-wait-status",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
- "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a",
+ "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a","battle-sol-block","battle-sol",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
@@ -3043,6 +3077,7 @@ function renderListItems(){
       (d.img ? '<div class="list-img-wrap"><img src="images/'+escapeHtml(d.img)+'" alt="資料"></div>' : '')+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
+      (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
       '<div class="list-last-answered">最終回答：'+(s.lastAnswered ? formatDate(s.lastAnswered) : "未回答")+'</div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
@@ -3394,6 +3429,8 @@ function startSoloCard(){
   els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
   els["solo-q"].textContent = d.q;
   els["solo-a"].textContent = d.a;
+  els["solo-sol"].textContent = d.sol || "";
+  els["solo-sol-block"].style.display = d.sol ? "block" : "none";
   els["solo-view"].style.display = "block";
   els["solo-edit-form"].style.display = "none";
   if(d.img){
@@ -4154,6 +4191,8 @@ function showQuestion(idx, hostPrivate){
   els["battle-source-tag"].textContent = d.note ? "出典："+d.note : "";
   els["battle-q"].textContent = d.q;
   els["battle-a"].textContent = d.a;
+  els["battle-sol"].textContent = d.sol || "";
+  els["battle-sol-block"].style.display = d.sol ? "block" : "none";
   els["battle-view"].style.display = "block";
   els["battle-edit-form"].style.display = "none";
   els["battle-a-block"].classList.remove("show");
@@ -4278,6 +4317,8 @@ function performSkip(){
   const skipped = getQById(skippedId);
   els["battle-q"].textContent = skipped.q;
   els["battle-a"].textContent = skipped.a;
+  els["battle-sol"].textContent = skipped.sol || "";
+  els["battle-sol-block"].style.display = skipped.sol ? "block" : "none";
   els["battle-a-block"].classList.add("show");
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
