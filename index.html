@@ -769,6 +769,10 @@
     -webkit-tap-highlight-color:transparent;
   }
   .reveal-btn:active{background:#eef4f2;}
+  /* 相手が先に「こたえを見る」を押した状態。自分が押せば二人ぶんそろって開く */
+  .reveal-btn.peer-ready{background:#fff8e1; border-color:#d79a00; color:#8a6100;}
+  /* 自分は押しおわって相手を待っている状態 */
+  .reveal-btn:disabled{background:#f2f4f5; border-color:#c2c9cc; color:#6b7478; cursor:default;}
 
   .judge-row{
     display:flex;
@@ -1807,8 +1811,13 @@ function primeAudio(){
   if(audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
 }
 document.addEventListener("click", primeAudio, {capture:true});
+// ---- 「ピンポン」が鳴り終わるまでの目安。正解した直後にアタック音が重なると
+//      どちらも聞き取りにくくなるので、アタック音のほうを待たせるのに使う ----
+const CHIME_MS = 700;
+let chimeEndsAt = 0;
 function playChime(){
   if(!audioCtx) return;
+  chimeEndsAt = Date.now() + CHIME_MS;
   try{
     const now = audioCtx.currentTime;
     [{f:880, t:0, d:0.32}, {f:659.25, t:0.26, d:0.42}].forEach(n=>{
@@ -1829,6 +1838,12 @@ function playChime(){
 // ---- kid-friendly "attack" flourish on a correct answer: no HP, no defeat,
 //      just a satisfying pop + sound tied to the moment you get one right ----
 function playAttackSound(){
+  // 正解の「ピンポン」が鳴っている最中なら、鳴り終わってから出す
+  const wait = chimeEndsAt - Date.now();
+  if(wait > 0){ setTimeout(playAttackSoundNow, wait); return; }
+  playAttackSoundNow();
+}
+function playAttackSoundNow(){
   if(!audioCtx) return;
   try{
     const now = audioCtx.currentTime;
@@ -4147,7 +4162,7 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let startAction, judgeAction, nextAction, endAction, statusAction, unitsAction;
+let startAction, judgeAction, nextAction, endAction, statusAction, unitsAction, revealAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
@@ -4231,7 +4246,40 @@ function stopAnswerCountdown(){
   els["answer-countdown"].style.display = "none";
   els["answer-reveal-btn"].style.display = "none";
 }
-els["answer-reveal-btn"].addEventListener("click", revealAnswer);
+// ---- こたえは二人そろってから開く。片方が押しただけでは開かず、相手が押すのを待つ。
+//      「二人で同時に見る」という体験だけを足すもので、新しい時間切れの仕組みは作っていない。
+//      チーズを食べ終わったら、これまでどおり自動で開く（startAnswerCountdown の
+//      cheeseTimeout）。片方が押さないままでも、そこで開くので固まらない ----
+//      「押した／押していない」ではなく「何問目に対して押したか」を覚える。
+//      相手の合図が自分の準備より先に届いても消えないようにするため
+let iAskedRevealIdx = -1;
+let peerAskedRevealIdx = -1;
+function resetRevealSync(fullClear){
+  // いまの問題に対する合図は消さない。相手のほうが先に押していて、その合図が
+  // こちらの数えなおしより先に届いていることがあるため。
+  // ラウンドの最初（1問目）だけは、前のラウンドの合図と取りちがえないよう全部消す
+  if(fullClear || iAskedRevealIdx !== currentIndex) iAskedRevealIdx = -1;
+  if(fullClear || peerAskedRevealIdx !== currentIndex) peerAskedRevealIdx = -1;
+  const btn = els["answer-reveal-btn"];
+  btn.disabled = false;
+  btn.textContent = "こたえを見る";
+  btn.classList.remove("peer-ready");
+}
+function requestReveal(){
+  if(iAskedRevealIdx === currentIndex) return;
+  iAskedRevealIdx = currentIndex;
+  if(!room){ revealAnswer(); return; } // ひとりで見ているときは待たない
+  try{ revealAction.send({idx: currentIndex}); }catch(e){}
+  const btn = els["answer-reveal-btn"];
+  btn.disabled = true;
+  btn.classList.remove("peer-ready");
+  btn.textContent = peerAskedRevealIdx === currentIndex ? "ひらきます…" : "相手を待っています…";
+  maybeReveal();
+}
+function maybeReveal(){
+  if(iAskedRevealIdx === currentIndex && peerAskedRevealIdx === currentIndex) revealAnswer();
+}
+els["answer-reveal-btn"].addEventListener("click", requestReveal);
 
 // ---- shared "fill" countdown for 〇✕ judging and 次の問題へ -- the
 //      button's own color sweeps in from the right as time passes, and
@@ -4465,6 +4513,18 @@ function setupActions(){
   endAction = room.makeAction("end");
   statusAction = room.makeAction("status");
   unitsAction = room.makeAction("units");
+  revealAction = room.makeAction("reveal");
+
+  // 相手が「こたえを見る」を押した合図。同じ問題のときだけ受ける
+  revealAction.onMessage = (data)=>{
+    if(!data || typeof data.idx !== "number") return;
+    peerAskedRevealIdx = data.idx;
+    if(data.idx === currentIndex && iAskedRevealIdx !== currentIndex){
+      els["answer-reveal-btn"].textContent = "相手は準備OK！ こたえを見る";
+      els["answer-reveal-btn"].classList.add("peer-ready");
+    }
+    maybeReveal();
+  };
 
   // ---- 公平モード: ゲストが選んだ単元をホストが受け取り、ホストがまだ
   //      選んでいない単元の問題を出題プールに追加する（開始前のみ有効）----
@@ -4525,6 +4585,9 @@ function setupActions(){
       scores = data.scores || {host:0, guest:0};
       showQuestion(data.index);
     }else{
+      // 1問目。ホストが「わかった！」を押して送ってきた合図なので、ゲスト側でも鳴らす
+      // （resync は再接続の追いつきなので鳴らさない）
+      playChime();
       scores = {host:0, guest:0};
       showQuestion(0);
     }
@@ -4558,6 +4621,9 @@ function setupActions(){
     if(data.index >= questionIds.length) endGame();
     else{
       if(data.id) questionIds[data.index] = data.id;
+      // ホストが「わかった！」を押した合図。押した側では doAdvance() が鳴らしているので、
+      // ここで鳴らすとゲスト側でも同じタイミングで鳴る
+      playChime();
       showQuestion(data.index);
     }
   };
@@ -4767,6 +4833,10 @@ function showQuestion(idx, hostPrivate){
   els["my-result"].style.display = "none";
   els["my-result"].classList.remove("show","win","lose","info");
   els["next-btn"].classList.remove("show");
+  // 「こたえを見る」の二人そろい待ちを、問題ごとに数えなおす。
+  // ここは両方の端末が問題ごとに必ず通る。1問目はラウンドの始まりなので全部消す
+  // （このタイミングではまだ、この問題に対する合図はどちらからも出ていない）
+  resetRevealSync(idx === 0);
 
   updateScoreUI();
 
@@ -4928,6 +4998,9 @@ function updateMyResultUI(forcedWrong){
     els["my-result"].classList.add("win");
     els["my-result"].textContent = "あなたの結果：〇 正解でした！"+(forcedWrong ? (inMissRetryRound ? "（まちがえた問題のやり直しなので、記録は苦手のまま残ります）" : "（スキップした問題なので、記録は苦手のまま残ります）") : "");
     showBigVerdict(true);
+    // 正解した側の端末だけで「ピンポン」を鳴らす。この関数はそれぞれの端末で
+    // 自分の結果を出すところなので、相手の端末では鳴らない
+    playChime();
   }else{
     els["my-result"].classList.add("lose");
     els["my-result"].textContent = "あなたの結果：✕ 残念、不正解でした。";
