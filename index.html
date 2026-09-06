@@ -2460,11 +2460,24 @@ function refreshLastMissButton(){
 }
 
 // ---- resume an in-progress solo session after an accidental reload/navigation ----
+// ---- 中断したひとり練習は、問題の「id」で覚える。
+//      以前は QA_DATA の「添字」を保存していたが、それだと問題を配列の途中に
+//      足したとたんに添字が全部ずれ、再開したとき別の問題が出てしまう
+//      （成績も別の問題に紐づく）。対戦側が questionIds で持っているのと同じ形にそろえた ----
 const SOLO_SESSION_KEY = "kq_battle_solo_session_v1";
+const SOLO_SESSION_VERSION = 2; // 1 = 添字で保存していたころ。読まずに捨てる
 function saveSoloSession(){
+  const ids = quizQueue.map(i => QA_DATA[i] && QA_DATA[i].id);
+  if(ids.some(id => !id)) return; // 念のため。保存時の添字は必ず有効なのでここには来ない
   try{
     window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify({
-      quizQueue: quizQueue, quizPos: quizPos, quizResults: quizResults, reviewMode: reviewMode,
+      v: SOLO_SESSION_VERSION,
+      quizIds: ids,
+      quizPos: quizPos,
+      quizResults: quizResults.map(r => ({
+        id: QA_DATA[r.idx] && QA_DATA[r.idx].id, correct: r.correct, recorded: r.recorded
+      })),
+      reviewMode: reviewMode,
       inSoloRetryRound: inSoloRetryRound
     }));
   }catch(e){}
@@ -2475,12 +2488,39 @@ function loadSoloSession(){
     return raw ? JSON.parse(raw) : null;
   }catch(e){ return null; }
 }
+// ---- 保存されている id から、いまの QA_DATA での添字を引き直す。
+//      添字で保存していた古い形式は、正しく復元できると保証できないので捨てる
+//      （1回ぶんやり直しになるが、別の問題が出て成績が別の問題に紐づくよりよい） ----
+function restoreSoloSession(session){
+  if(!session || session.v !== SOLO_SESSION_VERSION || !Array.isArray(session.quizIds)) return null;
+  const byId = new Map(QA_DATA.map((d,i)=>[d.id, i]));
+  const savedPos = session.quizPos || 0;
+  const queue = [];
+  let pos = 0;
+  session.quizIds.forEach((id, i)=>{
+    if(!byId.has(id)) return; // データから消えた問題は取りのぞく
+    queue.push(byId.get(id));
+    if(i < savedPos) pos++;   // 消えたぶん、済んだ問題数も数え直す
+  });
+  if(queue.length === 0) return null;
+  const results = (session.quizResults || []).map(r=>{
+    if(!r || !byId.has(r.id)) return null;
+    return {idx: byId.get(r.id), correct: r.correct, recorded: r.recorded};
+  }).filter(r => r);
+  return {
+    quizQueue: queue,
+    quizPos: Math.min(pos, queue.length),
+    quizResults: results,
+    reviewMode: !!session.reviewMode,
+    inSoloRetryRound: !!session.inSoloRetryRound
+  };
+}
 function clearSoloSession(){
   try{ window.localStorage.removeItem(SOLO_SESSION_KEY); }catch(e){}
 }
 function refreshResumeSoloButton(){
-  const session = loadSoloSession();
-  if(session && Array.isArray(session.quizQueue) && session.quizPos < session.quizQueue.length){
+  const session = restoreSoloSession(loadSoloSession());
+  if(session && session.quizPos < session.quizQueue.length){
     els["resume-solo-btn"].style.display = "block";
     els["resume-solo-btn"].textContent = "前回の続きから再開する（一人・残り"+(session.quizQueue.length - session.quizPos)+"問）";
   }else{
@@ -2634,7 +2674,12 @@ function collectSubjectSettings(){
     level: currentLevel,
     shuffle: currentShuffle,
     reviewMixCount: reviewMixCount,
-    reviewMode: reviewMode
+    reviewMode: reviewMode,
+    // 復習ミックス側の絞り込みも、メイン側の type/priority/level と同じ性質の設定なので
+    // 科目別にそろえる（片方だけ共通だと、どちらの扱いか分からなくなる）
+    reviewPriority: reviewPriority,
+    reviewLevel: reviewLevel,
+    reviewType: reviewType
   };
 }
 function rememberSubjectSettings(){
@@ -2652,6 +2697,9 @@ function restoreSubjectSettings(subject){
   if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
   if(typeof s.reviewMixCount === "number") reviewMixCount = s.reviewMixCount;
   if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
+  if(s.reviewPriority) reviewPriority = s.reviewPriority;
+  if(s.reviewLevel) reviewLevel = s.reviewLevel;
+  if(s.reviewType) reviewType = s.reviewType;
 }
 
 function loadSettings(){
@@ -4085,7 +4133,7 @@ els["retry-last-miss-btn"].addEventListener("click", ()=>{
 });
 
 els["resume-solo-btn"].addEventListener("click", ()=>{
-  const session = loadSoloSession();
+  const session = restoreSoloSession(loadSoloSession());
   if(!session) return;
   quizQueue = session.quizQueue;
   quizPos = session.quizPos;
