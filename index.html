@@ -2224,9 +2224,19 @@ let skipNextTimeSec = 8; // time before the 次の問題へ shown after a skip f
 let reviewMode = false;
 let fairMode = false; // 対戦: こどもどうし公平モード（ホスト先読みなし・単元は双方の希望を合算）
 
-// ---- 漢字プリント画面はホームの「社会」単元選択に常に自動連動する。
-//      currentSubjectが理科の間も直近の社会選択を保持するためのスナップショット ----
-let socialSelectedUnitsSnapshot = null;
+// ---- 単元の選択は科目（社会/理科）ごとに別々に覚えておく。
+//      これがないと、理科をやってから社会にもどしたときに社会の選択が
+//      「全単元」にリセットされ、そのまま保存されて次回起動時にも戻らない。
+//      キーが無い科目＝まだ一度も選んでいない科目で、その場合だけ「全単元」が初期値。
+//      空配列は「わざと全部外した」状態なので、そのまま復元する ----
+let unitSelectionBySubject = {};
+function rememberUnitSelection(){
+  unitSelectionBySubject[currentSubject] = new Set(selectedUnits);
+}
+function restoreUnitSelection(subject){
+  const saved = unitSelectionBySubject[subject];
+  return saved ? new Set(saved) : new Set(getUnitsForSubject(subject));
+}
 
 // ---- 復習ミックス: 対象単元・優先度を独自に選べる。
 //      reviewSelectedUnitsが常に唯一の正（メイン単元選択と同じ「全部on→タップで外す」方式）。
@@ -2255,10 +2265,18 @@ const SETTINGS_KEY = "kq_battle_settings_v1";
 function loadSettings(){
   try{
     const raw = window.localStorage.getItem(SETTINGS_KEY);
-    if(!raw) return;
-    const s = JSON.parse(raw);
+    // 保存がない初回起動でも、関数末尾のselectedUnits組み立てまで必ず通す
+    const s = raw ? JSON.parse(raw) : {};
     if(s.subject === "社会" || s.subject === "理科") currentSubject = s.subject;
-    if(Array.isArray(s.units) && s.units.length) selectedUnits = new Set(s.units);
+    if(s.unitsBySubject && typeof s.unitsBySubject === "object"){
+      Object.keys(s.unitsBySubject).forEach(k=>{
+        if(Array.isArray(s.unitsBySubject[k])) unitSelectionBySubject[k] = new Set(s.unitsBySubject[k]);
+      });
+    }
+    // 旧バージョン（科目ごとに覚えていなかったころ）の設定からの引き継ぎ。
+    // unitsは保存時の科目の選択、socialUnitsは当時の社会のスナップショット
+    if(!unitSelectionBySubject[currentSubject] && Array.isArray(s.units)) unitSelectionBySubject[currentSubject] = new Set(s.units);
+    if(!unitSelectionBySubject["社会"] && Array.isArray(s.socialUnits) && s.socialUnits.length) unitSelectionBySubject["社会"] = new Set(s.socialUnits);
     if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
     if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
     if(s.type) currentType = s.type;
@@ -2274,7 +2292,6 @@ function loadSettings(){
     if(typeof s.judgeTimeSec === "number") judgeTimeSec = s.judgeTimeSec;
     if(typeof s.nextTimeSec === "number") nextTimeSec = s.nextTimeSec;
     if(typeof s.skipNextTimeSec === "number") skipNextTimeSec = s.skipNextTimeSec;
-    if(Array.isArray(s.socialUnits) && s.socialUnits.length) socialSelectedUnitsSnapshot = new Set(s.socialUnits);
     if(Array.isArray(s.reviewSelectedUnits)) reviewSelectedUnits = new Set(s.reviewSelectedUnits);
     if(Array.isArray(s.reviewUnitsKnown)) reviewUnitsKnown = new Set(s.reviewUnitsKnown);
     if(s.reviewPriority) reviewPriority = s.reviewPriority;
@@ -2283,15 +2300,19 @@ function loadSettings(){
   }catch(e){
     // ignore, keep defaults
   }
-  // 起動直後、社会を一度も操作していない場合のフォールバック初期値
-  if(!socialSelectedUnitsSnapshot){
-    socialSelectedUnitsSnapshot = new Set(currentSubject === "社会" ? selectedUnits : getUnitsForSubject("社会"));
-  }
+  // selectedUnitsは宣言時に「社会の全単元」で初期化されているので、
+  // 復元したcurrentSubjectに対応する選択で必ず作り直す
+  selectedUnits = restoreUnitSelection(currentSubject);
 }
 function saveSettings(){
+  rememberUnitSelection();
+  const unitsBySubject = {};
+  Object.keys(unitSelectionBySubject).forEach(k=>{ unitsBySubject[k] = Array.from(unitSelectionBySubject[k]); });
   try{
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       subject: currentSubject,
+      unitsBySubject: unitsBySubject,
+      // unitsは旧バージョンのindex.htmlがキャッシュから開かれたとき用に残している
       units: Array.from(selectedUnits),
       filterUnmastered: filterUnmastered,
       filterWeak: filterWeak,
@@ -2308,14 +2329,13 @@ function saveSettings(){
       judgeTimeSec: judgeTimeSec,
       nextTimeSec: nextTimeSec,
       skipNextTimeSec: skipNextTimeSec,
-      socialUnits: Array.from(currentSubject === "社会" ? selectedUnits : (socialSelectedUnitsSnapshot || [])),
+      socialUnits: Array.from(unitSelectionBySubject["社会"] || []),
       reviewSelectedUnits: Array.from(reviewSelectedUnits),
       reviewUnitsKnown: Array.from(reviewUnitsKnown),
       reviewPriority: reviewPriority,
       reviewLevel: reviewLevel,
       reviewType: reviewType
     }));
-    if(currentSubject === "社会") socialSelectedUnitsSnapshot = new Set(selectedUnits);
   }catch(e){
     console.error("save settings failed", e);
   }
@@ -2372,8 +2392,9 @@ function applySettingsUI(){
 //      は buildPool() 側で常に除外されるので、ここでは単に単元集合を作り直すだけでよい ----
 function switchSubject(subject){
   if(subject === currentSubject) return;
+  rememberUnitSelection(); // 今の科目で選んでいた単元を覚えてから切りかえる
   currentSubject = subject;
-  selectedUnits = new Set(getUnits());
+  selectedUnits = restoreUnitSelection(subject); // 前回この科目で選んでいた単元にもどす
   renderUnitChoices();
   refreshStatRow();
   applySettingsUI();
@@ -2492,7 +2513,16 @@ function availableReviewUnits(){
 function syncReviewUnits(){
   const avail = availableReviewUnits();
   const availSet = new Set(avail);
-  Array.from(reviewSelectedUnits).forEach(u => { if(!availSet.has(u)) reviewSelectedUnits.delete(u); });
+  // 整理の対象は「今の科目の単元」だけ。別の科目の選択まで消すと、科目を
+  // 切りかえて戻ってきたときに復元できない（reviewUnitsKnownには残るので
+  // 自動でONにもならず、選び直しになってしまう）。
+  // どの科目にも存在しなくなった単元（データから消えた単元）だけは取りのぞく
+  const currentSubjectUnits = new Set(getUnits());
+  const allUnits = new Set();
+  QA_DATA.forEach(d => allUnits.add(d.u));
+  Array.from(reviewSelectedUnits).forEach(u => {
+    if(!allUnits.has(u) || (currentSubjectUnits.has(u) && !availSet.has(u))) reviewSelectedUnits.delete(u);
+  });
   avail.forEach(u=>{
     if(!reviewUnitsKnown.has(u)){
       reviewUnitsKnown.add(u);
