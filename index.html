@@ -3679,7 +3679,7 @@ function parseCSV(text){
 }
 
 els["export-link"].addEventListener("click", ()=>{
-  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日"]];
+  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日","最終回答日"]];
   QA_DATA.forEach(d=>{
     const s = stats[d.id] || {correct:0, wrong:0};
     const correct = s.correct||0;
@@ -3688,7 +3688,8 @@ els["export-link"].addEventListener("click", ()=>{
     if(isWeak(d.id)) status = "苦手";
     else if(isMastered(d.id)) status = "正解ずみ";
     const lastCorrect = s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "";
-    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect]);
+    const lastAnswered = s.lastAnswered ? dateToYMD(s.lastAnswered) : "";
+    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect, lastAnswered]);
   });
   const csv = rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
@@ -3756,6 +3757,8 @@ els["import-file"].addEventListener("change", (e)=>{
       const correctIdx = header.indexOf("正解した回数");
       const wrongIdx = header.indexOf("まちがえた回数");
       const lastCorrectIdx = header.indexOf("最終正答日");
+      const lastAnsweredIdx = header.indexOf("最終回答日");
+      const statusIdx = header.indexOf("状態");
       if(qIdx === -1 || correctIdx === -1 || wrongIdx === -1){
         alert("このCSVの形式を読み取れませんでした。kosukequiz（元のアプリ）またはこの対戦アプリからエクスポートしたファイルを選んでください。");
         return;
@@ -3781,19 +3784,31 @@ els["import-file"].addEventListener("change", (e)=>{
         // outright, so records already in this app are never lost or shrunk
         const mergedCorrect = Math.max(cur.correct||0, importedCorrect);
         const mergedWrong = Math.max(cur.wrong||0, importedWrong);
-        let mergedLastCorrectAt = cur.lastCorrectAt;
-        if(lastCorrectIdx !== -1 && row[lastCorrectIdx]){
-          const importedTs = new Date(row[lastCorrectIdx]+"T00:00:00").getTime();
-          if(!isNaN(importedTs) && (!mergedLastCorrectAt || importedTs > mergedLastCorrectAt)){
-            mergedLastCorrectAt = importedTs;
-          }
+        // CSVに無い項目（間隔反復のbox/nextDue、日付）は今ある記録をそのまま残す。
+        // 以前は{correct,wrong}で置きかえていたため、取り込むたびに復習の
+        // スケジュールがリセットされ、日付での絞りこみからも消えていた
+        const next = Object.assign({}, cur, {correct: mergedCorrect, wrong: mergedWrong});
+        const mergeDate = (field, colIdx)=>{
+          if(colIdx === -1 || !row[colIdx]) return;
+          const ts = new Date(row[colIdx]+"T00:00:00").getTime();
+          if(isNaN(ts)) return;
+          if(!next[field] || ts > next[field]) next[field] = ts; // 新しいほうを採る
+        };
+        mergeDate("lastCorrectAt", lastCorrectIdx);
+        mergeDate("lastAnswered", lastAnsweredIdx);
+        // 取り込みで初めてできた記録には間隔反復の箱が無い。「状態」列があれば
+        // それに合わせ（苦手→0、正解ずみ→1）、無ければ正誤の回数から決める。
+        // 箱は「直近の連続正解数」を兼ねるので、苦手判定にもそのまま効く
+        if(next.box === undefined){
+          const status = statusIdx !== -1 ? row[statusIdx] : "";
+          if(status === "苦手") next.box = 0;
+          else if(status === "正解ずみ") next.box = 1;
+          else next.box = (mergedCorrect > 0 && mergedWrong === 0) ? 1 : 0;
         }
-        if(mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0) || mergedLastCorrectAt !== cur.lastCorrectAt) updated++;
-        if(mergedCorrect > 0 || mergedWrong > 0){
-          const next = {correct: mergedCorrect, wrong: mergedWrong};
-          if(mergedLastCorrectAt) next.lastCorrectAt = mergedLastCorrectAt;
-          stats[d.id] = next;
-        }
+        const changed = mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0)
+          || next.lastCorrectAt !== cur.lastCorrectAt || next.lastAnswered !== cur.lastAnswered;
+        if(changed) updated++;
+        if(mergedCorrect > 0 || mergedWrong > 0) stats[d.id] = next;
       }
       if(matched === 0){
         alert("一致する問題が見つかりませんでした。");
