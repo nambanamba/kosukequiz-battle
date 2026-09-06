@@ -1066,6 +1066,16 @@
     color:var(--ink-soft);
     margin-bottom:8px;
   }
+  .list-last-answered-sub{
+    display:block;
+    opacity:0.75;
+  }
+  .solo-retry-note{
+    font-size:12px;
+    color:var(--ink-soft);
+    text-align:center;
+    margin-bottom:10px;
+  }
   .list-item-head{
     display:flex;
     justify-content:space-between;
@@ -1498,6 +1508,7 @@
     </div>
 
     <div class="list-date-row">
+      <span class="list-date-sep">解いた日</span>
       <input type="date" id="list-date-from" class="list-date-input">
       <span class="list-date-sep">〜</span>
       <input type="date" id="list-date-to" class="list-date-input">
@@ -1579,6 +1590,7 @@
       </div>
     </div>
 
+    <div class="solo-retry-note" id="solo-retry-note" style="display:none;">まちがえた問題のやり直し中です。ここで正解しても、記録は苦手のまま残ります。</div>
     <button class="reveal-btn" id="solo-reveal-btn">こたえを見る</button>
     <div class="judge-row" id="solo-judge-row" style="display:none;">
       <button class="judge-btn ng" id="solo-judge-ng">✕ まちがえた</button>
@@ -1749,7 +1761,7 @@ const els = {};
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a","solo-sol-block","solo-sol",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
- "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn",
+ "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn","solo-retry-note",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","battle-source-tag","guest-wait-status",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
@@ -1946,7 +1958,7 @@ function recordResult(id, correct){
 function setStatus(id, status){
   if(status === "unseen") delete stats[id];
   else if(status === "mastered"){
-    const s = {correct:1, wrong:0, lastAnswered: Date.now()};
+    const s = {correct:1, wrong:0, lastAnswered: Date.now(), lastCorrectAt: Date.now()};
     scheduleNext(s, true);
     stats[id] = s;
   }else if(status === "weak"){
@@ -1959,6 +1971,8 @@ function setStatus(id, status){
 function adjustStat(qid, field, delta){
   const s = stats[qid] || {correct:0, wrong:0};
   s[field] = Math.max(0, (s[field]||0) + delta);
+  if(field === "correct" && delta > 0) s.lastCorrectAt = Date.now();
+  if(field === "correct" && s.correct === 0) delete s.lastCorrectAt; // 正解を0まで戻したら正解日も消す
   if(s.correct === 0 && s.wrong === 0){
     delete stats[qid];
   }else{
@@ -2394,7 +2408,8 @@ const SOLO_SESSION_KEY = "kq_battle_solo_session_v1";
 function saveSoloSession(){
   try{
     window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify({
-      quizQueue: quizQueue, quizPos: quizPos, quizResults: quizResults, reviewMode: reviewMode
+      quizQueue: quizQueue, quizPos: quizPos, quizResults: quizResults, reviewMode: reviewMode,
+      inSoloRetryRound: inSoloRetryRound
     }));
   }catch(e){}
 }
@@ -3402,7 +3417,8 @@ function renderListItems(){
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
-      '<div class="list-last-answered">最終回答：'+(s.lastAnswered ? formatDate(s.lastAnswered) : "未回答")+'</div>'+
+      '<div class="list-last-answered">最終正解：'+(s.lastCorrectAt ? formatDate(s.lastCorrectAt) : "まだ正解なし")+
+        (s.lastAnswered ? '<span class="list-last-answered-sub">最後に解いた日：'+formatDate(s.lastAnswered)+'</span>' : '')+'</div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
         '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
@@ -3495,6 +3511,7 @@ els["selection-solo-btn"].addEventListener("click", ()=>{
   quizQueue = ids.map(id => QA_DATA.findIndex(d => d.id === id)).filter(i => i !== -1);
   quizPos = 0;
   quizResults = [];
+  inSoloRetryRound = false;
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -3733,7 +3750,12 @@ els["import-file"].addEventListener("change", (e)=>{
 // ---- solo quiz ----
 let quizQueue = [];
 let quizPos = 0;
-let quizResults = []; // { idx, correct }
+let quizResults = []; // { idx, correct（実際の正誤）, recorded（記録した正誤） }
+// ---- 「まちがえた問題だけもう一度」「前回まちがえた問題だけやり直す」で
+//      出しなおしているラウンド中かどうか。このラウンド中に正解しても、
+//      永続的な正誤記録は「まちがえた」のままにする（元々まちがえた問題なので、
+//      ここで正解しても正解ずみにはしない）。二人対戦の inMissRetryRound と同じ扱い ----
+let inSoloRetryRound = false;
 
 els["solo-start-btn"].addEventListener("click", ()=>{
   const pool = buildFinalPool();
@@ -3741,6 +3763,7 @@ els["solo-start-btn"].addEventListener("click", ()=>{
   quizQueue = pool;
   quizPos = 0;
   quizResults = [];
+  inSoloRetryRound = false;
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -3748,6 +3771,7 @@ els["solo-start-btn"].addEventListener("click", ()=>{
 function startSoloCard(){
   const idx = quizQueue[quizPos];
   const d = getQ(idx);
+  els["solo-retry-note"].style.display = (inSoloRetryRound && !reviewMode) ? "block" : "none";
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q-id"].textContent = "No."+d.id;
   els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
@@ -3825,8 +3849,11 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
 function judgeSolo(correct){
   const idx = quizQueue[quizPos];
   const qid = QA_DATA[idx].id;
-  recordResult(qid, correct);
-  quizResults.push({idx, correct});
+  // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
+  // 今回のミスリストから外すかどうかは、これまで通り実際の正誤で判定する
+  const recorded = inSoloRetryRound ? false : correct;
+  recordResult(qid, recorded);
+  quizResults.push({idx, correct, recorded});
   quizPos++;
   if(quizPos >= quizQueue.length){
     finishSoloQuiz();
@@ -3845,7 +3872,9 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     if(quizResults.length === 0) return;
     const last = quizResults.pop();
     const qid = QA_DATA[last.idx].id;
-    adjustStat(qid, last.correct ? "correct" : "wrong", -1);
+    // 実際の正誤ではなく「記録した側」を戻す（やり直しラウンドでは食いちがう）
+    const recorded = last.recorded !== undefined ? last.recorded : last.correct;
+    adjustStat(qid, recorded ? "correct" : "wrong", -1);
     quizPos = Math.max(0, quizPos - 1);
   }
   startSoloCard();
@@ -3888,6 +3917,7 @@ function finishSoloQuiz(){
     quizQueue = pool;
     quizPos = 0;
     quizResults = [];
+    inSoloRetryRound = true;
     startSoloCard();
     showScreen("screen-solo");
   };
@@ -3906,6 +3936,7 @@ els["retry-last-miss-btn"].addEventListener("click", ()=>{
   quizQueue = pool;
   quizPos = 0;
   quizResults = [];
+  inSoloRetryRound = true;
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -3917,6 +3948,7 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
   quizPos = session.quizPos;
   quizResults = session.quizResults;
   reviewMode = !!session.reviewMode;
+  inSoloRetryRound = !!session.inSoloRetryRound;
   startSoloCard();
   showScreen("screen-solo");
 });
