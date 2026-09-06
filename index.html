@@ -1858,22 +1858,29 @@ function primeAudio(){
   if(audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
 }
 document.addEventListener("click", primeAudio, {capture:true});
-// ---- 「ピンポン」が鳴り終わるまでの目安。正解した直後にアタック音が重なると
-//      どちらも聞き取りにくくなるので、アタック音のほうを待たせるのに使う ----
-const CHIME_MS = 700;
-let chimeEndsAt = 0;
-function playChime(){
+// ---- 鳴らす音は3種類。ふたつが重なると、どちらも何の音か分からなくなるので、
+//      前の音が鳴り終わってから次を出す。順番待ちの終わり時刻を soundBusyUntil で持つ ----
+let soundBusyUntil = 0;
+function queueSound(playNow, ms){
+  const now = Date.now();
+  const at = Math.max(now, soundBusyUntil);
+  soundBusyUntil = at + ms;
+  const wait = at - now;
+  if(wait > 0) setTimeout(playNow, wait);
+  else playNow();
+}
+// 音符をならべて鳴らすだけの共通処理。type は sine（やわらかい）か square（かたい）
+function playNotes(notes, type, peak){
   if(!audioCtx) return;
-  chimeEndsAt = Date.now() + CHIME_MS;
   try{
     const now = audioCtx.currentTime;
-    [{f:880, t:0, d:0.32}, {f:659.25, t:0.26, d:0.42}].forEach(n=>{
+    notes.forEach(n=>{
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-      osc.type = "sine";
+      osc.type = type;
       osc.frequency.value = n.f;
       gain.gain.setValueAtTime(0.0001, now+n.t);
-      gain.gain.exponentialRampToValueAtTime(0.3, now+n.t+0.02);
+      gain.gain.exponentialRampToValueAtTime(peak, now+n.t+0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, now+n.t+n.d);
       osc.connect(gain).connect(audioCtx.destination);
       osc.start(now+n.t);
@@ -1882,13 +1889,36 @@ function playChime(){
   }catch(e){ /* ignore, audio is a nice-to-have */ }
 }
 
+// ---- 正解音「ピンポン」。2音（880→659Hz）。自分が正解したときだけ、自分の端末で鳴る ----
+const CHIME_MS = 700;
+function playChime(){
+  queueSound(()=>playNotes([{f:880, t:0, d:0.32}, {f:659.25, t:0.26, d:0.42}], "sine", 0.3), CHIME_MS);
+}
+
+// ---- 不正解音。正解音と対になるもので、自分が不正解だったときだけ自分の端末で鳴る。
+//      このアプリは「HPも敗北も置かない」方針なので、クイズ番組のブザーのような
+//      強い否定の音にはしない。低めの2音を下がる形で、正解音より小さく・短く。
+//      「まちがえた」を責める音ではなく「はい、次」という区切りのつもり ----
+const MISS_MS = 320;
+function playMissSound(){
+  queueSound(()=>playNotes([{f:392, t:0, d:0.12}, {f:294, t:0.11, d:0.16}], "sine", 0.16), MISS_MS);
+}
+
+// ---- 「わかった！」の通知音。ホストが押したことを両方の端末に知らせる合図。
+//      正解音と同じ音だと何の音か分からない、という指摘を受けて別の音にした。
+//      **2音か1音かで瞬時に区別できる**よう、こちらは高めの単音1発だけにしてある。
+//      うれしさとは無関係の「次に進むよ」という合図なので、短く軽く ----
+const CUE_MS = 200;
+function playAdvanceCue(){
+  queueSound(()=>playNotes([{f:1046.5, t:0, d:0.10}], "sine", 0.22), CUE_MS);
+}
+
 // ---- kid-friendly "attack" flourish on a correct answer: no HP, no defeat,
 //      just a satisfying pop + sound tied to the moment you get one right ----
+const ATTACK_MS = 250;
 function playAttackSound(){
-  // 正解の「ピンポン」が鳴っている最中なら、鳴り終わってから出す
-  const wait = chimeEndsAt - Date.now();
-  if(wait > 0){ setTimeout(playAttackSoundNow, wait); return; }
-  playAttackSoundNow();
+  // ほかの音が鳴っている最中なら、鳴り終わってから出す
+  queueSound(playAttackSoundNow, ATTACK_MS);
 }
 function playAttackSoundNow(){
   if(!audioCtx) return;
@@ -4685,7 +4715,7 @@ function setupActions(){
     }else{
       // 1問目。ホストが「わかった！」を押して送ってきた合図なので、ゲスト側でも鳴らす
       // （resync は再接続の追いつきなので鳴らさない）
-      playChime();
+      playAdvanceCue();
       scores = {host:0, guest:0};
       showQuestion(0);
     }
@@ -4721,7 +4751,7 @@ function setupActions(){
       if(data.id) questionIds[data.index] = data.id;
       // ホストが「わかった！」を押した合図。押した側では doAdvance() が鳴らしているので、
       // ここで鳴らすとゲスト側でも同じタイミングで鳴る
-      playChime();
+      playAdvanceCue();
       showQuestion(data.index);
     }
   };
@@ -5004,7 +5034,7 @@ function hostResyncForReconnect(idx){
 function doAdvance(){
   clearTimeout(pendingSendTimer);
   stopCountdown();
-  playChime();
+  playAdvanceCue(); // 「次に進むよ」の合図。正解音とは別の音にしてある
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   saveBattleSession();
@@ -5103,6 +5133,8 @@ function updateMyResultUI(forcedWrong){
     els["my-result"].classList.add("lose");
     els["my-result"].textContent = "あなたの結果：✕ 残念、不正解でした。";
     showBigVerdict(false);
+    // 不正解だった側の端末だけで鳴らす。正解音と対の位置づけ（相手の端末では鳴らない）
+    playMissSound();
   }
 }
 
