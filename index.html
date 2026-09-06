@@ -1061,14 +1061,37 @@
     font-size:12px;
     color:var(--ink-soft);
   }
-  .list-last-answered{
-    font-size:11px;
-    color:var(--ink-soft);
+  .list-stat-dates{
+    display:flex;
+    gap:8px;
     margin-bottom:8px;
   }
-  .list-last-answered-sub{
+  .list-stat-date{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    min-width:0;
+  }
+  .list-stat-date-label{
+    font-size:11px;
+    color:var(--ink-soft);
+  }
+  .list-stat-date-label em{
     display:block;
-    opacity:0.75;
+    font-style:normal;
+    font-size:10px;
+    opacity:0.7;
+  }
+  .list-stat-date input{
+    width:100%;
+    box-sizing:border-box;
+    font-size:12px;
+    padding:4px 6px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    background:var(--card);
+    color:var(--ink);
   }
   .solo-retry-note{
     font-size:12px;
@@ -1981,6 +2004,21 @@ function adjustStat(qid, field, delta){
   }
   saveStats();
 }
+// ---- 一覧から日付を直接なおす。空にしたらその日付を消す。
+//      日付だけの記録は意味がないので、正誤の回数も日付も無くなったら記録ごと消す ----
+function setStatDate(qid, field, ymd){
+  const s = stats[qid] || {correct:0, wrong:0};
+  if(ymd){
+    const ts = new Date(ymd+"T00:00:00").getTime();
+    if(isNaN(ts)) return;
+    s[field] = ts;
+  }else{
+    delete s[field];
+  }
+  if(!(s.correct > 0) && !(s.wrong > 0) && !s.lastCorrectAt && !s.lastAnswered) delete stats[qid];
+  else stats[qid] = s;
+  saveStats();
+}
 function formatDate(ts){
   const d = new Date(ts);
   return d.getFullYear()+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0");
@@ -1996,6 +2034,10 @@ function formatDate(ts){
 const MIGRATION_KEY = "kq_battle_migrations_v1";
 const STATS_BACKUP_KEY = "kq_battle_stats_backup_kaki_v1";
 const KAKI_MIGRATION_ID = "kaki1-4";
+// lastCorrectAt を導入する前の記録や、CSVインポートで作られた記録には
+// 「正解しているのに正解日が無い」ものがある。そのままだと一覧に
+// 「まだ正解なし」と出てしまうので、最後に解いた日を正解日とみなして一度だけ補う
+const LAST_CORRECT_BACKFILL_ID = "lastcorrect-backfill";
 // 消した旧単元 → 作り直された新単元（単元の選択もあわせて移しかえる）
 const KAKI_UNIT_RENAMES = {
   "1.日本の食料生産": "夏期講習 復習編1.日本の食料生産",
@@ -2218,8 +2260,24 @@ function mergeStatEntries(a, b){
 function runStatsMigrations(){
   let done = {};
   try{ done = JSON.parse(window.localStorage.getItem(MIGRATION_KEY)) || {}; }catch(e){ done = {}; }
-  if(done[KAKI_MIGRATION_ID]) return;
-
+  let ran = false;
+  if(!done[KAKI_MIGRATION_ID]){ migrateKakiStats(); done[KAKI_MIGRATION_ID] = Date.now(); ran = true; }
+  if(!done[LAST_CORRECT_BACKFILL_ID]){ backfillLastCorrectAt(); done[LAST_CORRECT_BACKFILL_ID] = Date.now(); ran = true; }
+  if(ran){ try{ window.localStorage.setItem(MIGRATION_KEY, JSON.stringify(done)); }catch(e){} }
+}
+// 正解しているのに正解日が無い記録に、最後に解いた日を正解日として入れる。
+// 実際にその日に正解したとは限らないが、「まだ正解なし」と出すよりは実態に近い
+function backfillLastCorrectAt(){
+  let filled = 0;
+  Object.keys(stats).forEach(id=>{
+    const s = stats[id];
+    if(!s || s.lastCorrectAt || !(s.correct > 0) || !s.lastAnswered) return;
+    s.lastCorrectAt = s.lastAnswered;
+    filled++;
+  });
+  if(filled){ saveStats(); console.log("正解日のない記録を補いました: " + filled + "問ぶん"); }
+}
+function migrateKakiStats(){
   // 取りこぼしがあっても元にもどせるよう、移しかえる前の記録を丸ごと残す
   try{
     if(!window.localStorage.getItem(STATS_BACKUP_KEY)){
@@ -2262,8 +2320,6 @@ function runStatsMigrations(){
   renameSet(reviewUnitsKnown);
   if(unitsChanged) saveSettings();
 
-  done[KAKI_MIGRATION_ID] = Date.now();
-  try{ window.localStorage.setItem(MIGRATION_KEY, JSON.stringify(done)); }catch(e){}
   if(moved) console.log("正誤記録を復習編に引きつぎました: " + moved + "問ぶん");
 }
 
@@ -3417,8 +3473,12 @@ function renderListItems(){
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
-      '<div class="list-last-answered">最終正解：'+(s.lastCorrectAt ? formatDate(s.lastCorrectAt) : "まだ正解なし")+
-        (s.lastAnswered ? '<span class="list-last-answered-sub">最後に解いた日：'+formatDate(s.lastAnswered)+'</span>' : '')+'</div>'+
+      '<div class="list-stat-dates">'+
+        '<label class="list-stat-date"><span class="list-stat-date-label">最後に正解した日<em>苦手な問題の出題順に使います</em></span>'+
+          '<input type="date" data-date-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'"></label>'+
+        '<label class="list-stat-date"><span class="list-stat-date-label">最後に解いた日<em>上の日付での絞りこみに使います</em></span>'+
+          '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
+      '</div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
         '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
@@ -3457,6 +3517,12 @@ function renderListItems(){
     item.querySelectorAll(".count-btn").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         adjustStat(base.id, btn.dataset.field, parseInt(btn.dataset.delta, 10));
+        renderListItems();
+      });
+    });
+    item.querySelectorAll("[data-date-field]").forEach(input=>{
+      input.addEventListener("change", ()=>{
+        setStatDate(base.id, input.dataset.dateField, input.value);
         renderListItems();
       });
     });
