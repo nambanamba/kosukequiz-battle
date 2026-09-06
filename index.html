@@ -2904,22 +2904,27 @@ function orderReviewCandidatesByWeakness(indices){
   };
   // 3段階の苦手優先順（ランダム要素なし）：
   // ①一度も正解していない問題（未回答も含む）
-  // ②正解より失敗が多い問題を、最後に正解した日が古い順
-  // ③失敗はあるが正解の方が多い問題～一度も失敗していない問題（クリア済み含む）を、
-  //    同様に最後に正解した日が古い順（②③を分けたままだと復習ミックスの出題数の
-  //    範囲内でクリア済み問題が実質出てこなくなるため、2026-09-04にひとつに統合）
-  const tierNever = [], tierWorse = [], tierRest = [];
+  // ②苦手な問題（ホームの「よく間違える問題」と同じ判定）を、最後に正解した日が古い順
+  // ③それ以外（クリア済みを含む）を、同様に最後に正解した日が古い順
+  //    （②③を分けたままだと復習ミックスの出題数の範囲内でクリア済み問題が
+  //     実質出てこなくなるため、2026-09-04に「やや苦手」と「クリア済み」を統合）
+  //
+  // ②は以前「累計で正解より失敗が多い問題」で判定していたが、それだと何度も
+  // 間違えた問題は、その回数を上まわるまで正解しつづけないと抜けられなかった。
+  // ホームの苦手判定（isWeak＝直近2回連続正解で解消）とも食いちがっていたので、
+  // そちらに合わせた（2026-09-06）
+  const tierNever = [], tierWeak = [], tierRest = [];
   indices.forEach(i=>{
-    const s = stats[QA_DATA[i].id];
-    const wrong = s ? (s.wrong||0) : 0;
+    const id = QA_DATA[i].id;
+    const s = stats[id];
     const correct = s ? (s.correct||0) : 0;
     if(correct === 0) tierNever.push(i);
-    else if(wrong > correct) tierWorse.push(i);
+    else if(isWeak(id)) tierWeak.push(i);
     else tierRest.push(i);
   });
-  tierWorse.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
+  tierWeak.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
   tierRest.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
-  return tierNever.concat(tierWorse).concat(tierRest);
+  return tierNever.concat(tierWeak).concat(tierRest);
 }
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
