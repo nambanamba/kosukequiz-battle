@@ -2614,6 +2614,46 @@ const TIME_SETTINGS = [
 // ---- remember the last-used setup filters (kosukequiz's own home screen
 //      does the same) so the same settings don't need reselecting every time ----
 const SETTINGS_KEY = "kq_battle_settings_v1";
+
+// ---- 出題の中身にかかわる設定は、単元選択(unitSelectionBySubject)と同じように
+//      科目ごとに覚える。これがないと理科で問題数を10問にしたとき社会も10問になり、
+//      社会にもどっても前回の設定にもどらない。
+//      対戦の進行にかかわる時間設定(headStartSec など)と公平モードは、科目ではなく
+//      「その端末での好み」なので、ここには入れず科目共通のままにしている。
+//      復習ミックスの対象単元(reviewSelectedUnits/reviewUnitsKnown)は、単元名そのものが
+//      科目ごとに違うので1つの集合で両科目ぶんを持てる作りになっている（syncReviewUnits
+//      が他科目の分を消さないようにしている）。ここでは扱わない ----
+let settingsBySubject = {};
+function collectSubjectSettings(){
+  return {
+    count: questionCount,
+    filterUnmastered: filterUnmastered,
+    filterWeak: filterWeak,
+    type: currentType,
+    priority: currentPriority,
+    level: currentLevel,
+    shuffle: currentShuffle,
+    reviewMixCount: reviewMixCount,
+    reviewMode: reviewMode
+  };
+}
+function rememberSubjectSettings(){
+  settingsBySubject[currentSubject] = collectSubjectSettings();
+}
+function restoreSubjectSettings(subject){
+  const s = settingsBySubject[subject];
+  if(!s) return; // まだ一度も使っていない科目。いまの値をそのまま引きつぐ
+  if(s.count !== undefined) questionCount = s.count;
+  if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
+  if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
+  if(s.type) currentType = s.type;
+  if(s.priority) currentPriority = s.priority;
+  if(s.level) currentLevel = s.level;
+  if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
+  if(typeof s.reviewMixCount === "number") reviewMixCount = s.reviewMixCount;
+  if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
+}
+
 function loadSettings(){
   try{
     const raw = window.localStorage.getItem(SETTINGS_KEY);
@@ -2649,23 +2689,38 @@ function loadSettings(){
     if(s.reviewPriority) reviewPriority = s.reviewPriority;
     if(s.reviewLevel) reviewLevel = s.reviewLevel;
     if(s.reviewType) reviewType = s.reviewType;
+    if(s.settingsBySubject && typeof s.settingsBySubject === "object"){
+      Object.keys(s.settingsBySubject).forEach(k=>{
+        const v = s.settingsBySubject[k];
+        if(v && typeof v === "object") settingsBySubject[k] = v;
+      });
+    }
   }catch(e){
     // ignore, keep defaults
   }
+  // 科目別で覚えていなかったころの設定からの引き継ぎ。上でフラットな値を読み終えた
+  // 時点の値を、まだ記録のない科目の初期値として入れておく。こうしないと、これまで
+  // 使っていた問題数やフィルタが、この版に上がったとたんに初期値へ戻ってしまう
+  ["社会","理科"].forEach(k=>{ if(!settingsBySubject[k]) settingsBySubject[k] = collectSubjectSettings(); });
+  restoreSubjectSettings(currentSubject);
   // selectedUnitsは宣言時に「社会の全単元」で初期化されているので、
   // 復元したcurrentSubjectに対応する選択で必ず作り直す
   selectedUnits = restoreUnitSelection(currentSubject);
 }
 function saveSettings(){
   rememberUnitSelection();
+  rememberSubjectSettings();
   const unitsBySubject = {};
   Object.keys(unitSelectionBySubject).forEach(k=>{ unitsBySubject[k] = Array.from(unitSelectionBySubject[k]); });
   try{
     window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       subject: currentSubject,
       unitsBySubject: unitsBySubject,
+      settingsBySubject: settingsBySubject,
       // unitsは旧バージョンのindex.htmlがキャッシュから開かれたとき用に残している
       units: Array.from(selectedUnits),
+      // 以下の出題設定も、旧バージョン用に「いまの科目のぶん」をフラットにも書いておく。
+      // 読むのは settingsBySubject が優先
       filterUnmastered: filterUnmastered,
       filterWeak: filterWeak,
       type: currentType,
@@ -2745,8 +2800,10 @@ function applySettingsUI(){
 function switchSubject(subject){
   if(subject === currentSubject) return;
   rememberUnitSelection(); // 今の科目で選んでいた単元を覚えてから切りかえる
+  rememberSubjectSettings(); // 問題数・フィルタなどの出題設定も、今の科目のぶんとして覚える
   currentSubject = subject;
   selectedUnits = restoreUnitSelection(subject); // 前回この科目で選んでいた単元にもどす
+  restoreSubjectSettings(subject); // 出題設定も前回この科目で使っていた値にもどす
   renderUnitChoices();
   refreshStatRow();
   applySettingsUI();
