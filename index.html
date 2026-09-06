@@ -876,6 +876,35 @@
     border-radius:100px;
     margin-bottom:6px;
   }
+  /* 一覧の絞りこみの見出し。設定画面の .section-title より控えめにする */
+  .list-section-title{
+    font-size:12px;
+    font-weight:700;
+    color:var(--ink-soft);
+    letter-spacing:.08em;
+    margin:14px 0 6px;
+  }
+  /* 一覧の各行に出す優先度・難易度。データに無いものは「未設定」を薄く出す */
+  .list-item .list-meta{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    margin-bottom:6px;
+  }
+  .list-item .list-meta-tag{
+    font-size:10px;
+    font-weight:700;
+    padding:2px 8px;
+    border-radius:100px;
+    border:1px solid transparent;
+  }
+  .list-item .list-meta-tag.pri-高{background:#fdeaea; color:#a32323;}
+  .list-item .list-meta-tag.pri-中{background:#fdf3e2; color:#8a6100;}
+  .list-item .list-meta-tag.pri-低{background:#eef1f2; color:#5b6467;}
+  .list-item .list-meta-tag.lv-基礎{background:#e8f1ea; color:#2c6b45;}
+  .list-item .list-meta-tag.lv-標準{background:#e7eef5; color:#2b5580;}
+  .list-item .list-meta-tag.lv-発展{background:#efeaf5; color:#5b3d84;}
+  .list-item .list-meta-tag.unset{background:transparent; color:var(--ink-soft); border-color:var(--paper-line);}
   .list-item .list-source{
     font-size:11px;
     color:var(--ink-soft);
@@ -1532,6 +1561,24 @@
       <div class="toggle list-filter-toggle" data-filter="unmastered">未クリアの問題</div>
       <div class="toggle list-filter-toggle" data-filter="weak">よく間違える問題</div>
       <div class="toggle list-filter-toggle" data-filter="unseen">未解答のみ</div>
+    </div>
+
+    <div class="list-section-title">優先度</div>
+    <div class="toggle-row" id="list-priority-row">
+      <div class="toggle on" data-list-priority="all">すべて</div>
+      <div class="toggle" data-list-priority="高">高</div>
+      <div class="toggle" data-list-priority="中">中</div>
+      <div class="toggle" data-list-priority="低">低</div>
+      <div class="toggle" data-list-priority="none">未設定</div>
+    </div>
+
+    <div class="list-section-title">難易度</div>
+    <div class="toggle-row" id="list-level-row">
+      <div class="toggle on" data-list-level="all">すべて</div>
+      <div class="toggle" data-list-level="基礎">基礎</div>
+      <div class="toggle" data-list-level="標準">標準</div>
+      <div class="toggle" data-list-level="発展">発展</div>
+      <div class="toggle" data-list-level="none">未設定</div>
     </div>
 
     <div class="list-date-row">
@@ -3461,6 +3508,30 @@ let listUnit = "ALL";
 let listFilterUnmastered = false;
 let listFilterWeak = false;
 let listFilterUnseen = false;
+// 一覧の優先度・難易度の絞りこみ。"all" か、データの値そのもの（高/中/低・基礎/標準/発展）か、
+// "none"（データにその項目が無い問題）。1631問中463問が未設定なので、
+// 未設定も選べるようにしないと、絞りこんだとたんに消えて混乱する
+let listPriority = "all";
+let listLevel = "all";
+// 「その問題に優先度（難易度）が入っているか」の判定。空文字も未設定とみなす
+function metaValue(d, key){ return d[key] ? d[key] : null; }
+// 一覧の各行に出す優先度・難易度のふだ。どちらも無い問題は「未設定」を1つだけ出す
+function metaTagsHtml(d){
+  const pri = metaValue(d, "priority");
+  const lv = metaValue(d, "level");
+  if(!pri && !lv) return '<div class="list-meta"><span class="list-meta-tag unset">優先度・難易度 未設定</span></div>';
+  return '<div class="list-meta">'+
+    (pri ? '<span class="list-meta-tag pri-'+escapeHtml(pri)+'">優先度 '+escapeHtml(pri)+'</span>'
+         : '<span class="list-meta-tag unset">優先度 未設定</span>')+
+    (lv ? '<span class="list-meta-tag lv-'+escapeHtml(lv)+'">難易度 '+escapeHtml(lv)+'</span>'
+        : '<span class="list-meta-tag unset">難易度 未設定</span>')+
+    '</div>';
+}
+function matchesMetaFilter(value, filter){
+  if(filter === "all") return true;
+  if(filter === "none") return value === null;
+  return value === filter;
+}
 let listDateFrom = "";
 let listDateTo = "";
 
@@ -3493,6 +3564,12 @@ function renderListScreen(){
       : listFilterUnseen;
     el.classList.toggle("on", on);
   });
+  document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.listPriority === listPriority);
+  });
+  document.querySelectorAll("#list-level-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.listLevel === listLevel);
+  });
   els["list-date-from"].value = listDateFrom;
   els["list-date-to"].value = listDateTo;
   renderListItems();
@@ -3511,6 +3588,8 @@ function renderListItems(){
   if(listFilterUnmastered) indices = indices.filter(i => !isMastered(QA_DATA[i].id));
   if(listFilterWeak) indices = indices.filter(i => isWeak(QA_DATA[i].id));
   if(listFilterUnseen) indices = indices.filter(i => !stats[QA_DATA[i].id]);
+  if(listPriority !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "priority"), listPriority));
+  if(listLevel !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "level"), listLevel));
   if(listDateFrom || listDateTo){
     indices = indices.filter(i=>{
       const s = stats[QA_DATA[i].id];
@@ -3593,6 +3672,7 @@ function renderListItems(){
         '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
         '<input type="checkbox" class="q-select-checkbox" '+(selectedQuestionIds.has(base.id) ? "checked" : "")+'>'+
       '</div>'+
+      metaTagsHtml(d)+
       (d.note ? '<div class="list-source">出典：'+escapeHtml(d.note)+'</div>' : '')+
       (d.img ? '<div class="list-img-wrap"><img src="images/'+escapeHtml(d.img)+'" alt="資料"'+(IMG_SIZES[d.img] ? ' width="'+IMG_SIZES[d.img][0]+'" height="'+IMG_SIZES[d.img][1]+'"' : '')+'></div>' : '')+
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
@@ -3724,6 +3804,8 @@ els["list-btn"].addEventListener("click", ()=>{
   listFilterUnmastered = false;
   listFilterWeak = false;
   listFilterUnseen = false;
+  listPriority = "all";
+  listLevel = "all";
   listDateFrom = "";
   listDateTo = "";
   selectedQuestionIds = new Set();
@@ -3746,6 +3828,22 @@ document.querySelectorAll(".list-filter-toggle").forEach(el=>{
     else if(el.dataset.filter === "weak"){ listFilterWeak = !listFilterWeak; on = listFilterWeak; }
     else{ listFilterUnseen = !listFilterUnseen; on = listFilterUnseen; }
     el.classList.toggle("on", on);
+    renderListItems();
+  });
+});
+// 優先度・難易度は「すべて／値／未設定」からひとつ選ぶ形。
+// 出題設定側の priority/level と同じ選び方にそろえてある
+document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    listPriority = el.dataset.listPriority;
+    document.querySelectorAll("#list-priority-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
+    renderListItems();
+  });
+});
+document.querySelectorAll("#list-level-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    listLevel = el.dataset.listLevel;
+    document.querySelectorAll("#list-level-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
     renderListItems();
   });
 });
