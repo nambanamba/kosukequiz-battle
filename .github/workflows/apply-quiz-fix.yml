@@ -1,0 +1,93 @@
+# アプリの「保存してGitHubに報告する」で作られた修正報告Issueから、
+# data.js を直すプルリクを自動で作る。
+#
+# スマホ側の操作はこれまでどおり（ボタンを押してIssueを出すだけ）。
+# 出来たプルリクの中身を確認して Merge すれば GitHub Pages に反映される。
+# 自動でマージはしない。
+name: 修正報告からプルリクを作る
+
+on:
+  issues:
+    types: [opened]
+  # うまくいかなかったIssueをあとから流しなおす用
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 対象のIssue番号
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # 自分が出した報告Issueだけを対象にする（よそからのIssueで動かさない）
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.author_association == 'OWNER' &&
+       startsWith(github.event.issue.title, '[data.js修正]'))
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 対象のIssueを読む
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # workflow_dispatch のときだけAPIから引く。issues イベントでは本文をそのまま使う
+          NUMBER: ${{ github.event.inputs.issue_number || github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh issue view "$NUMBER" --repo "$GITHUB_REPOSITORY" --json number,title,body,author \
+            > /tmp/issue.json
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: 手で流したときも報告Issueかどうか確かめる
+        run: |
+          set -euo pipefail
+          title=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("/tmp/issue.json","utf8")).title)')
+          case "$title" in
+            "[data.js修正]"*) echo "対象: $title" ;;
+            *) echo "修正報告のIssueではありません: $title"; exit 1 ;;
+          esac
+
+      - name: data.js を書きかえる
+        id: apply
+        run: |
+          set -euo pipefail
+          # Issue本文はシェルに直接展開せず、環境変数経由でスクリプトに渡す
+          ISSUE_BODY=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("/tmp/issue.json","utf8")).body || "")') \
+            node .github/scripts/apply-quiz-fix.js
+
+      - name: プルリクを作る
+        if: steps.apply.outputs.applied == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBER: ${{ steps.issue.outputs.number }}
+          QID: ${{ steps.apply.outputs.id }}
+          TITLE: ${{ steps.apply.outputs.title }}
+        run: |
+          set -euo pipefail
+          branch="fix-quiz/${QID}-issue${NUMBER}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add data.js
+          git commit -m "$TITLE" -m "報告Issue #${NUMBER} の内容を data.js に反映しました。"
+          git push -u origin "$branch"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base "${GITHUB_REF_NAME}" --head "$branch" \
+            --title "$TITLE" \
+            --body "$(printf 'アプリの「文章を直す」からの報告 #%s を data.js に反映しました。\n\n問題ID: `%s`\n\n中身を確認して問題なければマージしてください。マージすると GitHub Pages に反映されます。\n\nCloses #%s\n' "$NUMBER" "$QID" "$NUMBER")"
+
+      - name: 適用できなかったときはIssueに知らせる
+        if: steps.apply.outputs.applied != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUMBER: ${{ steps.issue.outputs.number }}
+          REASON: ${{ steps.apply.outputs.reason }}
+        run: |
+          set -euo pipefail
+          gh issue comment "$NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "$(printf '自動でプルリクを作れませんでした。\n\n理由: %s\n\n手で直す必要があります。\n' "$REASON")"
