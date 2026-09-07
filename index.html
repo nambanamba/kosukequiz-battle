@@ -873,6 +873,15 @@
     border-radius:12px;
     padding:12px 14px;
     box-shadow:var(--card-shadow);
+    /* 画面の外に出ている行は、ブラウザにレイアウトと描画を省いてもらう。
+       1631問だと一覧に58,797要素できてしまい、一覧を開くのにPCで9.5秒、
+       CPUを4倍に絞ると46.9秒かかっていた。内訳を測ると81%がブラウザ側の
+       レイアウト・描画で、JavaScriptは11%だった（tools/perf-profile.mjs）。
+       contain-intrinsic-size には実測した行の高さを入れてある
+       （1541行の中央値394px・平均449px）。ここが実際と離れていると、
+       スクロールバーの長さが合わなくなる */
+    content-visibility:auto;
+    contain-intrinsic-size:auto 400px;
   }
   .list-item .list-unit-tag{
     display:inline-block;
@@ -1862,12 +1871,19 @@ const els = {};
 ].forEach(id => els[id] = document.getElementById(id));
 
 // ---- buzzer chime (synthesized, no audio file needed) ----
+// AudioContext を作るのに、実測で約0.7秒かかる。これを最初のタップの中でやると
+// 「最初だけ反応が鈍い」になるので、**読み込みのときに先に作っておく**。
+// 音が出せる状態にする resume() だけは、ブラウザの決まりで
+// ユーザーの操作の中でないと通らないので、最初のタップで行う。
+// 一度つながったらリスナーを外す（タップのたびに走らせる必要はない）
 let audioCtx = null;
+try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ audioCtx = null; }
 function primeAudio(){
   if(!audioCtx){
     try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ return; }
   }
   if(audioCtx.state === "suspended") audioCtx.resume().catch(()=>{});
+  else document.removeEventListener("click", primeAudio, {capture:true});
 }
 document.addEventListener("click", primeAudio, {capture:true});
 // ---- 鳴らす音は3種類。ふたつが重なると、どちらも何の音か分からなくなるので、
@@ -3768,48 +3784,60 @@ function renderListItems(){
         '<span class="edit-link">✎ 文章を直す</span>'+
         (isEdited ? '<span class="revert-link">元にもどす</span>' : '')+
       '</div>';
-    const listImg = item.querySelector(".list-img-wrap img");
-    if(listImg) listImg.addEventListener("click", ()=> openLightbox(listImg.src));
-    item.querySelectorAll(".status-btn").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        setStatus(base.id, btn.dataset.status);
-        renderListItems();
-      });
-    });
-    item.querySelectorAll(".count-btn").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        adjustStat(base.id, btn.dataset.field, parseInt(btn.dataset.delta, 10));
-        renderListItems();
-      });
-    });
-    item.querySelectorAll("[data-date-field]").forEach(input=>{
-      input.addEventListener("change", ()=>{
-        setStatDate(base.id, input.dataset.dateField, input.value);
-        renderListItems();
-      });
-    });
-    item.querySelector(".edit-link").addEventListener("click", ()=>{
-      editingId = base.id;
-      renderListItems();
-    });
-    const revertLink = item.querySelector(".revert-link");
-    if(revertLink){
-      revertLink.addEventListener("click", ()=>{
-        if(confirm("この問題を元の文章にもどしますか？")){
-          delete edits[base.id];
-          saveEdits();
-          renderListItems();
-        }
-      });
-    }
-    item.querySelector(".q-select-checkbox").addEventListener("change", (e)=>{
-      if(e.target.checked) selectedQuestionIds.add(base.id);
-      else selectedQuestionIds.delete(base.id);
-      updateSelectionBar();
-    });
+    // 行ごとのボタンにはリスナーを付けない。親に1組だけ付けて振り分ける（下の
+    // setupListDelegation を参照）。どの問題の行かは data-qid から取る
+    item.dataset.qid = base.id;
     els["list-items"].appendChild(item);
   });
 }
+
+// ---- 一覧の各行のボタンは、行ごとにリスナーを付けず、親に1組だけ付けて振り分ける。
+//      以前は1件につき10個のリスナーと12回の querySelector を実行していたため、
+//      1631問だとリスナーが16,310個になり、**一覧を開くのにPCですら9.7秒**
+//      （CPUを4倍に絞ると46.9秒）かかっていた。件数にほぼ比例していた。
+//      編集中の行だけは、この振り分けの対象外にしてある。編集モードの
+//      「保存してGitHubに報告する」が edit-link クラスを共有していて誤爆するため、
+//      その行には data-qid を付けず、自前のリスナーを使う ----
+function setupListDelegation(){
+  const box = els["list-items"];
+  box.addEventListener("click", (e)=>{
+    const item = e.target.closest(".list-item");
+    if(!item || !item.dataset.qid) return; // 編集中の行は自前のリスナーで動く
+    const qid = item.dataset.qid;
+    const img = e.target.closest(".list-img-wrap img");
+    if(img){ openLightbox(img.src); return; }
+    const statusBtn = e.target.closest(".status-btn");
+    if(statusBtn){ setStatus(qid, statusBtn.dataset.status); renderListItems(); return; }
+    const countBtn = e.target.closest(".count-btn");
+    if(countBtn){
+      adjustStat(qid, countBtn.dataset.field, parseInt(countBtn.dataset.delta, 10));
+      renderListItems();
+      return;
+    }
+    if(e.target.closest(".edit-link")){ editingId = qid; renderListItems(); return; }
+    if(e.target.closest(".revert-link")){
+      if(confirm("この問題を元の文章にもどしますか？")){
+        delete edits[qid];
+        saveEdits();
+        renderListItems();
+      }
+      return;
+    }
+  });
+  box.addEventListener("change", (e)=>{
+    const item = e.target.closest(".list-item");
+    if(!item || !item.dataset.qid) return;
+    const qid = item.dataset.qid;
+    const dateInput = e.target.closest("[data-date-field]");
+    if(dateInput){ setStatDate(qid, dateInput.dataset.dateField, dateInput.value); renderListItems(); return; }
+    if(e.target.classList.contains("q-select-checkbox")){
+      if(e.target.checked) selectedQuestionIds.add(qid);
+      else selectedQuestionIds.delete(qid);
+      updateSelectionBar();
+    }
+  });
+}
+setupListDelegation();
 
 function updateSelectionBar(){
   const n = selectedQuestionIds.size;
