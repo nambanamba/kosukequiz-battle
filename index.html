@@ -446,10 +446,17 @@
     border:1px solid var(--paper-line);
     background:#fff;
   }
+  /* ---- 問題文と答えは、データに入れた改行をそのまま出す。
+         チャレンジ問題の引用など、選択肢ア〜エが並ぶ長い問題文が1行に潰れて
+         スマホで読めなかったため。pre-wrap は連続スペースもそのまま出すが、
+         全1631問に連続スペース・タブ・改行は1つも入っていないことを確認ずみ
+         （＝この指定を入れても、いまのデータでは見た目は変わらない）。
+         対戦・ひとり練習・問題一覧・結果画面の4か所すべてに付けてある ---- */
   .q-text{
     font-size:17px;
     line-height:1.85;
     font-weight:500;
+    white-space:pre-wrap;
   }
   .a-block{
     margin-top:18px;
@@ -470,6 +477,7 @@
     line-height:1.8;
     font-weight:700;
     color:var(--navy-deep);
+    white-space:pre-wrap;
   }
   .sol-block{
     margin-top:14px;
@@ -926,12 +934,14 @@
     font-size:13.5px;
     line-height:1.6;
     margin-bottom:4px;
+    white-space:pre-wrap;
   }
   .list-item .list-a{
     font-size:12.5px;
     line-height:1.6;
     color:var(--ink-soft);
     margin-bottom:10px;
+    white-space:pre-wrap;
   }
   .list-item .list-sol{
     font-size:12px;
@@ -1069,8 +1079,10 @@
     border-radius:10px;
     padding:12px 14px;
   }
-  .miss-item .q{font-size:13.5px; line-height:1.6;}
-  .miss-item .a{font-size:13.5px; line-height:1.6; color:var(--ok); font-weight:700; margin-top:4px;}
+  /* お知らせの中に問題文を出すとき用（相手がスキップした問題の本文など） */
+  .wrapped-q{white-space:pre-wrap;}
+  .miss-item .q{font-size:13.5px; line-height:1.6; white-space:pre-wrap;}
+  .miss-item .a{font-size:13.5px; line-height:1.6; color:var(--ok); font-weight:700; margin-top:4px; white-space:pre-wrap;}
 
   /* ---- list screen: date filter, count steppers + text-edit ---- */
   .list-date-row{
@@ -4506,7 +4518,8 @@ function showGuestWaitStatus(data){
   els["answer-countdown"].style.display = "none";
   hideBigVerdict();
   if(data.type === "skipped"){
-    el.innerHTML = "相手がこの問題をスキップしました。<br>"+escapeHtml(data.q);
+    // 問題文だけは、データに入れた改行をそのまま出す（お知らせの文面のほうは今までどおり）
+    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(data.q)+"</span>";
   }else{
     el.innerHTML = "つぎの問題の準備中…（"+data.position+" / "+data.total+"問目）";
   }
