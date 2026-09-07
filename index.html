@@ -1881,7 +1881,8 @@ function queueSound(playNow, ms){
   if(wait > 0) setTimeout(playNow, wait);
   else playNow();
 }
-// 音符をならべて鳴らすだけの共通処理。type は sine（やわらかい）か square（かたい）
+// 音符をならべて鳴らすだけの共通処理。type は sine（やわらかい）か square（かたい）。
+// n.g は、その音だけ音量を下げたいときの倍率（省略すると1）。倍音を小さく重ねるのに使う
 function playNotes(notes, type, peak){
   if(!audioCtx) return;
   try{
@@ -1892,7 +1893,7 @@ function playNotes(notes, type, peak){
       osc.type = type;
       osc.frequency.value = n.f;
       gain.gain.setValueAtTime(0.0001, now+n.t);
-      gain.gain.exponentialRampToValueAtTime(peak, now+n.t+0.02);
+      gain.gain.exponentialRampToValueAtTime(peak*(n.g === undefined ? 1 : n.g), now+n.t+0.02);
       gain.gain.exponentialRampToValueAtTime(0.0001, now+n.t+n.d);
       osc.connect(gain).connect(audioCtx.destination);
       osc.start(now+n.t);
@@ -1901,10 +1902,24 @@ function playNotes(notes, type, peak){
   }catch(e){ /* ignore, audio is a nice-to-have */ }
 }
 
-// ---- 正解音「ピンポン」。2音（880→659Hz）。自分が正解したときだけ、自分の端末で鳴る ----
-const CHIME_MS = 700;
+// ---- 正解音「ピンポーン」。自分が正解したときだけ、自分の端末で鳴る。
+//      最初は 880→659Hz・0.70秒・音量0.30 だったが、実際に使って
+//      「もうちょっと正解した感じが欲しい。ピンポーンくらいの」との声があり、
+//      玄関チャイムに寄せて作り直した。変えたのは次の4点:
+//        1. 音の間隔を広げた（880→659 の完全4度 → 784→523 の完全5度）。
+//           玄関チャイムはこの間隔で、はっきり「ピンポーン」と聞こえる
+//        2. 2音目の余韻を伸ばした（0.42秒 → 0.68秒）。鳴り終わった感じが出る
+//        3. 音量を上げた（0.30 → 0.42）
+//        4. オクターブ上の音を小さく重ねた（倍率0.28）。鐘らしい響きになる
+//      対戦中に何度も鳴るので、うるさくしすぎないこと ----
+const CHIME_MS = 950;
 function playChime(){
-  queueSound(()=>playNotes([{f:880, t:0, d:0.32}, {f:659.25, t:0.26, d:0.42}], "sine", 0.3), CHIME_MS);
+  queueSound(()=>playNotes([
+    {f:784.00, t:0,    d:0.34},            // ピン（G5）
+    {f:1568.0, t:0,    d:0.30, g:0.28},    //   その倍音
+    {f:523.25, t:0.26, d:0.68},            // ポーン（C5）。余韻を長めに
+    {f:1046.5, t:0.26, d:0.60, g:0.28}     //   その倍音
+  ], "sine", 0.42), CHIME_MS);
 }
 
 // ---- 不正解音。正解音と対になるもので、自分が不正解だったときだけ自分の端末で鳴る。
