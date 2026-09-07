@@ -1,0 +1,12 @@
+# playwright（tools/smoke-test.mjs 用）を入れるとここに数百MB入る。
+# Google ドライブ上のフォルダなので、同期対象に入れない
+node_modules/
+package-lock.json
+package.json
+
+# 取り込みスクリプトが書き込み前に取る控え
+data.js.bak
+
+# Python
+__pycache__/
+*.pyc
