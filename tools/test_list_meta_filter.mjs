@@ -59,36 +59,35 @@ function count(priFilter, lvFilter){
     matchesMetaFilter(metaValue(d, "level"), lvFilter)).length;
 }
 
-console.log("\n【1】実データ1631問の内訳が、司令塔の集計と一致するか");
+// ★件数は決め打ちしない。問題は増えたり減ったりする（1411→1631→1342）ので、
+//   その場の data.js から数えた値をもとに、つじつまが合うかだけを見る。
+//   決め打ちにしていたら、旧単元を消したときにここが赤くなった（実際に赤くなった）
+const 総数 = QA_DATA.length;
+const 優先度未設定 = count("none", "all");
+const 難易度未設定 = count("all", "none");
+const 優先度あり = count("高", "all") + count("中", "all") + count("低", "all");
+const 難易度あり = count("all", "基礎") + count("all", "標準") + count("all", "発展");
+console.log(`\n【1】実データ${総数}問の内訳（優先度: 高${count("高","all")} 中${count("中","all")} 低${count("低","all")} 未設定${優先度未設定}）`);
 {
-  check("総数", QA_DATA.length, 1631);
-  check("優先度 高", count("高", "all"), 802);
-  check("優先度 中", count("中", "all"), 356);
-  check("優先度 低", count("低", "all"), 10);
-  check("優先度 未設定", count("none", "all"), 463);
-  check("難易度 基礎", count("all", "基礎"), 672);
-  check("難易度 標準", count("all", "標準"), 410);
-  check("難易度 発展", count("all", "発展"), 86);
-  check("難易度 未設定", count("all", "none"), 463);
+  check("優先度の各区分の合計＝総数", 優先度あり + 優先度未設定, 総数);
+  check("難易度の各区分の合計＝総数", 難易度あり + 難易度未設定, 総数);
+  check("優先度と難易度の未設定は同数（必ず両方そろって欠ける）", 優先度未設定, 難易度未設定);
+  check("どの区分にも1問以上ある", [count("高","all")>0, count("all","基礎")>0], [true, true]);
 }
 
 console.log("\n【2】絞りこみの数がつじつまが合うか");
 {
-  check("すべて＝総数", count("all", "all"), 1631);
-  check("優先度の各区分の合計＝総数", 802 + 356 + 10 + 463, 1631);
-  check("難易度の各区分の合計＝総数", 672 + 410 + 86 + 463, 1631);
-  check("優先度未設定かつ難易度未設定＝463（必ず両方そろって欠ける）", count("none", "none"), 463);
+  check("すべて＝総数", count("all", "all"), 総数);
+  check("優先度未設定かつ難易度未設定＝未設定の数", count("none", "none"), 優先度未設定);
   check("優先度未設定なのに難易度は設定あり＝0", count("none", "基礎") + count("none", "標準") + count("none", "発展"), 0);
   check("優先度高かつ難易度基礎の組み合わせも数えられる", count("高", "基礎") > 0, true);
 }
 
-console.log("\n【3】★「未設定」を選べないと463問が消えてしまう（要望の勘どころ）");
+console.log("\n【3】★「未設定」を選べないと未設定の問題が消えてしまう（要望の勘どころ）");
 {
-  const withUnset = count("none", "all");
-  const setOnly = count("高", "all") + count("中", "all") + count("低", "all");
-  check("未設定を選べば463問が出る", withUnset, 463);
-  check("値のある区分だけでは1168問しか届かない", setOnly, 1168);
-  check("合わせて全問になる", withUnset + setOnly, QA_DATA.length);
+  check("未設定を選べばその分が出る", count("none", "all"), 優先度未設定);
+  check("値のある区分だけでは全問に届かない", 優先度あり < 総数, true);
+  check("合わせて全問になる", 優先度未設定 + 優先度あり, 総数);
 }
 
 console.log("\n【4】各行に出すふだの中身");

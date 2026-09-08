@@ -239,8 +239,11 @@ await test("復習編への正誤記録の引きつぎ", async t => {
   const before = JSON.stringify(await t.stats());
   await t.reload();
   t.is("2回目の起動で二重に加算されない", JSON.stringify(await t.stats()), before);
-  const backup = await t.page.evaluate(() => localStorage.getItem("kq_battle_stats_backup_kaki_v1"));
-  t.ok("移行前の記録が退避されている", !!backup, backup ? "あり" : "なし");
+  // 退避の鍵は移行ごとに変わる（..._kaki5-8）。以前は1つの鍵に「まだ無ければ書く」形で、
+  // 2回目以降の移行では前回の退避が残っているせいで今回ぶんが退避されなかった
+  const backup = await t.page.evaluate(() =>
+    Object.keys(localStorage).filter(k => k.startsWith("kq_battle_stats_backup_kaki_v1")));
+  t.ok("移行前の記録が退避されている", backup.length > 0, backup);
 });
 
 await test("正解日のない古い記録を補う", async t => {
