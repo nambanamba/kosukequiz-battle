@@ -124,7 +124,33 @@ console.log("\n【4】単元の選択が新しい名前に置きかわったか"
     units.includes(RENAMES["5.近畿地方"]) && units.includes(RENAMES["6.中部地方"]), true);
 }
 
-console.log("\n【5】移行が一度きりであること");
+console.log("\n【5】★前回の移行を済ませた端末でも、今回ぶんが退避されるか");
+{
+  // 実際にお子さんの端末はこの状態にある（前回 kaki1-4 の移行が済んでいる）。
+  // 以前は1つの鍵に「まだ無ければ書く」形だったので、**前回の退避が残っているせいで
+  // 今回ぶんが退避されなかった**。一度きりで取り消せない移行なのに戻す手段が無い状態。
+  const ctx2 = await browser.newContext();
+  const p2 = await ctx2.newPage();
+  await p2.goto(BASE + "index.html", { waitUntil: "load" });
+  await p2.evaluate(() => {
+    localStorage.clear();
+    // 前回の移行を済ませた端末を再現する
+    localStorage.setItem("kq_battle_stats_backup_kaki_v1", JSON.stringify({ at: 1, stats: { "t1": { correct: 5, wrong: 0 } } }));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({ "t5-1": { correct: 3, wrong: 1 } }));
+  });
+  await p2.reload({ waitUntil: "load" });
+  await p2.waitForTimeout(700);
+  const r = await p2.evaluate(id => ({
+    old: JSON.parse(localStorage.getItem("kq_battle_stats_backup_kaki_v1") || "null"),
+    now: JSON.parse(localStorage.getItem("kq_battle_stats_backup_kaki_v1_" + id) || "null"),
+  }), MIG_ID);
+  check("★前回の退避が消えていない", !!(r.old && r.old.stats && r.old.stats["t1"]), true);
+  check("★今回ぶんの退避が新しく作られている", !!(r.now && r.now.stats && r.now.stats["t5-1"]), true);
+  await ctx2.close();
+}
+
+console.log("\n【6】移行が一度きりであること");
 {
   check("実行ずみの印が付いている", !!after.done[MIG_ID], true);
   const before = JSON.stringify(after.stats);
