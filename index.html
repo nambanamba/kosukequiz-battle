@@ -1820,7 +1820,57 @@
 
 <script src="data.js"></script>
 <script type="module">
-import {joinRoom} from 'https://esm.run/trystero';
+// ---- 対戦の通信ライブラリ（trystero）は、対戦を始めるときに初めて取りに行く。
+//      以前は先頭で import していたが、これは**起動のたびにインターネットへ
+//      4回続けて取りに行く**ことを意味していた
+//      （esm.run → jsdelivr の trystero → core → nostr → 暗号ライブラリ secp256k1）。
+//      しかも module の先頭の import は、読み終わるまで**続きが動かない**ので、
+//      ひとり練習しかしないときでも待たされる。実測で起動が数秒かかっていた。
+//      対戦は「二人で始める」を押したときだけなので、そのときに読み込む ----
+//      ただし、そのままだと「二人で始める」を押してから待たされる。そこで
+//      **画面が出て落ち着いたころに、裏でこっそり読み込んでおく**（下の preloadJoinRoom）。
+//      起動は待たせず、対戦を始めるころには読み終わっている、という形にする ----
+let joinRoomFn = null;
+let joinRoomLoading = null;
+let joinRoomTry = 0;
+// やり直すときは、**必ず前と違うURLにする**。
+// ブラウザは「このURLの読み込みは失敗した」ことを覚えていて、
+// まったく同じURLで頼み直しても、もう取りに行ってくれないため
+// （実測ずみ。同じURLの2回目は通信すら発生しない）。
+// これをしないと、裏の先読みがたまたま失敗しただけで、
+// **電波が戻っても、アプリを開き直すまで対戦が始められなくなる**。
+const TRYSTERO_URLS = [
+  'https://esm.run/trystero',
+  'https://cdn.jsdelivr.net/npm/trystero/+esm',
+];
+function importTrystero(){
+  const n = joinRoomTry++;
+  let url = TRYSTERO_URLS[n % TRYSTERO_URLS.length];
+  if(n > 0) url += (url.indexOf('?') >= 0 ? '&' : '?') + 'r=' + n;
+  return import(url);
+}
+function loadJoinRoom(){
+  if(joinRoomFn) return Promise.resolve(joinRoomFn);
+  if(!joinRoomLoading){
+    joinRoomLoading = importTrystero()
+      .catch(()=> importTrystero())   // 1回だけ、別のURLで黙ってやり直す
+      .then(mod=>{
+        joinRoomFn = mod.joinRoom;
+        return joinRoomFn;
+      }).catch(e=>{
+        joinRoomLoading = null; // 失敗したら次にもう一度試せるようにする
+        throw e;
+      });
+  }
+  return joinRoomLoading;
+}
+// 画面が出たあとの空き時間に、裏で読み込んでおく。失敗しても黙って見送る
+// （対戦を始めるときにもう一度読みにいくので、そこでエラーを出せばよい）
+function preloadJoinRoom(){
+  const go = ()=> loadJoinRoom().catch(()=>{});
+  if(window.requestIdleCallback) window.requestIdleCallback(go, {timeout: 4000});
+  else setTimeout(go, 2000);
+}
 
 const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
@@ -5087,11 +5137,12 @@ function setupActions(){
 }
 
 // ---- create room (host) ----
-function hostCreateRoomWithCode(code){
+async function hostCreateRoomWithCode(code){
   role = "host";
   els["room-code-display"].textContent = code;
   els["create-error"].classList.remove("show");
   try{
+    const joinRoom = await loadJoinRoom();
     room = joinRoom({appId: APP_ID}, code);
     setupActions();
     saveLastCode(code);
@@ -5128,7 +5179,7 @@ els["room-code-change"].addEventListener("click", ()=>{
   hostCreateRoomWithCode(code);
 });
 
-els["resume-battle-btn"].addEventListener("click", ()=>{
+els["resume-battle-btn"].addEventListener("click", async ()=>{
   const session = loadBattleSession();
   if(!session) return;
   if(!Array.isArray(session.questionIds) || session.currentIndex >= session.questionIds.length){
@@ -5148,13 +5199,20 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
   gameStarted = true; // a peer joining now is a reconnect, not a fresh start
   resetAvatars(); // the power-up level is cosmetic only and not persisted
   setupAvatarLabels();
+  // 通信ライブラリの読み込みを待つあいだ、このボタンは画面に残ったままなので、
+  // 二度押しで部屋が2つできないように止めておく
+  // （「二人で始める」と「参加する」は、押した時点でボタンごと隠れるので要らない）
+  els["resume-battle-btn"].disabled = true;
   try{
+    const joinRoom = await loadJoinRoom();
     room = joinRoom({appId: APP_ID}, session.code);
     setupActions();
   }catch(e){
     console.error("resume failed", e);
     alert("再開に失敗しました。通信環境を確認してもう一度お試しください。");
     return;
+  }finally{
+    els["resume-battle-btn"].disabled = false;
   }
   showScreen("screen-battle");
   // show the question privately and just wait -- don't start sending/
@@ -5170,7 +5228,7 @@ els["resume-battle-btn"].addEventListener("click", ()=>{
 });
 
 // ---- join room (guest) ----
-function joinRoomAsGuest(code){
+async function joinRoomAsGuest(code){
   role = "guest";
   els["join-setup"].style.display = "none";
   els["join-waiting"].style.display = "block";
@@ -5181,6 +5239,7 @@ function joinRoomAsGuest(code){
   showScreen("screen-join");
 
   try{
+    const joinRoom = await loadJoinRoom();
     room = joinRoom({appId: APP_ID}, code);
     setupActions();
     saveLastCode(code);
@@ -5723,6 +5782,7 @@ runStatsMigrations(); // 単元の選択も書きかえるので、loadSettings�
 renderHome();
 renderUnitChoices();
 applySettingsUI();
+preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
 </body>
 </html>
