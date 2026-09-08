@@ -53,28 +53,86 @@ def answer_key(a):
 
     また、旧問題には「（地図で位置を確認）」のような注記が末尾に付くことがある。
     これは答えではないので落とす。
+
+    ★claude-18 のレビューで見つかった取りこぼし3つを直してある。
+      いずれも意味の判断ミスではなく、文字列処理の取りこぼしだった。
+
+      1. 位置番号が半角数字のものがある
+         「（21天竜）川です。」← 丸数字だけ外していたので「21天竜川」になっていた
+      2. 答えの括弧が2つあるものがある
+         「（奈良県）です。（和歌山県に入ると…）」← 2つ目まで連結していた
+         → **最初の括弧を答えとみなす**
+      3. 都市名で「市」の位置が旧と新で違う（取りこぼし34件・最大）
+         旧「（①大津）市です。」 新「（大津）です。」← 「大津市」と「大津」で外れる
+         → ただし「市」を一律に外すと、いま正しく対応している26件が1対多になって失われる。
+           そこで **exact が外れたときだけ、括弧の中だけで照合しなおす**（下の fallback_key）。
+           exact が当たるものは今までどおりなので、失われるものが無い。
     """
+    return _key(a, drop_after=False)
+
+
+def fallback_key(a):
+    """exact が外れたときだけ使う、ゆるめのキー（括弧の中だけ）。
+
+    「（大津）市」と「（大津）」を同じ語として扱うためのもの。
+    **候補がちょうど1件のときだけ**採用する（複数当たるなら別物が混ざりうるので見送る）。
+    """
+    return _key(a, drop_after=True)
+
+
+def after_word(a):
+    """括弧の直後に続く語（平野・湾・県・用水…）だけを返す。ゆるめの照合の安全弁に使う。"""
     if not a:
         return ""
     s = a.strip().replace("　", "").replace(" ", "")
-    # 答えではない注記を落とす
-    s = re.sub(r"[（(](?:地図で位置を確認|位置を確認|地図で確認)[）)]", "", s)
+    s = re.sub(r"[（(][^）)]*(?:地図で位置を確認|位置を確認|地図で確認)[^）)]*[）)]", "", s)
+    m = re.search(r"[（(]([^）)]*)[）)]([^（(]*)", s)
+    if not m:
+        return ""
+    after = re.match(r"^[^、，。．]*", m.group(2)).group(0)
+    return re.sub(r"(です|でした|になります|である)$", "", after)[:8]
+
+
+def after_compatible(oa, na):
+    """ゆるめの照合を採ってよいかの判定。
+
+    ★ここを入れないと「（愛知）県」と「（愛知）用水」が結ばれてしまう（実際に起きた）。
+      括弧の中が同じでも、直後の語が別のものを指していれば別問題。
+
+      片方が空（旧「（大津）市」／新「（大津）」）か、
+      片方がもう片方の先頭になっている（新「農業」／旧「農業がさかん」）ときだけ通す。
+      「県」と「用水」のようにどちらでもないものは通さない。
+    """
+    if not oa or not na:
+        return True
+    return oa.startswith(na) or na.startswith(oa)
+
+
+def _key(a, drop_after):
+    if not a:
+        return ""
+    s = a.strip().replace("　", "").replace(" ", "")
+    # 答えではない注記を落とす（「（伊豆大島／地図で位置を確認）」のような複合も含む）
+    s = re.sub(r"[（(][^）)]*(?:地図で位置を確認|位置を確認|地図で確認)[^）)]*[）)]", "", s)
     parts = []
     for m in re.finditer(r"[（(]([^）)]*)[）)]([^（(]*)", s):
-        inner = re.sub(r"^[①-⑳㉑-㉟]+", "", m.group(1)).strip()   # 出題位置の丸数字を外す
+        # 出題位置の番号を外す。丸数字だけでなく半角・全角の数字もある
+        inner = re.sub(r"^[①-⑳㉑-㉟0-9０-９]+", "", m.group(1)).strip()
         # 括弧の直後に続く語（平野・湾・山地…）だけを拾う。句読点や次の括弧の手前まで
         after = re.match(r"^[^、，。．]*", m.group(2)).group(0)
         after = re.sub(r"(です|でした|になります|である)$", "", after)[:8]
         if inner:
-            parts.append(inner + after)   # 「奥羽」+「山脈」=「奥羽山脈」でそろえる
+            parts.append(inner if drop_after else inner + after)
     if not parts:
         return s
-    return "／".join(parts)
+    # 括弧が2つ以上あるときは、最初の括弧を答えとみなす
+    # （「（奈良県）です。（和歌山県に入ると…）」の2つ目は補足であって答えではない）
+    return parts[0]
 
 
 report = []
 mapping = {}       # 旧id -> [新id, ...]
-stats = {"旧問題": 0, "対応あり": 0, "対応なし": 0, "1対多で見送り": 0}
+stats = {"旧問題": 0, "対応あり": 0, "対応なし": 0, "1対多で見送り": 0, "ゆるめの照合で拾えた": 0, "ゆるめでも直後の語が別物なので見送り": 0}
 unmatched = []
 matched_rows = []
 
@@ -83,14 +141,29 @@ for old_u, new_u in PAIRS.items():
     news = by_unit.get(new_u, [])
     # 新単元の答え -> id（同じ答えが複数あることもある）
     new_by_ans = defaultdict(list)
+    new_by_fallback = defaultdict(list)
     for n in news:
         k = answer_key(n.get("a", ""))
         if k:
             new_by_ans[k].append(n)
+        fk = fallback_key(n.get("a", ""))
+        if fk:
+            new_by_fallback[fk].append(n)
     for o in olds:
         stats["旧問題"] += 1
         k = answer_key(o.get("a", ""))
         hits = new_by_ans.get(k, []) if k else []
+        # exact が外れたときだけ、括弧の中だけで照合しなおす。
+        # 「（大津）市」と「（大津）」のように、旧と新で「市」の位置が違うものを拾う。
+        # **候補がちょうど1件のときだけ**採用する（複数なら別物が混ざりうるので見送り）
+        if not hits:
+            fk = fallback_key(o.get("a", ""))
+            cand = new_by_fallback.get(fk, []) if fk else []
+            if len(cand) == 1 and after_compatible(after_word(o.get("a", "")), after_word(cand[0].get("a", ""))):
+                hits = cand
+                stats["ゆるめの照合で拾えた"] += 1
+            elif len(cand) == 1:
+                stats["ゆるめでも直後の語が別物なので見送り"] += 1
         if not hits:
             stats["対応なし"] += 1
             unmatched.append((o["id"], old_u, o.get("a", "")[:40], o.get("q", "")[:50]))
