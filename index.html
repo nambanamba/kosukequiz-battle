@@ -2168,207 +2168,422 @@ function formatDate(ts){
 //      対応がつかなかったぶんの記録は STATS_BACKUP_KEY に丸ごと退避してある。
 const MIGRATION_KEY = "kq_battle_migrations_v1";
 const STATS_BACKUP_KEY = "kq_battle_stats_backup_kaki_v1";
-const KAKI_MIGRATION_ID = "kaki5-8";
 // lastCorrectAt を導入する前の記録や、CSVインポートで作られた記録には
 // 「正解しているのに正解日が無い」ものがある。そのままだと一覧に
 // 「まだ正解なし」と出てしまうので、最後に解いた日を正解日とみなして一度だけ補う
 const LAST_CORRECT_BACKFILL_ID = "lastcorrect-backfill";
-// 消した旧単元 → 作り直された新単元（単元の選択もあわせて移しかえる）
-const KAKI_UNIT_RENAMES = {
-  "1.日本の食料生産": "夏期講習 復習編1.日本の食料生産",
-  "2.工業・資源・輸送機関": "夏期講習 復習編2.工業・資源・輸送機関",
-  "3.九州地方": "夏期講習 復習編3.九州地方",
-  "4.中国・四国地方": "夏期講習 復習編4.中国・四国地方",
-  "5.近畿地方": "夏期講習 復習編5.近畿地方",
-  "6.中部地方": "夏期講習 復習編6.中部地方",
-  "7.関東地方": "夏期講習 復習編7.関東地方",
-  "8.東北地方": "夏期講習 復習編8.東北地方／北海道地方",
-  "8.北海道地方": "夏期講習 復習編8.東北地方／北海道地方"
-};
-const KAKI_STATS_MIGRATION = {
-  "t5-1": ["kaki5_01"],
-  "t5-10": ["kaki5_13"],
-  "t5-13": ["kaki5_16"],
-  "t5-16": ["kaki5_19"],
-  "t5-17": ["kaki5_21"],
-  "t5-19": ["kaki5_23"],
-  "t5-2": ["kaki5_02"],
-  "t5-20": ["kaki5_24"],
-  "t5-21": ["kaki5_47"],
-  "t5-22": ["kaki5_58"],
-  "t5-23": ["kaki5_66"],
-  "t5-25": ["kaki5_29"],
-  "t5-27": ["kaki5_32"],
-  "t5-28": ["kaki5_48"],
-  "t5-29": ["kaki5_49"],
-  "t5-3": ["kaki5_03"],
-  "t5-36": ["kaki5_45"],
-  "t5-37": ["kaki5_47"],
-  "t5-38": ["kaki5_48"],
-  "t5-39": ["kaki5_49"],
-  "t5-40": ["kaki5_50"],
-  "t5-44": ["kaki5_58"],
-  "t5-45": ["kaki5_60"],
-  "t5-47": ["kaki5_62"],
-  "t5-49": ["kaki5_52"],
-  "t5-50": ["kaki5_61"],
-  "t5-6": ["kaki5_09"],
-  "t5-7": ["kaki5_10"],
-  "t5-9": ["kaki5_12"],
-  "t6-1": ["kaki6_01"],
-  "t6-11": ["kaki6_12"],
-  "t6-14": ["kaki6_16"],
-  "t6-16": ["kaki6_18"],
-  "t6-17": ["kaki6_19"],
-  "t6-18": ["kaki6_20"],
-  "t6-25": ["kaki6_33"],
-  "t6-26": ["kaki6_36"],
-  "t6-27": ["kaki6_37"],
-  "t6-28": ["kaki6_38"],
-  "t6-29": ["kaki6_73"],
-  "t6-3": ["kaki6_03"],
-  "t6-31": ["kaki6_42"],
-  "t6-32": ["kaki6_44"],
-  "t6-33": ["kaki6_45"],
-  "t6-34": ["kaki6_47"],
-  "t6-35": ["kaki6_48"],
-  "t6-36": ["kaki6_83"],
-  "t6-37": ["kaki6_50"],
-  "t6-38": ["kaki6_51"],
-  "t6-39": ["kaki6_74"],
-  "t6-4": ["kaki6_04"],
-  "t6-40": ["kaki6_53"],
-  "t6-41": ["kaki6_98"],
-  "t6-42": ["kaki6_56"],
-  "t6-5": ["kaki6_05"],
-  "t6-51": ["kaki6_25"],
-  "t6-53": ["kaki6_69"],
-  "t6-55": ["kaki6_71"],
-  "t6-57": ["kaki6_73"],
-  "t6-58": ["kaki6_74"],
-  "t6-59": ["kaki6_79"],
-  "t6-61": ["kaki6_83"],
-  "t6-8": ["kaki6_08"],
-  "t7-1": ["kaki7_01"],
-  "t7-10": ["kaki7_16"],
-  "t7-13": ["kaki7_23"],
-  "t7-14": ["kaki7_24"],
-  "t7-15": ["kaki7_25"],
-  "t7-16": ["kaki7_26"],
-  "t7-17": ["kaki7_27"],
-  "t7-18": ["kaki7_58"],
-  "t7-2": ["kaki7_02"],
-  "t7-21": ["kaki7_40"],
-  "t7-22": ["kaki7_57"],
-  "t7-26": ["kaki7_47"],
-  "t7-27": ["kaki7_48"],
-  "t7-3": ["kaki7_03"],
-  "t7-34": ["kaki7_56"],
-  "t7-35": ["kaki7_57"],
-  "t7-36": ["kaki7_58"],
-  "t7-38": ["kaki7_62"],
-  "t7-4": ["kaki7_04"],
-  "t7-40": ["kaki7_67"],
-  "t7-41": ["kaki7_69"],
-  "t7-5": ["kaki7_05"],
-  "t7-6": ["kaki7_07"],
-  "t7-7": ["kaki7_08"],
-  "t8h-1": ["kaki8_41"],
-  "t8h-10": ["kaki8_53"],
-  "t8h-11": ["kaki8_54"],
-  "t8h-12": ["kaki8_59"],
-  "t8h-13": ["kaki8_60"],
-  "t8h-14": ["kaki8_119"],
-  "t8h-2": ["kaki8_42"],
-  "t8h-3": ["kaki8_43"],
-  "t8h-4": ["kaki8_44"],
-  "t8h-5": ["kaki8_45"],
-  "t8h-6": ["kaki8_46"],
-  "t8h-9": ["kaki8_51"],
-  "t8t-1": ["kaki8_01"],
-  "t8t-11": ["kaki8_12"],
-  "t8t-16": ["kaki8_25"],
-  "t8t-17": ["kaki8_26"],
-  "t8t-18": ["kaki8_31"],
-  "t8t-19": ["kaki8_32"],
-  "t8t-21": ["kaki8_120"],
-  "t8t-24": ["kaki8_72"],
-  "t8t-27": ["kaki8_75"],
-  "t8t-28": ["kaki8_83"],
-  "t8t-34": ["kaki8_95"],
-  "t8t-35": ["kaki8_96"],
-  "t8t-4": ["kaki8_04"],
-  "t8t-5": ["kaki8_05"],
-  "t8t-6": ["kaki8_06"],
-  "t8t-8": ["kaki8_08"],
-  "t8t-9": ["kaki8_10"],
-  "z5-1": ["kaki5_04"],
-  "z5-2": ["kaki5_07"],
-  "z5-3": ["kaki5_08"],
-  "z5-5": ["kaki5_65"],
-  "z5-6": ["kaki5_35"],
-  "z5-7": ["kaki5_36"],
-  "z6-1": ["kaki6_11"],
-  "z6-10": ["kaki6_43"],
-  "z6-11": ["kaki6_46"],
-  "z6-12": ["kaki6_55"],
-  "z6-15": ["kaki6_77"],
-  "z6-2": ["kaki6_15"],
-  "z6-3": ["kaki6_21"],
-  "z6-4": ["kaki6_26"],
-  "z6-6": ["kaki6_29"],
-  "z6-7": ["kaki6_30"],
-  "z6-8": ["kaki6_32"],
-  "z6-9": ["kaki6_40"],
-  "z7-10": ["kaki7_21"],
-  "z7-11": ["kaki7_29"],
-  "z7-12": ["kaki7_86"],
-  "z7-13": ["kaki7_31"],
-  "z7-14": ["kaki7_87"],
-  "z7-15": ["kaki7_34"],
-  "z7-16": ["kaki7_36"],
-  "z7-17": ["kaki7_37"],
-  "z7-18": ["kaki7_38"],
-  "z7-19": ["kaki7_39"],
-  "z7-2": ["kaki7_09"],
-  "z7-20": ["kaki7_43"],
-  "z7-21": ["kaki7_44"],
-  "z7-22": ["kaki7_52"],
-  "z7-23": ["kaki7_60"],
-  "z7-3": ["kaki7_10"],
-  "z7-5": ["kaki7_13"],
-  "z7-6": ["kaki7_15"],
-  "z7-7": ["kaki7_17"],
-  "z7-9": ["kaki7_20"],
-  "z8h-1": ["kaki8_48"],
-  "z8h-10": ["kaki8_65"],
-  "z8h-11": ["kaki8_66"],
-  "z8h-12": ["kaki8_67"],
-  "z8h-13": ["kaki8_68"],
-  "z8h-3": ["kaki8_52"],
-  "z8h-4": ["kaki8_55"],
-  "z8h-5": ["kaki8_56"],
-  "z8h-6": ["kaki8_57"],
-  "z8h-7": ["kaki8_58"],
-  "z8h-8": ["kaki8_62"],
-  "z8h-9": ["kaki8_63"],
-  "z8t-1": ["kaki8_09"],
-  "z8t-10": ["kaki8_27"],
-  "z8t-11": ["kaki8_28"],
-  "z8t-12": ["kaki8_29"],
-  "z8t-13": ["kaki8_30"],
-  "z8t-14": ["kaki8_33"],
-  "z8t-15": ["kaki8_34"],
-  "z8t-16": ["kaki8_37"],
-  "z8t-17": ["kaki8_39"],
-  "z8t-18": ["kaki8_117"],
-  "z8t-2": ["kaki8_13"],
-  "z8t-3": ["kaki8_14"],
-  "z8t-5": ["kaki8_17"],
-  "z8t-6": ["kaki8_19"],
-  "z8t-7": ["kaki8_20"],
-  "z8t-8": ["kaki8_22"]
-};
+// ★夏期講習の復習編に作り直すたびに、ここへ1つ足していく。**前の分を消さないこと。**
+//   消すと、その移行をまだ済ませていない端末（別のブラウザ・別の端末）で、
+//   旧単元の記録が引きつがれないまま消える。
+//   done に無いものだけが、上から順に1回ずつ走る。
+const KAKI_MIGRATIONS = [
+  {
+    id: "kaki1-4",
+    // 2026-09-06 の 328af80。対応づけは「答えの語の包含一致」で作られており、
+    // 意味的に別物へ紐づいたものが相当数ある（確認ポイント C-7）。もう直せないが、
+    // **まだ移行していない端末のために残しておく必要がある**
+    renames: {
+      "1.日本の食料生産": "夏期講習 復習編1.日本の食料生産",
+      "2.工業・資源・輸送機関": "夏期講習 復習編2.工業・資源・輸送機関",
+      "3.九州地方": "夏期講習 復習編3.九州地方",
+      "4.中国・四国地方": "夏期講習 復習編4.中国・四国地方"
+    },
+    stats: {
+      "t1": ["kaki1_16"],
+      "t10": ["kaki1_25","kaki1_82"],
+      "t100": ["kaki3_25"],
+      "t101": ["kaki3_16"],
+      "t102": ["kaki3_25"],
+      "t103": ["kaki3_17","kaki3_43"],
+      "t104": ["kaki3_18","kaki3_49"],
+      "t105": ["kaki3_19"],
+      "t106": ["kaki3_20"],
+      "t107": ["kaki3_21","kaki3_68"],
+      "t108": ["kaki3_22"],
+      "t109": ["kaki3_23","kaki3_48"],
+      "t110": ["kaki3_28","kaki3_59"],
+      "t111": ["kaki3_29","kaki3_73","kaki3_80"],
+      "t112": ["kaki3_30"],
+      "t113": ["kaki3_38","kaki3_61"],
+      "t114": ["kaki3_41","kaki3_42"],
+      "t115": ["kaki3_41","kaki3_42","kaki3_68"],
+      "t116": ["kaki3_17","kaki3_43"],
+      "t117": ["kaki3_08","kaki3_44"],
+      "t118": ["kaki3_13","kaki3_45","kaki3_46"],
+      "t119": ["kaki3_11","kaki3_47"],
+      "t120": ["kaki3_18","kaki3_49"],
+      "t121": ["kaki3_51"],
+      "t122": ["kaki3_52"],
+      "t123": ["kaki3_26","kaki3_53"],
+      "t124": ["kaki3_54"],
+      "t125": ["kaki3_55"],
+      "t126": ["kaki3_56"],
+      "t128": ["kaki3_58"],
+      "t129": ["kaki3_28","kaki3_59"],
+      "t13": ["kaki1_28","kaki1_87"],
+      "t130": ["kaki3_33","kaki3_65"],
+      "t14": ["kaki1_29"],
+      "t15": ["kaki1_30"],
+      "t16": ["kaki1_31","kaki1_32","kaki1_70"],
+      "t17": ["kaki1_34","kaki1_35","kaki1_36","kaki1_37","kaki1_72"],
+      "t18": ["kaki1_38","kaki1_39","kaki1_71"],
+      "t19": ["kaki1_39","kaki1_40"],
+      "t2": ["kaki1_17"],
+      "t20": ["kaki1_41"],
+      "t21": ["kaki1_42"],
+      "t22": ["kaki1_43","kaki1_44","kaki1_74"],
+      "t23": ["kaki1_46"],
+      "t25": ["kaki1_48"],
+      "t26": ["kaki1_51","kaki1_52"],
+      "t27": ["kaki1_53","kaki1_54","kaki1_55"],
+      "t28": ["kaki1_56","kaki1_73"],
+      "t3": ["kaki1_18"],
+      "t30": ["kaki1_58"],
+      "t31": ["kaki1_59"],
+      "t32": ["kaki1_60"],
+      "t33": ["kaki1_61"],
+      "t34": ["kaki1_62","kaki1_77"],
+      "t35": ["kaki1_63"],
+      "t36": ["kaki1_64"],
+      "t37": ["kaki1_65","kaki1_83"],
+      "t38": ["kaki1_66"],
+      "t4": ["kaki1_19","kaki1_84"],
+      "t4-10": ["kaki4_10"],
+      "t4-11": ["kaki4_14","kaki4_64"],
+      "t4-12": ["kaki4_15","kaki4_70"],
+      "t4-13": ["kaki4_16","kaki4_51"],
+      "t4-14": ["kaki4_17","kaki4_18","kaki4_48"],
+      "t4-15": ["kaki4_17","kaki4_18"],
+      "t4-16": ["kaki4_02","kaki4_20","kaki4_67"],
+      "t4-17": ["kaki4_23"],
+      "t4-18": ["kaki4_24"],
+      "t4-19": ["kaki4_25"],
+      "t4-2": ["kaki4_01","kaki4_55"],
+      "t4-20": ["kaki4_26","kaki4_38"],
+      "t4-21": ["kaki4_10"],
+      "t4-22": ["kaki4_43"],
+      "t4-24": ["kaki4_31"],
+      "t4-25": ["kaki4_11","kaki4_33","kaki4_89"],
+      "t4-26": ["kaki4_34"],
+      "t4-27": ["kaki4_35"],
+      "t4-29": ["kaki4_13","kaki4_37","kaki4_88"],
+      "t4-3": ["kaki4_02","kaki4_20","kaki4_67"],
+      "t4-30": ["kaki4_26","kaki4_38"],
+      "t4-31": ["kaki4_40"],
+      "t4-32": ["kaki4_41"],
+      "t4-33": ["kaki4_43"],
+      "t4-35": ["kaki4_19","kaki4_45","kaki4_50"],
+      "t4-36": ["kaki4_16","kaki4_51"],
+      "t4-37": ["kaki4_12","kaki4_52","kaki4_53"],
+      "t4-38": ["kaki4_54"],
+      "t4-4": ["kaki4_03"],
+      "t4-40": ["kaki4_57"],
+      "t4-41": ["kaki4_59"],
+      "t4-42": ["kaki4_70"],
+      "t4-5": ["kaki4_07","kaki4_71"],
+      "t4-7": ["kaki4_06"],
+      "t4-8": ["kaki4_08"],
+      "t4-9": ["kaki4_09","kaki4_62"],
+      "t40": ["kaki1_68"],
+      "t41": ["kaki1_69"],
+      "t42": ["kaki1_44","kaki1_74"],
+      "t43": ["kaki1_75"],
+      "t44": ["kaki1_76"],
+      "t46": ["kaki2_01","kaki2_55"],
+      "t47": ["kaki2_04"],
+      "t48": ["kaki2_07"],
+      "t49": ["kaki2_10"],
+      "t5": ["kaki1_20"],
+      "t50": ["kaki2_11"],
+      "t51": ["kaki2_14"],
+      "t52": ["kaki2_15","kaki2_79"],
+      "t53": ["kaki2_25","kaki2_57"],
+      "t54": ["kaki2_19"],
+      "t55": ["kaki2_22","kaki2_48","kaki2_68","kaki2_74"],
+      "t56": ["kaki2_16"],
+      "t57": ["kaki2_28","kaki2_45"],
+      "t58": ["kaki2_31"],
+      "t59": ["kaki2_32","kaki2_61"],
+      "t6": ["kaki1_21","kaki1_86"],
+      "t68": ["kaki2_48","kaki2_68","kaki2_74"],
+      "t69": ["kaki2_49","kaki2_64"],
+      "t7": ["kaki1_22"],
+      "t70": ["kaki2_43","kaki2_65"],
+      "t71": ["kaki2_66"],
+      "t72": ["kaki2_01","kaki2_55"],
+      "t73": ["kaki2_25","kaki2_57"],
+      "t74": ["kaki2_59"],
+      "t75": ["kaki2_60"],
+      "t76": ["kaki2_32","kaki2_61"],
+      "t79": ["kaki2_62"],
+      "t80": ["kaki2_49","kaki2_64"],
+      "t81": ["kaki2_43","kaki2_65"],
+      "t82": ["kaki2_66"],
+      "t83": ["kaki2_50"],
+      "t85": ["kaki3_01"],
+      "t86": ["kaki3_02"],
+      "t88": ["kaki3_04","kaki3_76"],
+      "t89": ["kaki3_05"],
+      "t9": ["kaki1_24"],
+      "t90": ["kaki3_06","kaki3_07"],
+      "t91": ["kaki3_06","kaki3_07"],
+      "t92": ["kaki3_08","kaki3_44"],
+      "t93": ["kaki3_09"],
+      "t94": ["kaki3_10","kaki3_83"],
+      "t95": ["kaki3_11","kaki3_47"],
+      "t96": ["kaki3_24"],
+      "t97": ["kaki3_12","kaki3_28","kaki3_59"],
+      "t98": ["kaki3_13","kaki3_45"],
+      "t99": ["kaki3_14","kaki3_39","kaki3_50"],
+      "z1": ["kaki1_01"],
+      "z10": ["kaki1_10"],
+      "z11": ["kaki1_11"],
+      "z12": ["kaki1_12"],
+      "z13": ["kaki1_13"],
+      "z14": ["kaki1_14"],
+      "z15": ["kaki1_15","kaki1_79"],
+      "z16": ["kaki1_31","kaki1_34","kaki1_38","kaki1_70","kaki1_71","kaki1_72"],
+      "z17": ["kaki2_42"],
+      "z18": ["kaki2_43","kaki2_65"],
+      "z19": ["kaki2_44"],
+      "z2": ["kaki1_02"],
+      "z20": ["kaki2_28","kaki2_45"],
+      "z21": ["kaki2_11","kaki2_46"],
+      "z22": ["kaki2_47"],
+      "z23": ["kaki2_48","kaki2_68","kaki2_74"],
+      "z24": ["kaki2_49","kaki2_64"],
+      "z25": ["kaki3_31","kaki3_72","kaki3_80"],
+      "z26": ["kaki3_32"],
+      "z27": ["kaki3_33","kaki3_65"],
+      "z28": ["kaki3_34"],
+      "z29": ["kaki3_35","kaki3_71"],
+      "z3": ["kaki1_03"],
+      "z30": ["kaki3_36","kaki3_70","kaki3_74"],
+      "z31": ["kaki3_37","kaki3_69","kaki3_80"],
+      "z32": ["kaki3_14","kaki3_39","kaki3_50"],
+      "z33": ["kaki3_40","kaki3_80"],
+      "z4": ["kaki1_04"],
+      "z4-1": ["kaki4_05","kaki4_30"],
+      "z4-10": ["kaki4_44","kaki4_86"],
+      "z4-11": ["kaki4_22","kaki4_46"],
+      "z4-12": ["kaki4_19","kaki4_45"],
+      "z4-13": ["kaki4_17","kaki4_18","kaki4_48"],
+      "z4-14": ["kaki4_09","kaki4_61","kaki4_62"],
+      "z4-15": ["kaki4_14","kaki4_64"],
+      "z4-16": ["kaki4_65"],
+      "z4-2": ["kaki4_05","kaki4_30"],
+      "z4-3": ["kaki4_11","kaki4_33"],
+      "z4-4": ["kaki4_12"],
+      "z4-5": ["kaki4_13","kaki4_37","kaki4_88"],
+      "z4-6": ["kaki4_19","kaki4_45"],
+      "z4-7": ["kaki4_21"],
+      "z4-8": ["kaki4_22","kaki4_46"],
+      "z4-9": ["kaki4_42","kaki4_87"],
+      "z5": ["kaki1_05"],
+      "z6": ["kaki1_06"],
+      "z7": ["kaki1_07"],
+      "z8": ["kaki1_08","kaki1_90"],
+      "z9": ["kaki1_09"]
+    }
+  },
+  {
+    id: "kaki5-8",
+    // 2026-09-08。今回は「答えの完全一致」だけで作り、包含一致は使っていない。
+    // 対応がつかなかった107問の記録は捨てる（誤って別の問題に紐づけるより安全）。
+    // 作り方と判定の根拠は tools/旧単元整理/ と作業メモを参照
+    renames: {
+      "5.近畿地方": "夏期講習 復習編5.近畿地方",
+      "6.中部地方": "夏期講習 復習編6.中部地方",
+      "7.関東地方": "夏期講習 復習編7.関東地方",
+      "8.東北地方": "夏期講習 復習編8.東北地方／北海道地方",
+      "8.北海道地方": "夏期講習 復習編8.東北地方／北海道地方"
+    },
+    stats: {
+      "t5-1": ["kaki5_01"],
+      "t5-10": ["kaki5_13"],
+      "t5-13": ["kaki5_16"],
+      "t5-16": ["kaki5_19"],
+      "t5-17": ["kaki5_21"],
+      "t5-19": ["kaki5_23"],
+      "t5-2": ["kaki5_02"],
+      "t5-20": ["kaki5_24"],
+      "t5-21": ["kaki5_47"],
+      "t5-22": ["kaki5_58"],
+      "t5-23": ["kaki5_66"],
+      "t5-25": ["kaki5_29"],
+      "t5-27": ["kaki5_32"],
+      "t5-28": ["kaki5_48"],
+      "t5-29": ["kaki5_49"],
+      "t5-3": ["kaki5_03"],
+      "t5-36": ["kaki5_45"],
+      "t5-37": ["kaki5_47"],
+      "t5-38": ["kaki5_48"],
+      "t5-39": ["kaki5_49"],
+      "t5-40": ["kaki5_50"],
+      "t5-44": ["kaki5_58"],
+      "t5-45": ["kaki5_60"],
+      "t5-47": ["kaki5_62"],
+      "t5-49": ["kaki5_52"],
+      "t5-50": ["kaki5_61"],
+      "t5-6": ["kaki5_09"],
+      "t5-7": ["kaki5_10"],
+      "t5-9": ["kaki5_12"],
+      "t6-1": ["kaki6_01"],
+      "t6-11": ["kaki6_12"],
+      "t6-14": ["kaki6_16"],
+      "t6-16": ["kaki6_18"],
+      "t6-17": ["kaki6_19"],
+      "t6-18": ["kaki6_20"],
+      "t6-25": ["kaki6_33"],
+      "t6-26": ["kaki6_36"],
+      "t6-27": ["kaki6_37"],
+      "t6-28": ["kaki6_38"],
+      "t6-29": ["kaki6_73"],
+      "t6-3": ["kaki6_03"],
+      "t6-31": ["kaki6_42"],
+      "t6-32": ["kaki6_44"],
+      "t6-33": ["kaki6_45"],
+      "t6-34": ["kaki6_47"],
+      "t6-35": ["kaki6_48"],
+      "t6-36": ["kaki6_83"],
+      "t6-37": ["kaki6_50"],
+      "t6-38": ["kaki6_51"],
+      "t6-39": ["kaki6_74"],
+      "t6-4": ["kaki6_04"],
+      "t6-40": ["kaki6_53"],
+      "t6-41": ["kaki6_98"],
+      "t6-42": ["kaki6_56"],
+      "t6-5": ["kaki6_05"],
+      "t6-51": ["kaki6_25"],
+      "t6-53": ["kaki6_69"],
+      "t6-55": ["kaki6_71"],
+      "t6-57": ["kaki6_73"],
+      "t6-58": ["kaki6_74"],
+      "t6-59": ["kaki6_79"],
+      "t6-61": ["kaki6_83"],
+      "t6-8": ["kaki6_08"],
+      "t7-1": ["kaki7_01"],
+      "t7-10": ["kaki7_16"],
+      "t7-13": ["kaki7_23"],
+      "t7-14": ["kaki7_24"],
+      "t7-15": ["kaki7_25"],
+      "t7-16": ["kaki7_26"],
+      "t7-17": ["kaki7_27"],
+      "t7-18": ["kaki7_58"],
+      "t7-2": ["kaki7_02"],
+      "t7-21": ["kaki7_40"],
+      "t7-22": ["kaki7_57"],
+      "t7-26": ["kaki7_47"],
+      "t7-27": ["kaki7_48"],
+      "t7-3": ["kaki7_03"],
+      "t7-34": ["kaki7_56"],
+      "t7-35": ["kaki7_57"],
+      "t7-36": ["kaki7_58"],
+      "t7-38": ["kaki7_62"],
+      "t7-4": ["kaki7_04"],
+      "t7-40": ["kaki7_67"],
+      "t7-41": ["kaki7_69"],
+      "t7-5": ["kaki7_05"],
+      "t7-6": ["kaki7_07"],
+      "t7-7": ["kaki7_08"],
+      "t8h-1": ["kaki8_41"],
+      "t8h-10": ["kaki8_53"],
+      "t8h-11": ["kaki8_54"],
+      "t8h-12": ["kaki8_59"],
+      "t8h-13": ["kaki8_60"],
+      "t8h-14": ["kaki8_119"],
+      "t8h-2": ["kaki8_42"],
+      "t8h-3": ["kaki8_43"],
+      "t8h-4": ["kaki8_44"],
+      "t8h-5": ["kaki8_45"],
+      "t8h-6": ["kaki8_46"],
+      "t8h-9": ["kaki8_51"],
+      "t8t-1": ["kaki8_01"],
+      "t8t-11": ["kaki8_12"],
+      "t8t-16": ["kaki8_25"],
+      "t8t-17": ["kaki8_26"],
+      "t8t-18": ["kaki8_31"],
+      "t8t-19": ["kaki8_32"],
+      "t8t-21": ["kaki8_120"],
+      "t8t-24": ["kaki8_72"],
+      "t8t-27": ["kaki8_75"],
+      "t8t-28": ["kaki8_83"],
+      "t8t-34": ["kaki8_95"],
+      "t8t-35": ["kaki8_96"],
+      "t8t-4": ["kaki8_04"],
+      "t8t-5": ["kaki8_05"],
+      "t8t-6": ["kaki8_06"],
+      "t8t-8": ["kaki8_08"],
+      "t8t-9": ["kaki8_10"],
+      "z5-1": ["kaki5_04"],
+      "z5-2": ["kaki5_07"],
+      "z5-3": ["kaki5_08"],
+      "z5-5": ["kaki5_65"],
+      "z5-6": ["kaki5_35"],
+      "z5-7": ["kaki5_36"],
+      "z6-1": ["kaki6_11"],
+      "z6-10": ["kaki6_43"],
+      "z6-11": ["kaki6_46"],
+      "z6-12": ["kaki6_55"],
+      "z6-15": ["kaki6_77"],
+      "z6-2": ["kaki6_15"],
+      "z6-3": ["kaki6_21"],
+      "z6-4": ["kaki6_26"],
+      "z6-6": ["kaki6_29"],
+      "z6-7": ["kaki6_30"],
+      "z6-8": ["kaki6_32"],
+      "z6-9": ["kaki6_40"],
+      "z7-10": ["kaki7_21"],
+      "z7-11": ["kaki7_29"],
+      "z7-12": ["kaki7_86"],
+      "z7-13": ["kaki7_31"],
+      "z7-14": ["kaki7_87"],
+      "z7-15": ["kaki7_34"],
+      "z7-16": ["kaki7_36"],
+      "z7-17": ["kaki7_37"],
+      "z7-18": ["kaki7_38"],
+      "z7-19": ["kaki7_39"],
+      "z7-2": ["kaki7_09"],
+      "z7-20": ["kaki7_43"],
+      "z7-21": ["kaki7_44"],
+      "z7-22": ["kaki7_52"],
+      "z7-23": ["kaki7_60"],
+      "z7-3": ["kaki7_10"],
+      "z7-5": ["kaki7_13"],
+      "z7-6": ["kaki7_15"],
+      "z7-7": ["kaki7_17"],
+      "z7-9": ["kaki7_20"],
+      "z8h-1": ["kaki8_48"],
+      "z8h-10": ["kaki8_65"],
+      "z8h-11": ["kaki8_66"],
+      "z8h-12": ["kaki8_67"],
+      "z8h-13": ["kaki8_68"],
+      "z8h-3": ["kaki8_52"],
+      "z8h-4": ["kaki8_55"],
+      "z8h-5": ["kaki8_56"],
+      "z8h-6": ["kaki8_57"],
+      "z8h-7": ["kaki8_58"],
+      "z8h-8": ["kaki8_62"],
+      "z8h-9": ["kaki8_63"],
+      "z8t-1": ["kaki8_09"],
+      "z8t-10": ["kaki8_27"],
+      "z8t-11": ["kaki8_28"],
+      "z8t-12": ["kaki8_29"],
+      "z8t-13": ["kaki8_30"],
+      "z8t-14": ["kaki8_33"],
+      "z8t-15": ["kaki8_34"],
+      "z8t-16": ["kaki8_37"],
+      "z8t-17": ["kaki8_39"],
+      "z8t-18": ["kaki8_117"],
+      "z8t-2": ["kaki8_13"],
+      "z8t-3": ["kaki8_14"],
+      "z8t-5": ["kaki8_17"],
+      "z8t-6": ["kaki8_19"],
+      "z8t-7": ["kaki8_20"],
+      "z8t-8": ["kaki8_22"]
+    }
+  }
+];
 // ふたつの記録を1つにまとめる。正解/不正解は足し合わせ、間隔反復の箱は
 // 小さいほう（＝復習が早く回ってくるほう）に寄せて安全側にする
 function mergeStatEntries(a, b){
@@ -2388,7 +2603,21 @@ function runStatsMigrations(){
   let done = {};
   try{ done = JSON.parse(window.localStorage.getItem(MIGRATION_KEY)) || {}; }catch(e){ done = {}; }
   let ran = false;
-  if(!done[KAKI_MIGRATION_ID]){ migrateKakiStats(); done[KAKI_MIGRATION_ID] = Date.now(); ran = true; }
+  let moved = 0;
+  // まだ済ませていない移行を、古いものから順に走らせる。
+  // **1つの端末で2つ以上が未実施のこともある**（しばらく開いていなかった場合）
+  KAKI_MIGRATIONS.forEach(mig=>{
+    if(done[mig.id]) return;
+    moved += migrateKakiStats(mig);
+    done[mig.id] = Date.now();
+    ran = true;
+  });
+  // ★片付けは全部の移行が終わってから1回だけ。
+  //   各移行の中でやると、先に走った古いほうが次の移行の引きつぎ元を消してしまう
+  if(ran){
+    cleanupAfterMigrations();
+    if(moved) console.log("正誤記録を復習編に引きつぎました: " + moved + "問ぶん");
+  }
   if(!done[LAST_CORRECT_BACKFILL_ID]){ backfillLastCorrectAt(); done[LAST_CORRECT_BACKFILL_ID] = Date.now(); ran = true; }
   if(ran){ try{ window.localStorage.setItem(MIGRATION_KEY, JSON.stringify(done)); }catch(e){} }
 }
@@ -2404,46 +2633,37 @@ function backfillLastCorrectAt(){
   });
   if(filled){ saveStats(); console.log("正解日のない記録を補いました: " + filled + "問ぶん"); }
 }
-function migrateKakiStats(){
+function migrateKakiStats(mig){
   // 取りこぼしがあっても元にもどせるよう、移しかえる前の記録を丸ごと残す。
   //
   // ★退避の鍵は移行ごとに変える。以前は1つの鍵に「まだ無ければ書く」形だったので、
   //   2回目以降の移行では**1回目の退避が残っているせいで、今回ぶんが退避されなかった**。
   //   移行は一度きり実行で配信後は取り消せないため、退避が無いと手で戻す道も消える。
   try{
-    const key = STATS_BACKUP_KEY + "_" + KAKI_MIGRATION_ID;
+    const key = STATS_BACKUP_KEY + "_" + mig.id;
     if(!window.localStorage.getItem(key)){
-      window.localStorage.setItem(key, JSON.stringify({at: Date.now(), migration: KAKI_MIGRATION_ID, stats: stats}));
+      window.localStorage.setItem(key, JSON.stringify({at: Date.now(), migration: mig.id, stats: stats}));
     }
   }catch(e){ /* 容量不足などで退避できなくても移行自体は続ける */ }
 
   let moved = 0;
-  Object.keys(KAKI_STATS_MIGRATION).forEach(oldId=>{
+  Object.keys(mig.stats).forEach(oldId=>{
     const s = stats[oldId];
     if(!s) return;
-    KAKI_STATS_MIGRATION[oldId].forEach(newId=>{
+    mig.stats[oldId].forEach(newId=>{
+      // 第1引数が「いまある記録」。correct/wrong は足し、box は小さいほうを採るので、
+      // **新しい問題ですでに積み上げた記録は消えずに合流する**
       stats[newId] = mergeStatEntries(stats[newId], s);
     });
     delete stats[oldId];
     moved++;
   });
-  // 対応がつかなかった旧問題の記録も、問題自体が無くなっているので取りのぞく
-  const liveIds = new Set(QA_DATA.map(d => d.id));
-  Object.keys(stats).forEach(id=>{ if(!liveIds.has(id)) delete stats[id]; });
-  saveStats();
-
-  // 中断中のセッションは古いdata.jsを前提にしているので片付ける。
-  // ソロはquizQueueがQA_DATAの添字なので、問題を消すと中身がずれる（必ず破棄）。
-  // 対戦は問題idで持っているので、消えた問題を含むときだけ破棄する
-  clearSoloSession();
-  const battle = loadBattleSession();
-  if(battle && Array.isArray(battle.questionIds) && battle.questionIds.some(id => !liveIds.has(id))) clearBattleSession();
 
   // 単元の選択・復習ミックスの単元も、新しい単元名に置きかえる
   let unitsChanged = false;
   const renameSet = (set)=>{
-    Object.keys(KAKI_UNIT_RENAMES).forEach(oldU=>{
-      if(set.has(oldU)){ set.delete(oldU); set.add(KAKI_UNIT_RENAMES[oldU]); unitsChanged = true; }
+    Object.keys(mig.renames).forEach(oldU=>{
+      if(set.has(oldU)){ set.delete(oldU); set.add(mig.renames[oldU]); unitsChanged = true; }
     });
   };
   Object.keys(unitSelectionBySubject).forEach(k => renameSet(unitSelectionBySubject[k]));
@@ -2451,8 +2671,26 @@ function migrateKakiStats(){
   renameSet(reviewSelectedUnits);
   renameSet(reviewUnitsKnown);
   if(unitsChanged) saveSettings();
+  return moved;
+}
 
-  if(moved) console.log("正誤記録を復習編に引きつぎました: " + moved + "問ぶん");
+// ---- 移行がすべて終わってから1回だけ行う片付け。
+//      ★各移行の中でやってはいけない。まだ済ませていない移行が2つある端末では、
+//        先に走った古いほうの掃除が、次の移行の引きつぎ元をまるごと消してしまう ----
+function cleanupAfterMigrations(){
+  const liveIds = new Set(QA_DATA.map(d => d.id));
+  // 対応がつかなかった旧問題の記録は、問題自体が無くなっているので取りのぞく
+  Object.keys(stats).forEach(id=>{ if(!liveIds.has(id)) delete stats[id]; });
+  saveStats();
+
+  // 中断中のセッションに、消えた問題が含まれていたら片付ける。
+  // ソロは以前 quizQueue が QA_DATA の添字だったので無条件に破棄していたが、
+  // いまは id で持ち、消えた問題を取りのぞいて再開できる（380d63f）ので、
+  // 対戦と同じ扱いでよい
+  const solo = restoreSoloSession(loadSoloSession());
+  if(!solo) clearSoloSession();
+  const battle = loadBattleSession();
+  if(battle && Array.isArray(battle.questionIds) && battle.questionIds.some(id => !liveIds.has(id))) clearBattleSession();
 }
 
 // ---- question text corrections (fixes typos in the original data without

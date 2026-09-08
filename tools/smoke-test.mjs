@@ -217,11 +217,14 @@ await test("旧形式の設定からの移行", async t => {
 
 await test("復習編への正誤記録の引きつぎ", async t => {
   await t.open();
-  // KAKI_STATS_MIGRATION はモジュール内の定数でページからは読めないので、
-  // index.html から直接その表を取り出して使う
-  const mig = JSON.parse(fs.readFileSync(path.join(ROOT, "index.html"), "utf8")
-    .match(/const KAKI_STATS_MIGRATION = \{([\s\S]*?)\n\};/)[1]
-    .replace(/^/, "{").replace(/$/, "}"));
+  // 移行の一覧はモジュール内の定数でページからは読めないので、
+  // index.html から直接取り出して使う。**未実施の移行が複数ありうる**ので、
+  // 一覧になっている（KAKI_MIGRATIONS）。ここでは全部の表をまとめて見る
+  const migs = JSON.parse(fs.readFileSync(path.join(ROOT, "index.html"), "utf8")
+    .match(/const KAKI_MIGRATIONS = (\[[\s\S]*?\n\]);/)[1]
+    .split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n")
+    .replace(/(\n\s*)(id|renames|stats):/g, '$1"$2":'));
+  const mig = Object.assign({}, ...migs.map(m => m.stats));
   const liveSet = new Set(await t.page.evaluate(() => QA_DATA.map(q => q.id)));
   const missing = [...new Set(Object.values(mig).flat())].filter(id => !liveSet.has(id));
   t.is("引きつぎ先の問題がすべて data.js にある", missing, []);

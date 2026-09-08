@@ -38,11 +38,19 @@ const server = http.createServer((req, res) => {
 await new Promise(r => server.listen(0, "127.0.0.1", r));
 const BASE = "http://127.0.0.1:" + server.address().port + "/";
 
-// index.html から、移行表と移行IDをそのまま読む（テスト側で書き写さない）
+// index.html から、移行の一覧をそのまま読む（テスト側で書き写さない）
 const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-const MIG_ID = html.match(/const KAKI_MIGRATION_ID = "([^"]+)"/)[1];
-const TABLE = JSON.parse("{" + html.match(/const KAKI_STATS_MIGRATION = \{([\s\S]*?)\n\};/)[1] + "}");
-const RENAMES = JSON.parse("{" + html.match(/const KAKI_UNIT_RENAMES = \{([\s\S]*?)\n\};/)[1] + "}");
+const MIGS = (() => {
+  const body = html.match(/const KAKI_MIGRATIONS = (\[[\s\S]*?\n\]);/)[1];
+  // コメント行を落としてから JSON にする
+  const cleaned = body.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n")
+    .replace(/(\n\s*)(id|renames|stats):/g, '$1"$2":');
+  return JSON.parse(cleaned);
+})();
+const LAST = MIGS[MIGS.length - 1];
+const MIG_ID = LAST.id;
+const TABLE = LAST.stats;
+const RENAMES = LAST.renames;
 
 let pass = 0, fail = 0;
 function check(name, got, want){
@@ -109,8 +117,6 @@ console.log("\n【2】引きつぎ表どおりに記録が移ったか");
 console.log("\n【3】対応のつかなかった旧問題の記録が消えているか");
 {
   check("data.js に無い旧問題の記録は消える（幽霊レコードを残さない）", after.stats[ghostId], undefined);
-  const live = await page.evaluate(() => new Set(QA_DATA.map(d => d.id)));
-  const ghosts = Object.keys(after.stats).filter(id => !live.has || false);
   check("残った記録がすべて実在の問題のものか",
     await page.evaluate(s => { const live = new Set(QA_DATA.map(d => d.id));
       return Object.keys(s).filter(id => !live.has(id)); }, after.stats), []);
@@ -122,6 +128,33 @@ console.log("\n【4】単元の選択が新しい名前に置きかわったか"
   check("旧単元名が残っていない", units.filter(u => Object.keys(RENAMES).includes(u)), []);
   check("新単元名に置きかわっている",
     units.includes(RENAMES["5.近畿地方"]) && units.includes(RENAMES["6.中部地方"]), true);
+}
+
+console.log("\n【4b】★引きつぎ先にすでに記録があるとき、それが消えないか");
+{
+  // これが実機の状態そのもの。お子さんは復習編5〜8をすでに解いているので、
+  // 引きつぎ先の多くにすでに記録がある。上書きする作りだったら、
+  // **新しい問題で積み上げた記録が消える**
+  const src = Object.keys(TABLE)[0];
+  const dst = TABLE[src][0];
+  const ctx3 = await browser.newContext();
+  const p3 = await ctx3.newPage();
+  await p3.goto(BASE + "index.html", { waitUntil: "load" });
+  await p3.evaluate(([s, d]) => {
+    localStorage.clear();
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({
+      [s]: { correct: 3, wrong: 1, box: 2 },          // 引きつぎ元
+      [d]: { correct: 5, wrong: 2, box: 4 },          // 引きつぎ先に**すでにある**記録
+    }));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+  }, [src, dst]);
+  await p3.reload({ waitUntil: "load" });
+  await p3.waitForTimeout(700);
+  const st = await p3.evaluate(d => JSON.parse(localStorage.getItem("kq_battle_stats_v1"))[d], dst);
+  check("★既存の記録が消えず、合算されている（3+5）", st && st.correct, 8);
+  check("誤答も合算されている（1+2）", st && st.wrong, 3);
+  check("★box は小さいほう（復習が早く回る安全側）", st && st.box, 2);
+  await ctx3.close();
 }
 
 console.log("\n【5】★前回の移行を済ませた端末でも、今回ぶんが退避されるか");
@@ -148,6 +181,42 @@ console.log("\n【5】★前回の移行を済ませた端末でも、今回ぶ�
   check("★前回の退避が消えていない", !!(r.old && r.old.stats && r.old.stats["t1"]), true);
   check("★今回ぶんの退避が新しく作られている", !!(r.now && r.now.stats && r.now.stats["t5-1"]), true);
   await ctx2.close();
+}
+
+console.log("\n【5b】★移行を2つとも済ませていない端末で、両方が正しく走るか");
+{
+  // しばらくアプリを開いていなかった端末（別のブラウザなど）はこの状態になる。
+  // ★片付け（data.js に無い記録の削除）を各移行の中でやっていると、
+  //   先に走る kaki1-4 の片付けが、次に走る kaki5-8 の引きつぎ元を消してしまう。
+  //   だから片付けは全部の移行が終わってから1回だけ、にしてある
+  const first = MIGS[0], last = MIGS[MIGS.length - 1];
+  const src1 = Object.keys(first.stats)[0], dst1 = first.stats[Object.keys(first.stats)[0]][0];
+  const src2 = Object.keys(last.stats)[0], dst2 = last.stats[Object.keys(last.stats)[0]][0];
+  const ctx4 = await browser.newContext();
+  const p4 = await ctx4.newPage();
+  await p4.goto(BASE + "index.html", { waitUntil: "load" });
+  await p4.evaluate(([a, b]) => {
+    localStorage.clear();
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({
+      [a]: { correct: 4, wrong: 0 },   // 旧1〜4 の記録
+      [b]: { correct: 7, wrong: 0 },   // 旧5〜8 の記録
+    }));
+    // どちらの移行も済ませていない状態
+    localStorage.setItem("kq_battle_migrations_v1", "{}");
+  }, [src1, src2]);
+  await p4.reload({ waitUntil: "load" });
+  await p4.waitForTimeout(900);
+  const r = await p4.evaluate(([d1, d2]) => {
+    const s = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
+    return { done: JSON.parse(localStorage.getItem("kq_battle_migrations_v1")),
+             one: s[d1] && s[d1].correct, two: s[d2] && s[d2].correct,
+             backups: Object.keys(localStorage).filter(k => k.startsWith("kq_battle_stats_backup_kaki_v1")) };
+  }, [dst1, dst2]);
+  check("両方の移行が実行ずみになる", [!!r.done[first.id], !!r.done[last.id]], [true, true]);
+  check("★古いほうの記録が引きつがれた", r.one, 4);
+  check("★★新しいほうの記録も引きつがれた（先の片付けで消えていない）", r.two, 7);
+  check("退避が移行ごとに2つ作られる", r.backups.length, 2);
+  await ctx4.close();
 }
 
 console.log("\n【6】移行が一度きりであること");
