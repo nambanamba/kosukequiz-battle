@@ -88,5 +88,24 @@ const kakiCirc = all.filter(d => d.id.startsWith("kaki") && !d.img && /[①-⑳]
 say(kakiCirc.length === 0, "夏期講習で、丸数字を使っているのに画像が無い問題が無い"
     + (kakiCirc.length ? "  " + kakiCirc.slice(0, 5).map(d => d.id).join(" / ") : ""));
 
+// ★逆の型: **画像はあるのに、問題文がその図をまったく参照していない。**
+//   書き換えで「Aの県にある世界文化遺産」→「広島県にある…」と地図を見なくてよくしたのに、
+//   画像だけ残ったもの。**手がかりの何もない地図が表示され、子どもが図を探して戸惑う。**
+//   ★これは**注意して見るための一覧**で、失敗にはしない。
+//   もともと図を見せるだけの問題（写真を見て名前を答える等）が正しく引っかかるため、
+//   これで止めると「いつも赤い検査」になって誰も見なくなる。判断は人がする
+console.log("\n===== 参考: 画像はあるが、問題文が図を参照していない =====");
+const orphan = all.filter(d => d.id.startsWith("kaki") && d.img && !FIG.test(d.q || "")
+                               && !/[①-⑳]|[ア-ン]〜[ア-ン]|[A-H]〜[A-H]/.test(d.q || ""));
+if (orphan.length === 0) {
+  console.log("  ✅ ありません");
+} else {
+  console.log("  ⚠️ " + orphan.length + "件（失敗にはしません。図が要るかどうか人が見てください）");
+  for (const d of orphan.slice(0, 20)) {
+    console.log("     " + d.id + "  " + d.img + "  " + (d.q || "").slice(0, 45).replace(/\n/g, "／"));
+  }
+  if (orphan.length > 20) console.log("     …ほか " + (orphan.length - 20) + "件");
+}
+
 console.log("\n===== 合計: " + (ng ? "★" + ng + " 件の問題あり" : "問題なし") + " =====");
 process.exit(ng ? 1 : 0);
