@@ -346,7 +346,10 @@ def verify(n, old_blocks, new_blocks, id_source, rows, trailing_comma):
             )
             changed.append((qid, fields))
     report.append("既存idで内容が変わったもの: %d件" % len(changed))
-    for qid, fields in changed[:20]:
+    # ここは取り込み後の照合の土台になるので、**省略せず全部出す**。
+    # 以前は先頭20件で打ち切っていて、22件のうち2件が見えず、
+    # 表示された一覧を全部だと読み違えて「2件足りない」と誤認した（2026-09-08）
+    for qid, fields in changed:
         report.append("    %s  %s" % (qid, ",".join(fields)))
 
     # 取り込み後に data.js 全体が参照する画像。--check の時点ではまだコピーしていないので、
