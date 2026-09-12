@@ -1312,7 +1312,17 @@
   /* ---- image lightbox (pinch/tap to zoom) ---- */
   .img-wrap img{
     cursor:zoom-in;
-    touch-action:none;
+    /* ★none にすると、画像の上から指を動かし始めたときに画面がスクロールしない。
+       問題文の画像は画面の大きな面積を占めるので、「画像の上はスクロールが効かない」
+       という症状になる（2026-09-12 ユーザー報告）。
+       ★ここには掴む処理が無い（solo-img・battle-img は click だけ。ピンチ／パンは
+       拡大側の .lightbox-stage に実装してある）ので、none は要らなかった。
+       裏取り: 問題一覧の画像は touch-action を指定しておらず、同じ click →
+       openLightbox() で正常に動いている。
+       manipulation にすると、スクロールとピンチは通し、ダブルタップ拡大だけ抑える。
+       行ごと消しても直るが、その場合ダブルタップ待ちの約300msの遅延が残る。
+       1問20秒なので、タップで拡大が開くのが速いほうがよい。 */
+    touch-action:manipulation;
   }
   .lightbox-overlay{
     display:none;
