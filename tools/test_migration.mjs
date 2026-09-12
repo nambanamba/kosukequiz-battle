@@ -59,7 +59,13 @@ function check(name, got, want){
   ok ? pass++ : fail++;
 }
 
-const browser = await pw.chromium.launch();
+// ブラウザ本体が無いPCでは、入っている Chrome を使う（smoke-test.mjs と同じ）
+let browser;
+try { browser = await pw.chromium.launch(); }
+catch (e) {
+  console.error("playwright のブラウザが無いので、PCの Chrome を使います: " + String(e.message).slice(0, 120));
+  browser = await pw.chromium.launch({ channel: "chrome" });
+}
 const ctx = await browser.newContext();
 const page = await ctx.newPage();
 await page.goto(BASE + "index.html", { waitUntil: "load" });

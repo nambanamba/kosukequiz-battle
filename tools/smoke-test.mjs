@@ -69,7 +69,16 @@ const BASE = "http://127.0.0.1:" + server.address().port + "/index.html";
 const TRYSTERO_STUB = "export function joinRoom(){ return {makeAction:()=>[()=>{},()=>{}],"
   + " onPeerJoin:()=>{}, onPeerLeave:()=>{}, leave:()=>{}}; }";
 
-const browser = await chromium.launch();
+// ブラウザ本体のダウンロードが通らないPCでは、入っている Chrome をそのまま使う。
+// （2026-09-12: この環境では `npx playwright install` がタイムアウトで落ちる）
+async function launchBrowser(bt) {
+  try { return await bt.launch(); }
+  catch (e) {
+    console.error("playwright のブラウザが無いので、PCの Chrome を使います: " + String(e.message).slice(0, 120));
+    return await bt.launch({ channel: "chrome" });
+  }
+}
+const browser = await launchBrowser(chromium);
 const results = [];
 const only = process.argv.slice(2);
 
