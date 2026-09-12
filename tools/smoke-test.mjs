@@ -410,6 +410,61 @@ await test("復習ミックスの優先順位", async t => {
   t.ok("③立ち直り中と定着ずみは後ろ", rev.slice(2).includes(target.ids[0]) && rev.slice(2).includes(target.ids[2]), rev);
 });
 
+await test("未クリア優先（両方ONのとき未クリアが先）", async t => {
+  await t.open();
+  const { history } = await pickUnits(t.page);
+  // 対象単元の中に「未クリア6問」と「正解ずみだが苦手6問」を作る。
+  // 10問選んだとき、未クリア6問が全部入り、残り4問が苦手から来るのが期待。
+  const target = await t.page.evaluate(u => {
+    const ids = QA_DATA.filter(q => q.u === u).map(q => q.id);
+    // ★苦手を未クリアより多めに作る。同数だと、直っていないコードでも
+    //   たまたま 6:4 に割れて通ってしまう（実測でそうなった）。
+    //   未クリア6・苦手10 なら、直っていなければ未クリアは平均3.75問しか入らない。
+    return { unmastered: ids.slice(0, 6), weak: ids.slice(6, 16), rest: ids.slice(16) };
+  }, history);
+  const old = new Date(2026, 7, 1).getTime();
+  await t.page.evaluate(([tg, o]) => {
+    localStorage.clear();
+    const st = {};
+    // 未クリア: 一度も正解していない（isMastered=false）
+    tg.unmastered.forEach(id => { st[id] = { correct: 0, wrong: 2, box: 0, lastAnswered: o }; });
+    // 正解ずみだが苦手: 正解はあるが直近で間違えている（isMastered=true, isWeak=true）
+    tg.weak.forEach(id => { st[id] = { correct: 3, wrong: 5, box: 0, lastCorrectAt: o, lastAnswered: o }; });
+    // 残りは定着ずみ（どちらのフィルタにも入らない＝プールから消える）
+    tg.rest.forEach(id => { st[id] = { correct: 5, wrong: 0, box: 5, lastCorrectAt: o, lastAnswered: o }; });
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+  }, [target, old]);
+  await t.reload();
+
+  await t.clickUnit("ALL");
+  await t.openHistory();
+  await t.clickUnit(history);
+  await t.page.click("#mode-unmastered"); await t.page.waitForTimeout(150);
+  await t.page.click("#mode-weak"); await t.page.waitForTimeout(150);
+  t.is("両方ONになっている", await t.page.evaluate(() =>
+    ["mode-unmastered", "mode-weak"].map(i => document.getElementById(i).classList.contains("on"))), [true, true]);
+  // 10問にする
+  await t.page.evaluate(() => {
+    const c = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
+    if (c && !c.classList.contains("on")) c.click();
+  });
+  await t.page.waitForTimeout(200);
+  await t.page.click("#solo-start-btn"); await t.page.waitForTimeout(700);
+  const picked = await t.page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("kq_battle_solo_session_v1"));
+    return s.quizIds || s.quizQueue.map(i => QA_DATA[i].id);
+  });
+  t.is("合計は10問のまま", picked.length, 10);
+  const nUn = picked.filter(id => target.unmastered.includes(id)).length;
+  const nWk = picked.filter(id => target.weak.includes(id)).length;
+  t.is("★未クリア6問が全部入る", nUn, 6);
+  t.is("★残り4問は苦手から", nWk, 4);
+  t.ok("★未クリアが先に並ぶ",
+    picked.slice(0, 6).every(id => target.unmastered.includes(id)), picked);
+  t.is("定着ずみは混ざらない", picked.filter(id => target.rest.includes(id)).length, 0);
+});
+
 await test("基本の通し（出題・問題一覧）", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());

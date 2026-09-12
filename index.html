@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="robots" content="noindex, nofollow, noarchive">
+<!-- ブラウザは favicon.ico を勝手に取りに行く。置いていないので毎回404になり、
+     コンソールにエラーが1件出つづけていた。害はないが、実機で確認するときに
+     本当のエラーが埋もれる（検査の邪魔になるものは検査の価値を下げる）。
+     空のデータURLを指せば、取りに行かなくなる。画像ファイルは増やさない。 -->
+<link rel="icon" href="data:,">
 <title>社会 一問一答 - 早押し対戦</title>
 <style>
   :root{
@@ -3451,12 +3456,30 @@ function orderReviewCandidatesByWeakness(indices){
   tierRest.sort((a,b)=> lastCorrectOf(a) - lastCorrectOf(b));
   return tierNever.concat(tierWeak).concat(tierRest);
 }
+// ---- 「未クリアの問題」と「よく間違える問題」を両方ONにしたときの優先順 ----
+// 両方ONのとき、プールは applyPoolFiltersExceptPriority で
+// 「一度も正解していない」∪「苦手」のOR和になる。
+// このままプール全体をシャッフルして先頭から切り出すと、未クリアと苦手が
+// 混ざって選ばれる。未クリアのほうが先に手をつけたいので、段に分けて
+// 「未クリア → 苦手」の順に並べ、そこから切り出す。
+//   例: 10問で未クリアが6問なら、未クリア6問＋苦手4問（合計は10問のまま）
+//   未クリアが15問あるなら、10問すべて未クリアになる
+// ★シャッフルは段ごとにかける。プール全体をシャッフルすると優先順が壊れる。
+//   段の中をシャッフルしないと、毎回同じ問題ばかりが選ばれてしまう。
+// 片方だけONのときは段が1つしかできないので、何も起きない（従来どおり）。
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
 //      everything NOT selected ----
 function buildFinalPool(){
   let pool = buildPool();
-  if(currentShuffle) pool = shuffleArray(pool);
+  if(filterUnmastered && filterWeak){
+    // 段に分けてから、段ごとにシャッフルして連結する
+    const tiers = [[], []];   // [0]=未クリア、[1]=正解ずみだが苦手
+    pool.forEach(i=> tiers[isMastered(QA_DATA[i].id) ? 1 : 0].push(i));
+    pool = (currentShuffle ? tiers.map(t => shuffleArray(t)) : tiers).flat();
+  }else if(currentShuffle){
+    pool = shuffleArray(pool);
+  }
   if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(reviewMixCount > 0){
     const reviewCandidates = buildReviewPool();
