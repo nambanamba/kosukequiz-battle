@@ -24,7 +24,7 @@ await p.click("#solo-start-btn"); await p.waitForTimeout(800);
 let found = false;
 for (let i=0;i<130;i++){
   const id = ((await p.textContent("#solo-q-id").catch(()=>"")||"").match(/[A-Za-z][A-Za-z0-9_]*$/)||[""])[0];
-  if (id === "g2r66") { found = true; break; }
+  if (id === "g2r67") { found = true; break; }
   const b = await p.$("#solo-reveal-btn"); if(!b||!(await b.isVisible())) break;
   await p.click("#solo-reveal-btn"); await p.waitForTimeout(60);
   const ok = await p.$("#solo-judge-ok"); if(!ok||!(await ok.isVisible())) break;
@@ -38,10 +38,25 @@ const normal = await p.evaluate(()=>{ const img=document.querySelector("#solo-im
            実寸の縦横比:(img.naturalWidth/img.naturalHeight).toFixed(3),
            枠の縦横比:(img.clientWidth/img.clientHeight).toFixed(3) }; });
 await p.click("#solo-img"); await p.waitForTimeout(700);
+const marksNormal = await p.evaluate(()=>{
+  const l=document.querySelector("#solo-marks");
+  return { 通常の丸の数: l.children.length,
+           位置: [...l.children].map(d=>d.style.left+","+d.style.top+" "+d.style.width+"x"+d.style.height) };
+});
 const zoom = await p.evaluate(()=>{ const lb=document.querySelector("#lightbox-img");
   let shown=false, el=lb; while(el){ if(el.classList&&el.classList.contains("show")){shown=true;break;} el=el.parentElement; }
   return { 拡大が開いた:shown, 拡大画像:lb?lb.getAttribute("src"):null,
            拡大時のサイズ:lb?lb.clientWidth+"x"+lb.clientHeight:null }; });
-console.log(JSON.stringify({ 年表の問に到達:found, 通常表示:normal, 拡大:zoom }, null, 1));
+// 拡大側で2倍にしてから、丸が追従しているか見る
+await p.evaluate(()=>{ const b=document.querySelector("#lightbox-zoom-in"); if(b){b.click();b.click();} });
+await p.waitForTimeout(500);
+const zoomMarks = await p.evaluate(()=>{
+  const l=document.querySelector("#lightbox-marks"), img=document.querySelector("#lightbox-img");
+  return { 拡大側の丸の数: l.children.length,
+           層の変形: l.style.transform, 画像の変形: img.style.transform,
+           一致: l.style.transform === img.style.transform };
+});
+console.log(JSON.stringify({ 年表の問に到達:found, 通常表示:normal, 通常の丸:marksNormal, 拡大:zoom, 拡大の丸:zoomMarks }, null, 1));
+await p.screenshot({ path: "tools/mikaku/shots/zoom_marks.png" });
 await p.screenshot({ path: "tools/mikaku/shots/zoom_g2r66.png", fullPage: false });
 await br.close(); s.close();
