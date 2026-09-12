@@ -2279,13 +2279,58 @@ function triggerAttackEffect(){
 }
 
 let currentScreenName = "screen-home";
+// ★端末の「戻る」で、対戦やひとり練習が確認なしに落ちるのを防ぐ。
+// 2026-09-12 ユーザー報告「誤操作で画面が戻ってしまうことが多い」。
+// ボタン（✕おわる／⏸中断／やめる）には確認が付いていたが、
+// **ブラウザ・端末の戻る操作は一切拾っていなかった**（popstate も pushState も0件）。
+// アプリは履歴を1つも積んでいなかったので、★戻るを1回押す、または画面端を
+// 横スワイプしただけで、確認なしにページごと出ていた。
+// スマホの画面端スワイプは誤爆しやすいので、症状と一致する。
+//
+// やり方: 守りたい画面に入るとき、戻るに食わせるダミーの履歴を1つ積む。
+// 戻るが押されたら（popstate）確認を出し、★**やめないと言われたら積み直す。**
+// 積み直しを忘れると、次の戻るが素通りする（いちばん間違えやすい所）。
+const GUARDED_SCREENS = ["screen-battle", "screen-solo"];
+let backGuardArmed = false;
+function armBackGuard(){
+  if(backGuardArmed) return;      // 同じ画面で何度も積まない
+  try{ history.pushState({ kqGuard: true }, ""); backGuardArmed = true; }catch(e){}
+}
+function disarmBackGuard(){ backGuardArmed = false; }
+
 function showScreen(name){
+  const wasGuarded = GUARDED_SCREENS.includes(currentScreenName);
   currentScreenName = name;
   ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   window.scrollTo(0,0);
+  if(GUARDED_SCREENS.includes(name)) armBackGuard();
+  else if(wasGuarded) disarmBackGuard();
 }
+
+window.addEventListener("popstate", ()=>{
+  // 守っていない画面なら、いつもどおり戻ってよい
+  if(!GUARDED_SCREENS.includes(currentScreenName)){ disarmBackGuard(); return; }
+  backGuardArmed = false;        // 積んだぶんは、もう消費されている
+  if(currentScreenName === "screen-battle"){
+    // ★文言は「中断」に寄せる。誤爆した人には、終了より中断のほうが被害が小さい
+    if(!confirm("対戦を中断してホーム画面にもどりますか？（あとで続きから再開できます）")){
+      armBackGuard();            // ★やめないなら積み直す。これを忘れると次が素通りする
+      return;
+    }
+    leaveRoom();
+    renderHome();
+    showScreen("screen-home");
+  }else{   // screen-solo
+    if(quizResults.length > 0 && !confirm("とちゅうでやめますか？ここまでの記録は保存されます。")){
+      armBackGuard();
+      return;
+    }
+    renderHome();
+    showScreen("screen-home");
+  }
+});
 
 // ---- persisted per-device stats (correct/wrong counts by question id) ----
 const STATS_KEY = "kq_battle_stats_v1";
