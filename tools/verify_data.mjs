@@ -107,5 +107,37 @@ if (orphan.length === 0) {
   if (orphan.length > 20) console.log("     …ほか " + (orphan.length - 20) + "件");
 }
 
+// ★もう1つの「解答不能」の型（2026-09-12 に kaki2_75/76/77 で実際に起きた）。
+//   **答えが記号なのに、その記号が画像に印刷されていない。**
+//   kaki_r2_graph06.jpg は帯グラフ3本が無印なのに、問題文は「ア〜ウから選んで
+//   記号で答えなさい」、答えは（ア）（イ）（ウ）だった。どの帯がアなのか分からない。
+//
+//   ★上の「図表を指すことばがあるのに画像が無い」では捕まらない。
+//   図を指すことばがあり、画像も実在するので、条件を満たしてしまう。
+//
+//   画像の中の文字を機械で読むのは大仕事なので、ここでは**目で見る対象を絞る**。
+//   確かめるのは画像1枚につき1回で済むので、問ごとではなく**画像ごとにまとめる**。
+console.log("\n===== 参考: 答えが記号。その記号が画像に印刷されているか（画像ごと） =====");
+// 「（ア）です」「（あ）です。」のように、答えがalmost記号だけのもの
+const SYM_ONLY = /^（?\s*([ア-ンあ-んA-H])\s*）?\s*(です|)[。．]?$/;
+const symRows = all.filter(d => d.img && SYM_ONLY.test((d.a || "").trim()));
+const byImg = new Map();
+for (const d of symRows) {
+  if (!byImg.has(d.img)) byImg.set(d.img, []);
+  byImg.get(d.img).push(d);
+}
+if (byImg.size === 0) {
+  console.log("  ✅ ありません（答えが記号だけの問に、画像つきのものは無い）");
+} else {
+  console.log("  ⚠️ " + byImg.size + "枚 / " + symRows.length
+              + "問（失敗にはしません。★画像を開いて、記号が印刷されているか人が見てください）");
+  for (const [img, rows] of [...byImg].sort((a, b) => b[1].length - a[1].length)) {
+    const syms = [...new Set(rows.map(d => (d.a || "").match(SYM_ONLY)[1]))].sort();
+    console.log("     " + img + "  " + rows.length + "問  この記号が要る: "
+                + syms.join("・"));
+    console.log("        " + rows.map(d => d.id).join(" "));
+  }
+}
+
 console.log("\n===== 合計: " + (ng ? "★" + ng + " 件の問題あり" : "問題なし") + " =====");
 process.exit(ng ? 1 : 0);
