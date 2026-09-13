@@ -2298,6 +2298,20 @@ function armBackGuard(){
 }
 function disarmBackGuard(){ backGuardArmed = false; }
 
+// ★リロード・タブを閉じる・URLの移動でも、確認なしに落ちないようにする（2026-09-13）。
+// ユーザー判断「かっこ悪くても全然かまいません。とにかく意図せず中断しないように」
+// → ブラウザの定型文のまま（文言はブラウザが決めるので変えられない）。
+// 守る画面は「戻る」と同じ GUARDED_SCREENS。★離れる瞬間の画面を見るので、
+// 「おわる」「中断」で結果・ホームへ移ったあとは出ない。付け外しの処理は要らない。
+// ⚠️ 止められないもの: 電源が切れる／アプリの切りかえ・タスクの終了／ブラウザに強制終了される／
+//    タブ一覧からスワイプで閉じる（Android の Chrome）／iPhone の Safari（この確認を出さない）／
+//    一度も画面を触っていないページ（Chrome の決まりで確認が出ない）
+window.addEventListener("beforeunload", e=>{
+  if(!GUARDED_SCREENS.includes(currentScreenName)) return;
+  e.preventDefault();
+  e.returnValue = "";
+});
+
 function showScreen(name){
   const wasGuarded = GUARDED_SCREENS.includes(currentScreenName);
   currentScreenName = name;

@@ -76,13 +76,17 @@ catch { browser = await pw.chromium.launch({ channel: "chrome" }); }
 
 const rooms = new Map(); // code -> Set<page>
 const errors = [];
+const unloadDialogs = {}; // ページを離れるときの確認（beforeunload）が出た回数。ページの名前ごと
 async function makePeer(label) {
   const ctx = await browser.newContext();
   await ctx.route(/(esm\.run\/trystero|cdn\.jsdelivr\.net\/npm\/trystero)/, r =>
     r.fulfill({ status: 200, contentType: "application/javascript", body: STUB }));
   const page = await ctx.newPage();
   page.on("pageerror", e => errors.push(label + " JSエラー: " + e.message));
-  page.on("dialog", d => d.accept());
+  page.on("dialog", d => {
+    if (d.type() === "beforeunload") unloadDialogs[label] = (unloadDialogs[label] || 0) + 1;
+    d.accept();
+  });
   await ctx.exposeBinding("__kqSend", (src, msg) => {
     const p = src.page;
     for (const [code, set] of rooms) if (code !== msg.code) set.delete(p);
@@ -158,9 +162,19 @@ async function playQuestion(host, guest, hostCorrect) {
   await hostJudgesGuest(host);
 }
 async function next(host) { await tap(host.page,"#next-btn"); await host.page.waitForTimeout(400); }
+// リロードして、ページを離れる確認が出たかを返す
+async function reloadAsks(peer) {
+  // ★画面を実際に触っておく。一度も触っていないページには、ブラウザが確認を出さない
+  //   （これを忘れると「出ない」の確認が、何を直しても通ってしまう）
+  await peer.page.mouse.click(2, 400);
+  const before = unloadDialogs[peer.label] || 0;
+  await peer.page.reload();
+  await peer.page.waitForTimeout(800);
+  return (unloadDialogs[peer.label] || 0) > before;
+}
+let lastReloadAsked = false;
 async function reloadAndResume(host) {
-  await host.page.reload();
-  await host.page.waitForTimeout(800);
+  lastReloadAsked = await reloadAsks(host);
   await visible(host.page, "#resume-battle-btn", 3000);
   await tap(host.page,"#resume-battle-btn");
   await host.page.waitForTimeout(800);
@@ -181,6 +195,7 @@ async function onResult(page) {
     await reloadAndResume(host);                                                               // 3問目の前でリロード
     let reconnected = true;
     try { await visible(host.page, "#answer-reveal-btn", 5000); } catch { reconnected = false; }
+    ok("[4] ★対戦中にリロードすると、ページを離れる確認が出る", lastReloadAsked);
     ok("[1] 1回目のリロードのあと、ゲストとつながって続きが出る", reconnected);
     if (reconnected) {
       await playQuestion(host, guest, true); await next(host);                                // 3問目 〇
@@ -218,6 +233,14 @@ async function onResult(page) {
           const st2 = await stats(host.page);
           ok("[2] 記録: やり直しは正解でも✕のまま・二重に入らない（各2回）",
             st2[r1]?.wrong === 2 && st2[r2]?.wrong === 2 && (st2[r2]?.correct || 0) === 0, JSON.stringify([st2[r1], st2[r2]]));
+
+          // ---- [4] 「中断」を押してホームへもどったあとは、確認を出さない ----
+          await host.page.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active"), null, { timeout: 8000 });
+          await tap(host.page, "#battle-pause-btn");          // 「中断しますか」は自動で OK
+          await host.page.waitForFunction(() => document.getElementById("screen-home").classList.contains("active"), null, { timeout: 5000 });
+          ok("[4] ★「中断」でホームへもどったあとのリロードでは、確認が出ない", !(await reloadAsks(host)));
+          const again2 = await host.page.$eval("#resume-battle-btn", e => getComputedStyle(e).display !== "none");
+          ok("[4] 中断したあとも「前回の対戦を再開する」が出る", again2);
         }
       }
     }
@@ -254,12 +277,64 @@ async function onResult(page) {
     await visible(host.page, "#answer-reveal-btn", 5000);
     await playQuestion(host, guest, true); await next(host);
     await onResult(host.page);
+    // ★結果画面では「もう一勝負」が3秒後に自動で始まるので、その前にリロードする
+    ok("[4] ★対戦が終わった結果画面のリロードでは、確認が出ない", !(await reloadAsks(host)));
     st = await stats(host.page);
     ok("[3] 最後まで: 1問目✕1回・2問目〇1回", st[q1]?.wrong === 1 && st[q2]?.correct === 1, JSON.stringify([st[q1], st[q2]]));
     const lm = await lastMiss(host.page);
     ok("[3] 「前回まちがえた問題」は1問目だけ", lm.length === 1 && lm[0] === q1, lm);
   } catch (e) { ok("シナリオ3が最後まで動く", false, String(e.message).slice(0, 200)); }
   await host.ctx.close(); await guest.ctx.close();
+}
+
+// ============================================================ シナリオ6: 配信前の古い保存から再開
+// ★この修正より前に保存されたセッションには、まちがいリストの欄が無い。
+//   そこから再開したとき、「前回まちがえた問題」を空や途中までのリストで上書きしないこと
+{
+  const host = await makePeer("host6"), guest = await makePeer("guest6");
+  try {
+    await setup(host, guest);
+    await playQuestion(host, guest, false); await next(host);         // 1問目 ✕（古い保存では失われる）
+    const prev = await host.page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("kq_battle_host_session_v1"));
+      delete s.misses; delete s.recordedIdx; delete s.scoredIdx;       // 修正前の形にする
+      localStorage.setItem("kq_battle_host_session_v1", JSON.stringify(s));
+      // ★実在する問題の id にする。存在しない id は、ホームを描くときに取りのぞかれて消える
+      //   （はじめ「前回の記録」という仮の文字で試して、修正の有無にかかわらず [] になった）
+      const prev = QA_DATA[QA_DATA.length - 1].id;
+      localStorage.setItem("kq_battle_last_miss_v1", JSON.stringify([prev]));
+      return prev;
+    });
+    await reloadAndResume(host);
+    await visible(host.page, "#answer-reveal-btn", 5000);
+    await playQuestion(host, guest, false); await next(host);         // 2問目 ✕
+    await playQuestion(host, guest, true); await next(host);          // 3問目 〇
+    await onResult(host.page);
+    const lm = await lastMiss(host.page);
+    ok("[6] ★古い保存から再開したときは、「前回まちがえた問題」を上書きしない", JSON.stringify(lm) === JSON.stringify([prev]), lm);
+  } catch (e) { ok("シナリオ6が最後まで動く", false, String(e.message).slice(0, 200)); }
+  await host.ctx.close(); await guest.ctx.close();
+}
+
+// ============================================================ シナリオ5: ひとり練習でも確認が出る
+{
+  const solo = await makePeer("solo");
+  try {
+    await solo.page.goto(BASE);
+    const unit = await solo.page.evaluate(() => QA_DATA.find(q => q.subj === "社会" && q.kind !== "calc").u);
+    await solo.page.evaluate(u => {
+      localStorage.clear();
+      localStorage.setItem("kq_battle_settings_v1", JSON.stringify({ subject: "社会", unitsBySubject: { "社会": [u] }, units: [u],
+        count: 3, shuffle: false, filterUnmastered: false, filterWeak: false, reviewMixCount: 0 }));
+    }, unit);
+    await solo.page.reload();
+    await solo.page.waitForTimeout(600);
+    ok("[5] ホームのリロードでは、確認が出ない", !(await reloadAsks(solo)));
+    await tap(solo.page, "#solo-start-btn");
+    await solo.page.waitForFunction(() => document.getElementById("screen-solo").classList.contains("active"), null, { timeout: 5000 });
+    ok("[5] ★ひとり練習の途中のリロードでは、確認が出る", await reloadAsks(solo));
+  } catch (e) { ok("シナリオ5が最後まで動く", false, String(e.message).slice(0, 200)); }
+  await solo.ctx.close();
 }
 
 await browser.close();
