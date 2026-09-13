@@ -104,7 +104,7 @@ console.log(`==== B. 対戦の画面（${LABEL}）: 問題文と「こたえを�
 const TARGETS = ["g2r66", "g3r67", "g1r57"];
 let n = 0;
 // ★先頭2つがユーザーの端末（Android タブレット・Chrome）でよくある大きさ。向きはまだ分からない
-for (const [w, h] of [[800, 1280], [1280, 800], [768, 1024], [820, 1180], [1024, 768], [1180, 820]]) {
+for (const [w, h] of [[800, 1280], [390, 844], [1280, 800], [768, 1024], [820, 1180], [1024, 768], [1180, 820]]) {
   for (const id of TARGETS) {
     const code = String(5000 + (n++));
     const host = await makePeer({ width: w, height: h }), guest = await makePeer({ width: 390, height: 844 });
