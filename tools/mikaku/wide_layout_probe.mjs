@@ -90,6 +90,8 @@ for (const [w, h] of [[390, 844], [800, 1280], [768, 1024], [1024, 768], [1280, 
   const shot = async name => { const o = await over(); console.log(`  ${w}x${h} ${name}: 入れ物の幅${o.wrap}px 横スクロール${o.hscroll ? "★あり" : "なし"}`);
     await page.screenshot({ path: path.join(SHOTS, `${LABEL}_${w}x${h}_${name}.png`) }); };
   await shot("home");
+  // トップ画面の並び全体（2026-09-13 並べ替え）。上から下までを1枚で撮る
+  await page.screenshot({ path: path.join(SHOTS, `${LABEL}_${w}x${h}_home_full.png`), fullPage: true });
   // メイン画面の「出題タイプ・優先度・難易度」のあたり（2026-09-13 からパネルでたためる）
   const homeAnchor = (await page.$("#setup-filter-open")) ? "#setup-filter-open" : "#type-all";
   await page.$eval(homeAnchor, e => e.scrollIntoView({ block: "center" })); await page.waitForTimeout(300);

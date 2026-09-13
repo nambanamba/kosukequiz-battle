@@ -979,6 +979,48 @@
     color:var(--ink-soft);
     line-height:1.5;
   }
+  /* ---- トップ画面の並べ替え（2026-09-13）: 区切りの線と、始めるボタンの下のチェック ---- */
+  .home-divider{
+    border:none;
+    border-top:2px solid var(--paper-line);
+    margin:28px 0 4px;
+  }
+  /* 公平モード・チェックのみは、始めるボタンのすぐ下にチェックの形で出す。
+     ★要素と動きは前のまま（押すと .on が切りかわる）。見た目だけチェックにしている */
+  .toggle.check-toggle{
+    flex:1 1 100%;
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    text-align:left;
+    padding:6px 2px;
+    border:none;
+    background:transparent;
+    line-height:1.5;
+  }
+  .toggle.check-toggle::before{
+    content:"";
+    flex:0 0 18px;
+    height:18px;
+    margin-top:1px;
+    border:1.5px solid var(--paper-line);
+    border-radius:4px;
+    background:#fff;
+    box-sizing:border-box;
+    font-size:13px;
+    line-height:15px;
+    text-align:center;
+    color:#fff;
+  }
+  .toggle.check-toggle.on{
+    background:transparent;
+    color:var(--ink);
+  }
+  .toggle.check-toggle.on::before{
+    content:"✓";
+    border-color:var(--gold);
+    background:var(--gold);
+  }
   /* 一覧の各行に出す優先度・難易度。データに無いものは「未設定」を薄く出す */
   .list-item .list-meta{
     display:flex;
@@ -1467,8 +1509,25 @@
     </div>
 
     <div id="home-setup">
+      <!-- ★トップ画面の並び（2026-09-13 ユーザー指定。仕様の整理「トップ画面の並び順」）。
+           中身と動きは変えていない。並べ替えと、たたむ（パネル）だけ。★id はすべて前のまま -->
       <button class="btn-secondary" id="resume-solo-btn" style="display:none;">前回の続きから再開する（一人）</button>
       <button class="btn-secondary" id="resume-battle-btn" style="display:none; margin-top:10px;">前回の対戦を再開する（ホストとして）</button>
+      <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
+
+      <div class="pool-count-bar" id="pool-count-bar">現在の選択で出題される問題数：<b id="pool-count-label">0問</b></div>
+
+      <button class="start-btn" id="create-btn" style="margin-top:14px;">二人で始める</button>
+      <div class="toggle-row">
+        <div class="toggle check-toggle" id="fair-mode-toggle">こどもどうし公平モード（ホストの先読み・スキップなし、単元は双方の希望を反映）</div>
+      </div>
+      <button class="start-btn" id="solo-start-btn" style="margin-top:10px;">一人で始める</button>
+      <div class="toggle-row">
+        <div class="toggle check-toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
+      </div>
+      <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
+
+      <hr class="home-divider">
 
       <div class="section-title">単元をえらぶ（複数選択できます）</div>
       <div class="choice-grid" id="unit-choices"></div>
@@ -1518,8 +1577,9 @@
       </div>
       <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
 
+      <hr class="home-divider">
+
       <div class="section-title">復習ミックス（選んだ復習単元から、苦手な問題を優先して追加）</div>
-      <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
         <span style="font-size:13px; font-weight:normal;">復習する単元（青色＝選択中。タップで切りかえ）</span>
         <div style="font-size:12px; font-weight:normal;">
@@ -1529,6 +1589,10 @@
       </div>
       <div class="choice-grid" id="review-unit-choices"></div>
 
+      <!-- 復習ミックスの「出題タイプ・優先度・難易度」も、メインと同じ形でたたむ（はじめは閉じる・開閉を覚える・閉じても条件を1行） -->
+      <button type="button" class="setup-filter-open" id="review-filter-open" aria-expanded="false" aria-controls="review-filter-panel">絞りこみ ▾</button>
+      <div class="setup-filter-summary" id="review-filter-summary" hidden></div>
+      <div id="review-filter-panel" hidden>
       <div class="section-title" style="font-size:13px; font-weight:normal; margin-top:10px;">復習の出題タイプ</div>
       <div class="toggle-row" id="review-type-row">
         <div class="toggle on" data-review-type="all">文章・図をすべて</div>
@@ -1549,25 +1613,17 @@
         <div class="toggle" data-review-level="標準">標準</div>
         <div class="toggle" data-review-level="発展">発展</div>
       </div>
+      </div><!-- /review-filter-panel -->
 
-      <div class="pool-count-bar" id="pool-count-bar">現在の選択で出題される問題数：<b id="pool-count-label">0問</b></div>
+      <div class="section-title">復習ミックスの問題数</div>
+      <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
 
-      <div class="section-title">出題順</div>
-      <div class="toggle-row">
-        <div class="toggle on" id="shuffle-toggle" data-shuffle="1">ランダム順</div>
-        <div class="toggle" id="order-toggle" data-shuffle="0">出題順どおり</div>
-      </div>
+      <hr class="home-divider">
 
-      <div class="section-title">一人モード用: チェックのみ</div>
-      <div class="toggle-row">
-        <div class="toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
-      </div>
-
-      <div class="section-title">二人対戦用: 対戦モード</div>
-      <div class="toggle-row">
-        <div class="toggle" id="fair-mode-toggle">こどもどうし公平モード（ホストの先読み・スキップなし、単元は双方の希望を反映）</div>
-      </div>
-
+      <!-- 二人対戦用の時間設定5つと「出題順」は、1つのパネルにたたむ（はじめは閉じる・開閉を覚える）。
+           ★各「time-setting-row」のすぐ次に、その「自由入力」の欄を置くこと（nextElementSibling で探している） -->
+      <button type="button" class="setup-filter-open" id="battle-settings-open" aria-expanded="false" aria-controls="battle-settings-panel">二人対戦の時間・出題順 ▾</button>
+      <div id="battle-settings-panel" hidden>
       <div class="section-title">二人対戦用: 考える時間（時間が来ると自動でスキップします／公平モードでは使いません）</div>
       <div class="toggle-row time-setting-row" data-time-key="headstart">
         <div class="toggle time-choice" data-value="5">5秒</div>
@@ -1613,24 +1669,24 @@
       </div>
       <div class="time-custom-row" style="display:none;"><input type="number" class="time-custom-input" min="0" max="300" /><span>秒</span></div>
 
-      <div class="start-row">
-        <button class="start-btn split" id="solo-start-btn">一人で始める</button>
-        <button class="start-btn split" id="create-btn">二人で始める</button>
+      <div class="section-title">出題順</div>
+      <div class="toggle-row">
+        <div class="toggle on" id="shuffle-toggle" data-shuffle="1">ランダム順</div>
+        <div class="toggle" id="order-toggle" data-shuffle="0">出題順どおり</div>
       </div>
-      <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
+      </div><!-- /battle-settings-panel -->
+
+      <button class="btn-secondary" id="list-btn" style="margin-top:20px;">問題一覧を見る・記録を切りかえる</button>
+      <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
+      <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
+      <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
+      <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
 
       <a class="btn-secondary" id="calc-setup-btn" href="https://nambanamba.github.io/keisan-print-app/" target="_blank" rel="noopener" style="margin-top:20px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🧮 今日の計算問題（別アプリで開く）</a>
 
       <a class="btn-secondary" id="kanji-setup-btn" href="https://nambanamba.github.io/kanji-print-app/" target="_blank" rel="noopener" style="margin-top:10px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">📝 今日の漢字プリント（別アプリで開く）</a>
 
       <a class="btn-secondary" id="kokugo-setup-btn" href="https://nambanamba.github.io/kanji/" target="_blank" rel="noopener" style="margin-top:10px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">📘 国語 漢字と言葉（別アプリで開く）</a>
-
-      <button class="btn-secondary" id="list-btn" style="margin-top:20px;">問題一覧を見る・記録を切りかえる</button>
-      <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
-      <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
-      <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
-      <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
-      <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
     </div>
 
     <div id="home-waiting" style="display:none;">
@@ -3986,6 +4042,7 @@ function refreshReviewUnitSelection(){
 }
 function refreshCreateButton(){
   refreshSetupFilterSummary();   // メイン画面の絞りこみ（出題タイプ・優先度・難易度）を変えると必ずここを通る
+  if(refreshReviewFilterSummary) refreshReviewFilterSummary();   // 復習ミックスの絞りこみも同じ
   // ★補った問題も数に入れる（buildFinalPool と同じ数を出す。ずれると「問題がありません」なのに始められる、などになる）
   const pool = (filterWeak || filterUnmastered) ? fillFromRest(buildPool()) : buildPool();
   const mainN = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
@@ -4710,6 +4767,48 @@ document.getElementById("setup-filter-open").addEventListener("click", ()=>{
   refreshSetupFilterSummary();
 });
 refreshSetupFilterSummary();
+
+// ---- 同じ形のたたみを、復習ミックスの絞りこみと、二人対戦の時間・出題順にも使う（2026-09-13 トップ画面の並べ替え）----
+//   ★はじめは閉じる。開閉は覚える（パネルごとに別の鍵）。summary を渡したときだけ、閉じても条件を1行で出す
+function makeFoldPanel(o){
+  let open = false;
+  try{ open = window.localStorage.getItem(o.key) === "1"; }catch(e){}
+  const refresh = ()=>{
+    const btn = document.getElementById(o.btn);
+    const parts = o.parts ? o.parts() : [];
+    document.getElementById(o.panel).hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    btn.textContent = o.label+" "+(open ? "▴" : "▾")+(parts.length ? "（"+parts.length+"件）" : "");
+    btn.classList.toggle("has-filter", parts.length > 0);
+    if(o.summary){
+      const s = document.getElementById(o.summary);
+      s.hidden = open || parts.length === 0;
+      s.textContent = parts.join("・");
+    }
+  };
+  document.getElementById(o.btn).addEventListener("click", ()=>{
+    open = !open;
+    try{ window.localStorage.setItem(o.key, open ? "1" : "0"); }catch(e){}
+    refresh();
+  });
+  refresh();
+  return refresh;
+}
+// ★var にしてある: refreshCreateButton（上のほうで定義）から呼ぶので、まだ代入されていないときに
+//   let/const だと ReferenceError になる。var なら undefined なので、下の if で飛ばせる
+var refreshReviewFilterSummary = makeFoldPanel({
+  btn: "review-filter-open", panel: "review-filter-panel", summary: "review-filter-summary",
+  key: "kq_battle_review_filter_open_v1", label: "絞りこみ",
+  parts: ()=>{
+    const p = [];
+    if(reviewType === "image") p.push("図の問題だけ");
+    else if(reviewType === "text") p.push("文章問題だけ");
+    if(reviewPriority !== "all") p.push("優先度："+reviewPriority);
+    if(reviewLevel !== "all") p.push("難易度："+reviewLevel);
+    return p;
+  }
+});
+makeFoldPanel({ btn: "battle-settings-open", panel: "battle-settings-panel", key: "kq_battle_battle_settings_open_v1", label: "二人対戦の時間・出題順" });
 
 // ---- CSV export/import: same file format as kosukequiz, so records can be
 // carried between the two apps (they run on different origins and can't

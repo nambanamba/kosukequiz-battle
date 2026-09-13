@@ -401,7 +401,8 @@ await test("復習ミックスの優先順位", async t => {
   await t.clickUnit("ALL");
   await t.openHistory();
   await t.clickUnit(history);                 // メインは歴史の1単元だけ
-  await t.page.click("#order-toggle"); await t.page.waitForTimeout(150); // 出題順どおり
+  // 出題順どおり（2026-09-13 から「二人対戦の時間・出題順」のたたんだパネルの中なので、DOM の click で押す）
+  await t.page.$eval("#order-toggle", e => e.click()); await t.page.waitForTimeout(150);
   await t.page.evaluate(u => {                // 復習単元は対象の1つだけ
     document.querySelectorAll("#review-unit-choices .choice").forEach(el => {
       if (el.classList.contains("selected") !== (el.dataset.unit === u)) el.click();
@@ -912,6 +913,65 @@ await test("正解数＝連続正解数: まちがえると未クリアにもど
   await t.page.setInputFiles("#import-file", csvPath); await t.page.waitForTimeout(1200);
   st = await t.stats();
   t.is("★すでにある記録の連続正解数は、CSVを読んでも上がらない", st[ids[1]].box, 0);
+});
+
+await test("トップ画面の並び順（仕様どおり）とパネル", async t => {
+  // 2026-09-13 ユーザー指定（仕様の整理「トップ画面の並び順」）。中身と動きは変えず、並べ替えとたたむだけ
+  await t.open();
+  await t.page.evaluate(() => localStorage.clear());
+  await t.reload();
+  const order = await t.page.evaluate(() => {
+    const ids = ["resume-solo-btn", "resume-battle-btn", "retry-last-miss-btn", "pool-count-bar", "create-btn", "fair-mode-toggle",
+      "solo-start-btn", "review-mode-toggle", "go-join", "unit-choices", "mode-unmastered", "setup-filter-open", "count-row",
+      "review-unit-choices", "review-filter-open", "review-mix-input", "battle-settings-open", "list-btn",
+      "export-link", "import-link", "export-edits-link", "calc-setup-btn"];
+    const els = ids.map(i => document.getElementById(i));
+    const bad = [];
+    for (let k = 1; k < els.length; k++) {
+      if (!(els[k - 1].compareDocumentPosition(els[k]) & Node.DOCUMENT_POSITION_FOLLOWING)) bad.push(ids[k - 1] + " → " + ids[k]);
+    }
+    // 区切りの線3本の位置: コードで参加の下／メインの下（問題数の下）／復習ミックスの下
+    const hrs = [...document.querySelectorAll("#home-setup hr.home-divider")];
+    const after = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const g = id => document.getElementById(id);
+    const hrOk = hrs.length === 3 &&
+      after(g("go-join"), hrs[0]) && after(hrs[0], g("unit-choices")) &&
+      after(g("count-row"), hrs[1]) && after(hrs[1], g("review-unit-choices")) &&
+      after(g("review-mix-input"), hrs[2]) && after(hrs[2], g("battle-settings-open"));
+    return { bad, hrs: hrs.length, hrOk };
+  });
+  t.is("★トップ画面の要素が仕様の順に並ぶ", order.bad, []);
+  t.ok("★区切りの線は3本（コードで参加の下／メインの下／復習ミックスの下）", order.hrOk, order);
+
+  const panels = await t.page.evaluate(() => ({
+    reviewClosed: document.getElementById("review-filter-panel").hidden,
+    battleClosed: document.getElementById("battle-settings-panel").hidden,
+    reviewHas: ["review-type-row", "review-priority-row", "review-level-row"].every(i => document.getElementById("review-filter-panel").contains(document.getElementById(i))),
+    battleHas: document.getElementById("battle-settings-panel").querySelectorAll(".time-setting-row").length === 5 &&
+      document.getElementById("battle-settings-panel").contains(document.getElementById("shuffle-toggle")),
+    checkUnderCreate: document.getElementById("fair-mode-toggle").classList.contains("check-toggle"),
+    checkUnderSolo: document.getElementById("review-mode-toggle").classList.contains("check-toggle")
+  }));
+  t.ok("復習ミックスの絞りこみ・二人対戦の時間と出題順は、はじめは閉じている", panels.reviewClosed && panels.battleClosed, panels);
+  t.ok("復習ミックスのパネルに出題タイプ・優先度・難易度が入っている", panels.reviewHas, panels);
+  t.ok("二人対戦のパネルに時間設定5つと出題順が入っている", panels.battleHas, panels);
+  t.ok("公平モード・チェックのみはチェックの形", panels.checkUnderCreate && panels.checkUnderSolo, panels);
+
+  // 動きは前のまま: 公平モードのチェック／時間の「自由入力」／復習ミックスの絞りこみの要約
+  await t.page.click("#fair-mode-toggle"); await t.page.waitForTimeout(150);
+  t.ok("公平モードのチェックを押すと ON になる", await t.page.$eval("#fair-mode-toggle", e => e.classList.contains("on")));
+  await t.page.click("#battle-settings-open"); await t.page.waitForTimeout(150);
+  await t.page.click('.time-setting-row[data-time-key="answertime"] .time-choice-custom'); await t.page.waitForTimeout(150);
+  t.ok("★時間の「自由入力」を押すと、その下の入力欄が出る（並べ替えで壊れていない）",
+    await t.page.$eval('.time-setting-row[data-time-key="answertime"]', e => getComputedStyle(e.nextElementSibling).display !== "none"));
+  await t.page.click("#review-filter-open"); await t.page.waitForTimeout(150);
+  await t.page.click('#review-priority-row .toggle[data-review-priority="高"]'); await t.page.waitForTimeout(150);
+  await t.page.click("#review-filter-open"); await t.page.waitForTimeout(150);
+  t.ok("復習ミックスの絞りこみを閉じると、条件が1行で出る",
+    await t.page.$eval("#review-filter-summary", e => !e.hidden && e.textContent === "優先度：高"));
+  await t.reload();
+  t.ok("二人対戦のパネルは開いたままにしたので、リロードしても開いている",
+    await t.page.$eval("#battle-settings-panel", e => !e.hidden));
 });
 
 await test("基本の通し（出題・問題一覧）", async t => {
