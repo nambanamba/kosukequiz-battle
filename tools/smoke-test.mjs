@@ -799,6 +799,39 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
   t.ok("キャンセルでその行だけ元にもどる", r.backToNormal && r.neighborSameAfterCancel);
 });
 
+await test("一覧: 絞りこみはたたんでおけて、閉じても条件が1行で出る", async t => {
+  // 2026-09-13 ユーザー判断（案A）。開閉は覚える／閉じていても条件を1行で出す
+  await t.open();
+  await t.page.evaluate(() => localStorage.clear());
+  await t.reload();
+  await t.page.click("#list-btn"); await t.page.waitForTimeout(400);
+  const st = () => t.page.evaluate(() => ({
+    panel: !document.getElementById("list-filter-panel").hidden,
+    btn: document.getElementById("list-filter-open").textContent,
+    summaryShown: !document.getElementById("list-filter-summary").hidden,
+    summary: document.getElementById("list-filter-summary").textContent
+  }));
+  let s = await st();
+  t.ok("はじめは閉じている（条件が無いので要約も出ない）", !s.panel && !s.summaryShown && s.btn === "絞りこみ ▾", s);
+  await t.page.click("#list-filter-open"); await t.page.waitForTimeout(150);
+  s = await st();
+  t.ok("押すと開く", s.panel && s.btn === "絞りこみ ▴", s);
+  await t.page.click('.list-filter-toggle[data-filter="weak"]');
+  await t.page.click('#list-priority-row .toggle[data-list-priority="高"]');
+  await t.page.waitForTimeout(300);
+  s = await st();
+  t.is("★ボタンにかかっている条件の数が出る", s.btn, "絞りこみ ▴（2件）");
+  await t.page.click("#list-filter-open"); await t.page.waitForTimeout(150);
+  s = await st();
+  t.ok("★閉じると、かかっている条件が1行で出る", !s.panel && s.summaryShown && s.summary === "よく間違える・優先度：高", s);
+  // 開いたままにして、リロードしても開いている
+  await t.page.click("#list-filter-open");
+  await t.reload();
+  await t.page.click("#list-btn"); await t.page.waitForTimeout(400);
+  s = await st();
+  t.ok("★開いたままにしたら、次に一覧を開いたときも開いている", s.panel, s);
+});
+
 await test("基本の通し（出題・問題一覧）", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());

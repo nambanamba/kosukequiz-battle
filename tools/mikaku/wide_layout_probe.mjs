@@ -92,6 +92,12 @@ for (const [w, h] of [[390, 844], [768, 1024], [1024, 768], [1280, 800]]) {
   await shot("home");
   await tap(page, "#list-btn"); await page.waitForTimeout(2500);
   await shot("list");
+  // 絞りこみのパネルを開いた形も撮る（はじめは閉じている）
+  if (await page.$("#list-filter-open")) {
+    await tap(page, "#list-filter-open"); await page.waitForTimeout(300);
+    await shot("list_open");
+    await tap(page, "#list-filter-open"); await page.waitForTimeout(200);
+  }
   await page.evaluate(() => { localStorage.setItem("kq_battle_solo_session_v1", JSON.stringify({ v: 2, quizIds: ["g2r66"], quizPos: 0, quizResults: [] })); });
   await page.reload(); await page.waitForTimeout(700);
   await tap(page, "#resume-solo-btn"); await page.waitForTimeout(1200);

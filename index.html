@@ -965,6 +965,44 @@
     letter-spacing:.08em;
     margin:14px 0 6px;
   }
+  /* ---- 一覧の絞りこみ: 単元の選択と「絞りこみ ▾」を1行に。中身はたたむ（2026-09-13・案A）---- */
+  .list-filter-bar{
+    display:flex;
+    gap:8px;
+    align-items:stretch;
+  }
+  .list-filter-open{
+    flex:0 0 auto;
+    padding:10px 14px;
+    border:1.5px solid var(--paper-line);
+    border-radius:10px;
+    background:#fff;
+    font:inherit;
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  /* 条件が1つでもかかっているときは、閉じていても気づけるように色を付ける */
+  .list-filter-open.has-filter{
+    border-color:var(--gold);
+    background:#fbf3e4;
+  }
+  .list-filter-summary{
+    margin-top:6px;
+    font-size:12px;
+    color:var(--ink-soft);
+    line-height:1.5;
+  }
+  .list-filter-panel{ margin-top:4px; }
+  /* タブレット以上では、優先度と難易度を横に並べる（高さを減らす） */
+  @media (min-width:768px){
+    .list-meta-cols{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:16px;
+    }
+  }
   /* 一覧の各行に出す優先度・難易度。データに無いものは「未設定」を薄く出す */
   .list-item .list-meta{
     display:flex;
@@ -1654,14 +1692,24 @@
       <div class="back" id="list-back">← もどる</div>
       <div class="counter" id="list-count">0問</div>
     </div>
-    <select id="list-unit-select" class="list-select" style="width:100%;"></select>
+    <!-- ★絞りこみはたたんでおけるようにした（2026-09-13 ユーザー判断・案A）。
+         以前は単元・状態・優先度・難易度・日付が全部開いていて、1問目が出るまでに約350px使っていた。
+         閉じていても、かかっている条件は下の1行（list-filter-summary）に出す。開閉は覚える -->
+    <div class="list-filter-bar">
+      <select id="list-unit-select" class="list-select"></select>
+      <button type="button" class="list-filter-open" id="list-filter-open" aria-expanded="false" aria-controls="list-filter-panel">絞りこみ ▾</button>
+    </div>
+    <div class="list-filter-summary" id="list-filter-summary" hidden></div>
 
+    <div class="list-filter-panel" id="list-filter-panel" hidden>
     <div class="toggle-row" id="list-status-filters">
       <div class="toggle list-filter-toggle" data-filter="unmastered">未クリアの問題</div>
       <div class="toggle list-filter-toggle" data-filter="weak">よく間違える問題</div>
       <div class="toggle list-filter-toggle" data-filter="unseen">未実施のみ</div>
     </div>
 
+    <div class="list-meta-cols">
+    <div>
     <div class="list-section-title">優先度</div>
     <div class="toggle-row" id="list-priority-row">
       <div class="toggle on" data-list-priority="all">すべて</div>
@@ -1670,7 +1718,8 @@
       <div class="toggle" data-list-priority="低">低</div>
       <div class="toggle" data-list-priority="none">未設定</div>
     </div>
-
+    </div>
+    <div>
     <div class="list-section-title">難易度</div>
     <div class="toggle-row" id="list-level-row">
       <div class="toggle on" data-list-level="all">すべて</div>
@@ -1678,6 +1727,8 @@
       <div class="toggle" data-list-level="標準">標準</div>
       <div class="toggle" data-list-level="発展">発展</div>
       <div class="toggle" data-list-level="none">未設定</div>
+    </div>
+    </div>
     </div>
 
     <div class="list-date-row">
@@ -1687,6 +1738,7 @@
       <input type="date" id="list-date-to" class="list-date-input">
       <div class="back-link" id="list-date-clear" style="margin-top:0;">クリア</div>
     </div>
+    </div><!-- /list-filter-panel -->
 
     <div class="list-items" id="list-items"></div>
 
@@ -4296,6 +4348,7 @@ function renderListItems(){
       return true;
     });
   }
+  refreshListFilterSummary();   // 絞りこみを変えたときは必ずここを通るので、ボタンの件数と1行の要約もここで直す
   els["list-count"].textContent = indices.length+"問";
   els["list-items"].innerHTML = "";
   const gen = ++listRenderGen;   // ★前の描き直しの「続き」が残っていたら、ここで捨てる
@@ -4610,6 +4663,42 @@ els["list-date-clear"].addEventListener("click", ()=>{
   els["list-date-from"].value = "";
   els["list-date-to"].value = "";
   renderListItems();
+});
+
+// ---- 絞りこみのたたみ（2026-09-13 ユーザー判断・案A）----
+//   ★開いているか閉じているかは覚える（次に一覧を開いたときも同じ）。はじめは閉じている。
+//   ★閉じていても、かかっている条件は1行で出す（何で絞っているか分からないまま、問題が少なく見えないように）。
+//   中身の絞りこみ（何で絞るか）は変えていない
+const LIST_FILTER_OPEN_KEY = "kq_battle_list_filter_open_v1";
+let listFilterOpen = false;
+try{ listFilterOpen = window.localStorage.getItem(LIST_FILTER_OPEN_KEY) === "1"; }catch(e){}
+function shortYMD(ymd){ const p = ymd.split("-"); return (+p[1])+"/"+(+p[2]); }
+function listFilterParts(){
+  const parts = [];
+  if(listFilterUnmastered) parts.push("未クリア");
+  if(listFilterWeak) parts.push("よく間違える");
+  if(listFilterUnseen) parts.push("未実施のみ");
+  if(listPriority !== "all") parts.push("優先度："+(listPriority === "none" ? "未設定" : listPriority));
+  if(listLevel !== "all") parts.push("難易度："+(listLevel === "none" ? "未設定" : listLevel));
+  if(listDateFrom || listDateTo) parts.push("解いた日："+(listDateFrom ? shortYMD(listDateFrom) : "")+"〜"+(listDateTo ? shortYMD(listDateTo) : ""));
+  return parts;
+}
+function refreshListFilterSummary(){
+  const parts = listFilterParts();
+  const btn = document.getElementById("list-filter-open");
+  const summary = document.getElementById("list-filter-summary");
+  document.getElementById("list-filter-panel").hidden = !listFilterOpen;
+  btn.setAttribute("aria-expanded", listFilterOpen ? "true" : "false");
+  btn.textContent = "絞りこみ "+(listFilterOpen ? "▴" : "▾")+(parts.length ? "（"+parts.length+"件）" : "");
+  btn.classList.toggle("has-filter", parts.length > 0);
+  // 開いているときは中身が見えているので、要約は出さない
+  summary.hidden = listFilterOpen || parts.length === 0;
+  summary.textContent = parts.join("・");
+}
+document.getElementById("list-filter-open").addEventListener("click", ()=>{
+  listFilterOpen = !listFilterOpen;
+  try{ window.localStorage.setItem(LIST_FILTER_OPEN_KEY, listFilterOpen ? "1" : "0"); }catch(e){}
+  refreshListFilterSummary();
 });
 
 // ---- CSV export/import: same file format as kosukequiz, so records can be
