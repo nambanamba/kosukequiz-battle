@@ -63,7 +63,7 @@ const server = http.createServer((req, res) => {
   });
 });
 await new Promise(r => server.listen(0, "127.0.0.1", r));
-const BASE = "http://127.0.0.1:" + server.address().port + "/index.html";
+const BASE = process.env.KQ_URL || ("http://127.0.0.1:" + server.address().port + "/index.html");
 
 // 対戦(WebRTC)のライブラリはネットワークに出るので、読み込みだけ通るスタブに差し替える
 const TRYSTERO_STUB = "export function joinRoom(){ return {makeAction:()=>[()=>{},()=>{}],"
@@ -537,6 +537,173 @@ await test("よく間違える: 最後に正解した日が古い順／まちが
   t.is("★まちがえた問題は翌日も全部出る", ng.filter(id => day2.includes(id)).length, ng.length);
   t.is("★正解した問題は沈んで出ない", ok.filter(id => day2.includes(id)).length, 0);
   t.ok("★まちがえた問題が先頭に並ぶ", day2.slice(0, ng.length).every(id => ng.includes(id)), day2);
+});
+
+// ============================================================
+// ★出題順の3段（2026-09-13 ユーザー確定仕様）
+//   1段目 未実施（記録が1件も無い） / 2段目 苦手（wrong>0 かつ box<=1）
+//   3段目 それ以外。★各段の中は「最後に正解した日」の古い順
+// ⚠️ **3段すべてが並ぶのは復習ミックス側だけ**です。メイン側はトグルが先に
+//    絞りこむので、3段目が対象に残りません（index.html の buildFinalPool 参照）。
+//    そのため「全3段」は復習ミックスで固定し、「両経路で同じ並び」は
+//    ★3段目を含まない単元を使って**同じ集合**をぶつけて固定します。
+// ⚠️ **トグルと出題数は科目別に保存されます。**リロード後に「クリックする」と
+//    ONではなくOFFになります。**必ず「この状態にする」と書くこと**（実際に踏みました）
+// ============================================================
+const TIER_UNIT  = "公民2.選挙";              // 3段を仕込む単元（16問）
+const TIER_MAIN  = "公民1.きまりと国会";       // 復習ミックスの「メイン側」に使う別単元
+const DAY = 86400000, T0 = new Date(2026, 8, 13).getTime();
+
+// TIER_UNIT に記録を仕込む。withRest=false なら3段目を作らない
+// ⚠️ ★**段を data.js の並び順どおりに仕込んではいけません。**
+//    先頭5問=1段目、次の5問=2段目…のように仕込むと、**並べ替えを丸ごと壊しても
+//    テストが通ってしまいます**（元の並びが正解と同じになるため）。
+//    そこで**とびとびに**割りあて、さらに**各段の中の「最後に正解した日」を
+//    data.js の並びと逆**にして、期待する並びが元の並びと一致しないようにします。
+//    ★実際に、この仕込みにしたあとで壊して初めてテストが鳴りました
+async function seedTiers(t, withRest) {
+  const g = await t.page.evaluate(u => {
+    const ids = QA_DATA.filter(q => q.u === u).map(q => q.id);
+    const at = arr => arr.map(i => ids[i]);
+    return {
+      all: ids,
+      unseen: at([3, 7, 11, 15]),                    // 1段目（記録なし）
+      weak:   at([1, 5, 9, 13]),                     // 2段目（苦手）
+      rest:   at([0, 2, 4, 6, 8, 10, 12, 14]),       // 3段目
+    };
+  }, TIER_UNIT);
+  // 期待する並び: 各段の中は「最後に正解した日の古い順」。
+  // 下の仕込みで日付を**逆順**に入れるので、期待は配列の逆になる
+  g.weakExp = g.weak.slice().reverse();
+  g.restExp = g.rest.slice().reverse();
+  await t.page.evaluate(([g, T0, DAY, withRest]) => {
+    localStorage.clear();
+    const st = {};
+    // 2段目: wrong>0 かつ box<=1。★日付は配列の**後ろほど古い**
+    g.weak.forEach((id, i) => { st[id] = { correct: 2, wrong: 1, box: 0,
+      lastCorrectAt: T0 - (10 + i * 5) * DAY, lastAnswered: T0 }; });
+    if (withRest) {
+      // 3段目: 2連続正解ずみ（box>=2）。こちらも後ろほど古い。
+      // ★**半分は「一度間違えたが、2連続正解して卒業した」問にします。**
+      //   wrong>0 かつ box>=2 という、まさに `box<=1` の境目にいる組みあわせです。
+      //   ⚠️ ここを全部 wrong:0 で作ると、**苦手判定から box の条件を外しても
+      //   テストが鳴りません**（wrong が0なので段が動かない）。実際に鳴らず、
+      //   壊して確かめたおかげで気づきました
+      g.rest.forEach((id, i) => { st[id] = { correct: 3, wrong: (i % 2 ? 2 : 0), box: 2,
+        lastCorrectAt: T0 - (100 + i * 5) * DAY, lastAnswered: T0 }; });
+    } else {
+      // ★3段目を作らない版: box を上げず、間違えた記録にして2段目に寄せる
+      g.rest.forEach((id, i) => { st[id] = { correct: 1, wrong: 1, box: 0,
+        lastCorrectAt: T0 - (100 + i * 5) * DAY, lastAnswered: T0 }; });
+    }
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.setItem("kq_battle_migrations_v1",
+      JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+  }, [g, T0, DAY, withRest]);
+  await t.reload();
+  return g;
+}
+const openGroup = async (t, key) => {
+  const h = await t.page.$(`#unit-choices .unit-group-header[data-group="${key}"]`);
+  if (h && !(await h.evaluate(e => e.classList.contains("open")))) await h.click();
+  await t.page.waitForTimeout(150);
+};
+// 単元をこれだけにする
+async function onlyUnit(t, u) {
+  await t.clickUnit("ALL");          // いったん全部はずす
+  const sel = await t.selected();
+  if (sel.length) await t.clickUnit("ALL");   // 全部ONになっていたらもう一度
+  await openGroup(t, "civics");
+  await t.clickUnit(u);
+}
+// ★「押す」ではなく「この状態にする」。リロード後に押すと逆になる
+const setModes = (t, weak, unmastered) => t.page.evaluate(([w, u]) => {
+  const W = document.getElementById("mode-weak"), U = document.getElementById("mode-unmastered");
+  if (W.classList.contains("on") !== w) W.click();
+  if (U.classList.contains("on") !== u) U.click();
+}, [weak, unmastered]);
+const setOrdered = t => t.page.evaluate(() => {     // ランダム順ではなく出題順どおりに
+  const o = document.getElementById("order-toggle");
+  if (!o.classList.contains("on")) o.click();
+});
+const setCount = (t, c) => t.page.evaluate(c => {
+  const b = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === c);
+  if (b && !b.classList.contains("on")) b.click();
+}, c);
+const setReviewMix = async (t, n, unit) => {
+  await t.page.click("#review-unit-clear-link");    // 復習の対象単元をいったん空に
+  // ★復習側のアコーディオンは data-review-group。メイン側の data-group とは別属性
+  //   （名前空間を分けて querySelector の取り違えを防ぐ作りになっている）。
+  //   ここを data-group で書いて、開かないまま「見えない」で落ちました
+  const h = await t.page.$(`#review-unit-choices .unit-group-header[data-review-group="civics"]`);
+  if (h && !(await h.evaluate(e => e.classList.contains("open")))) await h.click();
+  await t.page.waitForTimeout(150);
+  await t.page.click(`#review-unit-choices .choice[data-unit="${unit}"]`);
+  await t.page.fill("#review-mix-input", String(n));
+  await t.page.dispatchEvent("#review-mix-input", "change");
+  await t.page.waitForTimeout(200);
+};
+// 出題された id を、始めた順に取り出す
+const startAndPick = async t => {
+  await t.page.click("#solo-start-btn"); await t.page.waitForTimeout(900);
+  return t.page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("kq_battle_solo_session_v1") || "{}");
+    return (s.quizIds || (s.quizQueue || []).map(i => QA_DATA[i].id));
+  });
+};
+
+await test("出題順の3段（復習ミックス経路・全3段が順に出る）", async t => {
+  await t.open();
+  const g = await seedTiers(t, true);
+  await onlyUnit(t, TIER_MAIN);
+  await setModes(t, false, false);
+  await setOrdered(t);
+  await setCount(t, "10");
+  await setReviewMix(t, g.all.length, TIER_UNIT);   // 16問ぜんぶ
+  const picked = await startAndPick(t);
+  const rev = picked.slice(10);                     // 後ろが復習ミックスの分
+  t.is("復習ミックスが16問つく", rev.length, g.all.length);
+  // 1段目は lastCorrectAt が全員 0（記録なし）で同点。並べ替えは安定なので元の並びが残る
+  t.is("★1段目（未実施）が先頭のかたまり", rev.slice(0, 4), g.unseen);
+  t.is("★2段目の中が最後に正解した日の古い順", rev.slice(4, 8),  g.weakExp);
+  t.is("★3段目の中が最後に正解した日の古い順", rev.slice(8),     g.restExp);
+  t.ok("★段をまたいで混ざらない",
+    rev.slice(0, 4).every(id => g.unseen.includes(id)) &&
+    rev.slice(4, 8).every(id => g.weak.includes(id)) &&
+    rev.slice(8).every(id => g.rest.includes(id)), rev);
+
+  // ★尽きたら次の段へ行く: 7問だけ求めると 1段目5問 → 2段目の古い2問
+  await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
+  await setReviewMix(t, 6, TIER_UNIT);
+  const p2 = (await startAndPick(t)).slice(10);
+  t.is("★1段目が尽きたら2段目へ行く（4問+2問）", p2, g.unseen.concat(g.weakExp.slice(0, 2)));
+});
+
+await test("出題順の3段（よく間違える と 復習ミックス で同じ並びになる）", async t => {
+  // ★3段目を作らない仕込みにして、メイン側のトグルで1問も落ちない状態にする。
+  //   そうすると「よく間違える＋未クリア」の対象と復習ミックスの対象が**同じ集合**になり、
+  //   並びを直接くらべられる（ふだんはトグルが先に絞るので集合が違ってしまう）
+  await t.open();
+  const g = await seedTiers(t, false);
+
+  // 経路1: メイン側（よく間違える＋未クリア）
+  await onlyUnit(t, TIER_UNIT);
+  await setModes(t, true, true);
+  await setOrdered(t);
+  await setCount(t, "all");
+  await setReviewMix(t, 0, TIER_MAIN);
+  const viaMain = await startAndPick(t);
+  t.is("メイン側で単元の16問すべてが対象になる", viaMain.length, g.all.length);
+
+  // 経路2: 復習ミックス側（同じ単元を、別単元のメインに足す）
+  await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
+  await onlyUnit(t, TIER_MAIN);
+  await setModes(t, false, false);
+  await setCount(t, "10");
+  await setReviewMix(t, g.all.length, TIER_UNIT);
+  const viaReview = (await startAndPick(t)).slice(10);
+
+  t.is("★同じ集合なら、両経路で並びが完全に一致する", viaReview, viaMain);
 });
 
 await test("基本の通し（出題・問題一覧）", async t => {
