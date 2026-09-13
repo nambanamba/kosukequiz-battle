@@ -1221,11 +1221,6 @@
     font-size:12px;
     color:var(--ink-soft);
   }
-  .list-stat-dates{
-    display:flex;
-    gap:8px;
-    margin-bottom:8px;
-  }
   .list-stat-date{
     flex:1;
     display:flex;
@@ -1292,17 +1287,34 @@
     color:var(--navy-deep);
     margin-bottom:8px;
   }
-  .count-row-list{
-    display:flex;
-    gap:8px;
-    margin-top:10px;
-  }
   .list-item-footer{
     display:flex;
     justify-content:space-between;
+    gap:12px;
     margin-top:10px;
   }
-  .edit-link{
+  /* ---- 一覧の記録: ふだんは1行で出し、「記録を直す」で開く（2026-09-13 ユーザー判断・案2）---- */
+  .list-record-line{
+    margin:8px 0 2px;
+    font-size:12px;
+    color:var(--ink-soft);
+    line-height:1.6;
+  }
+  .record-form{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px 10px;
+    margin-top:10px;
+  }
+  /* 入力欄だと分かるように、枠をはっきり付ける（写真で、数字がただの文字に見えていた） */
+  .record-form input{
+    border:1.5px solid var(--paper-line);
+    border-radius:8px;
+    background:#fff;
+    padding:8px;
+    font-size:14px;
+  }
+  .edit-link, .record-edit-link{
     font-size:11.5px;
     color:var(--gold);
     font-weight:700;
@@ -2521,20 +2533,56 @@ function adjustStat(qid, field, delta){
   }
   saveStats();
 }
-// ---- 一覧から日付を直接なおす。空にしたらその日付を消す。
-//      日付だけの記録は意味がないので、正誤の回数も日付も無くなったら記録ごと消す ----
-function setStatDate(qid, field, ymd){
-  const s = stats[qid] || {correct:0, wrong:0};
-  if(ymd){
-    const ts = new Date(ymd+"T00:00:00").getTime();
-    if(isNaN(ts)) return;
-    s[field] = ts;
-  }else{
-    delete s[field];
-  }
-  if(!(s.correct > 0) && !(s.wrong > 0) && !s.lastCorrectAt && !s.lastAnswered) delete stats[qid];
-  else stats[qid] = s;
+// ---- 一覧の「記録を直す」（2026-09-13 ユーザー判断・案2）----
+//   以前は＋−と日付の欄が行に出ていて、押す・変えるたびにその場で保存されていた（押しまちがいがそのまま残る）。
+//   ★いまは「記録を直す」を開き、「保存する」を押したときだけ、ここで4つをまとめて書く。
+//   直せるのは: 正解数（＝連続正解数 box。0〜7）／誤答数／最後に正解した日／最後に解いた日
+//   ・累計の correct は画面に出さないが、連続より小さくはしない（連続3回なら、少なくとも3回は正解している）
+//   ・連続正解数を変えたときだけ、次に出す日（nextDue）をその箱の間隔で決め直す
+//   ・4つとも空（0・0・日付なし）にしたら記録ごと消す＝「未実施」にもどる
+//   「未／〇 正解／✕ 不正解」ボタン（setStatus）は、ユーザー判断で今の動きのまま残してある
+function saveRecordEdit(qid, v){
+  const toTs = ymd => { if(!ymd) return null; const ts = new Date(ymd+"T00:00:00").getTime(); return isNaN(ts) ? null : ts; };
+  const lc = toTs(v.lastCorrectAt), la = toTs(v.lastAnswered);
+  if(v.box === 0 && v.wrong === 0 && !lc && !la){ delete stats[qid]; saveStats(); return; }
+  const s = Object.assign({correct:0, wrong:0}, stats[qid] || {});
+  const boxChanged = (s.box||0) !== v.box || s.nextDue === undefined;
+  s.box = v.box;
+  s.wrong = v.wrong;
+  if((s.correct||0) < v.box) s.correct = v.box;
+  if(lc) s.lastCorrectAt = lc; else delete s.lastCorrectAt;
+  if(la) s.lastAnswered = la; else delete s.lastAnswered;
+  if(boxChanged) s.nextDue = Date.now() + BOX_INTERVAL_DAYS[v.box] * 24 * 60 * 60 * 1000;
+  stats[qid] = s;
   saveStats();
+}
+// 一覧の行の「記録」の部分。ふだんは1行、「記録を直す」を開いている行だけ入力欄
+function recordBlockHtml(qid, s){
+  if(recordEditingId !== qid){
+    const text = stats[qid]
+      ? "正解数（連続）"+(s.box||0)+"・誤答数 "+(s.wrong||0)+
+        "・最後に正解 "+(s.lastCorrectAt ? formatDate(s.lastCorrectAt) : "なし")+
+        "・最後に解いた "+(s.lastAnswered ? formatDate(s.lastAnswered) : "なし")
+      : "記録なし（まだ解いていません）";
+    return '<div class="list-record-line">'+text+'</div>';
+  }
+  const maxBox = BOX_INTERVAL_DAYS.length - 1;
+  const field = (label, note, input) =>
+    '<label class="list-stat-date"><span class="list-stat-date-label">'+label+'<em>'+note+'</em></span>'+input+'</label>';
+  return '<div class="record-form">'+
+      field("正解数（連続）", "まちがえると0にもどる数（0〜"+maxBox+"）",
+        '<input type="number" min="0" max="'+maxBox+'" step="1" inputmode="numeric" data-rec-field="box" value="'+(s.box||0)+'">')+
+      field("誤答数", "まちがえた回数",
+        '<input type="number" min="0" step="1" inputmode="numeric" data-rec-field="wrong" value="'+(s.wrong||0)+'">')+
+      field("最後に正解した日", "苦手な問題の出題順に使います",
+        '<input type="date" data-rec-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'">')+
+      field("最後に解いた日", "上の日付での絞りこみに使います",
+        '<input type="date" data-rec-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'">')+
+    '</div>'+
+    '<div class="edit-actions">'+
+      '<div class="edit-btn cancel record-cancel">キャンセル</div>'+
+      '<div class="edit-btn save record-save">保存する</div>'+
+    '</div>';
 }
 function formatDate(ts){
   const d = new Date(ts);
@@ -4342,6 +4390,7 @@ function renderListScreen(){
 }
 
 let editingId = null;
+let recordEditingId = null;   // 「記録を直す」を開いている行（1行だけ）。文章を直す editingId とは別
 let selectedQuestionIds = new Set();
 
 function dateToYMD(ts){
@@ -4479,37 +4528,19 @@ function buildListRow(i){
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
-      '<div class="list-stat-dates">'+
-        '<label class="list-stat-date"><span class="list-stat-date-label">最後に正解した日<em>苦手な問題の出題順に使います</em></span>'+
-          '<input type="date" data-date-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'"></label>'+
-        '<label class="list-stat-date"><span class="list-stat-date-label">最後に解いた日<em>上の日付での絞りこみに使います</em></span>'+
-          '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
-      '</div>'+
+      recordBlockHtml(base.id, s)+
+      // ★「記録を直す」を開いている行では、〇✕ボタンを出さない。
+      //   開いたままだと「保存する」のすぐ下に「✕ 不正解」が並び、少し下を押すと記録がまるごと置きかわる
+      //   （写真で見つけた）。閉じればボタンは今の動きのまま出る
+      (recordEditingId === base.id ? '' :
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
         '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
         '<div class="status-btn ng'+(status==="weak"?" active":"")+'" data-status="weak">✕ 不正解</div>'+
-      '</div>'+
-      '<div class="count-row-list">'+
-        '<div class="count-stepper ok">'+
-          '<span class="count-label">正解数</span>'+
-          '<span class="count-controls">'+
-            '<span class="count-btn" data-field="correct" data-delta="-1">－</span>'+
-            '<span class="count-num">'+(s.box||0)+'</span>'+
-            '<span class="count-btn" data-field="correct" data-delta="1">＋</span>'+
-          '</span>'+
-        '</div>'+
-        '<div class="count-stepper ng">'+
-          '<span class="count-label">誤答数</span>'+
-          '<span class="count-controls">'+
-            '<span class="count-btn" data-field="wrong" data-delta="-1">－</span>'+
-            '<span class="count-num">'+(s.wrong||0)+'</span>'+
-            '<span class="count-btn" data-field="wrong" data-delta="1">＋</span>'+
-          '</span>'+
-        '</div>'+
-      '</div>'+
+      '</div>')+
       '<div class="list-item-footer">'+
         '<span class="edit-link">✎ 文章を直す</span>'+
+        '<span class="record-edit-link">✎ 記録を直す</span>'+
         (isEdited ? '<span class="revert-link">元にもどす</span>' : '')+
       '</div>';
     // 行ごとのボタンにはリスナーを付けない。親に1組だけ付けて振り分ける（下の
@@ -4536,9 +4567,23 @@ function setupListDelegation(){
     const statusBtn = e.target.closest(".status-btn");
     // ★ここから下は、押した行だけ描き直す（renderListRow）。一覧全体は作り直さない
     if(statusBtn){ setStatus(qid, statusBtn.dataset.status); renderListRow(qid); return; }
-    const countBtn = e.target.closest(".count-btn");
-    if(countBtn){
-      adjustStat(qid, countBtn.dataset.field, parseInt(countBtn.dataset.delta, 10));
+    // ---- 「記録を直す」（2026-09-13・案2）。★保存を押すまで記録は変えない ----
+    if(e.target.closest(".record-edit-link")){
+      const prev = recordEditingId;
+      recordEditingId = qid;
+      if(prev && prev !== qid) renderListRow(prev);   // 開いていた別の行は閉じる
+      renderListRow(qid);
+      return;
+    }
+    if(e.target.closest(".record-cancel")){ recordEditingId = null; renderListRow(qid); return; }
+    if(e.target.closest(".record-save")){
+      const get = f => item.querySelector('[data-rec-field="'+f+'"]').value.trim();
+      const box = Number(get("box")), wrong = Number(get("wrong"));
+      const maxBox = BOX_INTERVAL_DAYS.length - 1;
+      if(!Number.isInteger(box) || box < 0 || box > maxBox){ alert("正解数（連続）は0から"+maxBox+"までの数で入れてください。"); return; }
+      if(!Number.isInteger(wrong) || wrong < 0){ alert("誤答数は0以上の数で入れてください。"); return; }
+      saveRecordEdit(qid, {box: box, wrong: wrong, lastCorrectAt: get("lastCorrectAt"), lastAnswered: get("lastAnswered")});
+      recordEditingId = null;
       renderListRow(qid);
       return;
     }
@@ -4563,8 +4608,6 @@ function setupListDelegation(){
     const item = e.target.closest(".list-item");
     if(!item || !item.dataset.qid) return;
     const qid = item.dataset.qid;
-    const dateInput = e.target.closest("[data-date-field]");
-    if(dateInput){ setStatDate(qid, dateInput.dataset.dateField, dateInput.value); renderListRow(qid); return; }
     if(e.target.classList.contains("q-select-checkbox")){
       if(e.target.checked) selectedQuestionIds.add(qid);
       else selectedQuestionIds.delete(qid);

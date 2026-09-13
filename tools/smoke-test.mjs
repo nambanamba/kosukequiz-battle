@@ -291,39 +291,63 @@ await test("やり直しラウンドで正解しても苦手のまま", async t 
   t.is("正解日は入らない", s.lastCorrectAt, undefined);
 });
 
-await test("一覧の2つの日付を表示・編集できる", async t => {
+await test("一覧の「記録を直す」: 保存を押すまで変わらない／4つの欄を直せる", async t => {
+  // 2026-09-13 ユーザー判断（案2）。以前は＋−と日付の欄がその場で保存されていた。
+  // 直せるのは 正解数（＝連続正解数 box）／誤答数／最後に正解した日／最後に解いた日
   await t.open();
   const id = await t.page.evaluate(() => QA_DATA[0].id);
   const c = new Date(2026, 7, 15).getTime(), a = new Date(2026, 7, 20).getTime();
-  await t.page.evaluate(([i, cc, aa]) => {
+  const seed = { correct: 2, wrong: 1, box: 1, lastCorrectAt: c, lastAnswered: a, nextDue: new Date(2026, 7, 21).getTime() };
+  await t.page.evaluate(([i, s]) => {
     localStorage.clear();
-    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({ [i]: { correct: 2, wrong: 1, box: 1, lastCorrectAt: cc, lastAnswered: aa } }));
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({ [i]: s }));
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
-  }, [id, c, a]);
+  }, [id, seed]);
   await t.reload();
-  await t.page.click("#list-btn"); await t.page.waitForTimeout(700);
-  const find = () => t.page.evaluate(() => {
-    const items = [...document.querySelectorAll(".list-item")];
-    for (const it of items) {
-      const cc = it.querySelector('[data-date-field="lastCorrectAt"]');
-      const aa = it.querySelector('[data-date-field="lastAnswered"]');
-      if (cc && cc.value) return { i: items.indexOf(it), correct: cc.value, answered: aa ? aa.value : null };
-    }
-    return null;
-  });
-  const row = await find();
-  t.is("最後に正解した日が出る", row && row.correct, "2026-08-15");
-  t.is("最後に解いた日も出る", row && row.answered, "2026-08-20");
-  await t.page.evaluate(i => {
-    const it = [...document.querySelectorAll(".list-item")][i];
-    const inp = it.querySelector('[data-date-field="lastCorrectAt"]');
-    inp.value = "2026-09-03"; inp.dispatchEvent(new Event("change", { bubbles: true }));
-  }, row.i);
-  await t.page.waitForTimeout(400);
-  const st = await t.stats();
-  const rec = Object.values(st).find(v => v.correct === 2 && v.wrong === 1);
-  t.is("直した日付が記録に入る", ymd(rec.lastCorrectAt), "2026-09-03");
-  t.is("正誤の回数は変わらない", [rec.correct, rec.wrong], [2, 1]);
+  await t.page.click("#list-btn");
+  const row = `#list-items .list-item[data-qid="${id}"]`;
+  await t.page.waitForSelector(row);
+  const line = await t.page.$eval(row + " .list-record-line", e => e.textContent);
+  t.ok("行に記録が1行で出る（正解数は連続・日付2つ）",
+    line.includes("正解数（連続）1") && line.includes("誤答数 1") && line.includes("2026/08/15") && line.includes("2026/08/20"), line);
+  t.ok("〇✕ボタンは残っている", !!(await t.page.$(row + ' .status-btn[data-status="mastered"]')));
+
+  const setField = (f, v) => t.page.$eval(`${row} [data-rec-field="${f}"]`, (e, v) => {
+    e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); e.dispatchEvent(new Event("change", { bubbles: true }));
+  }, v);
+
+  // 開いて書きかえてもキャンセル → 何も変わらない
+  await t.page.$eval(row + " .record-edit-link", e => e.click());
+  t.ok("★開いている間は〇✕ボタンを出さない（保存のすぐ下で押しまちがえないように）",
+    !!(await t.page.$(row + " .record-form")) && !(await t.page.$(row + " .status-btn")));
+  await setField("wrong", "5");
+  await setField("lastCorrectAt", "2026-09-03");
+  t.is("★保存を押すまで記録は変わらない", (await t.stats())[id], seed);
+  await t.page.$eval(row + " .record-cancel", e => e.click());
+  t.is("キャンセルしたら記録はそのまま", (await t.stats())[id], seed);
+  t.ok("キャンセルで1行の表示にもどる", !(await t.page.$(row + " .record-form")) && !!(await t.page.$(row + " .list-record-line")));
+
+  // 範囲外は保存しない
+  await t.page.$eval(row + " .record-edit-link", e => e.click());
+  await setField("box", "9");
+  await t.page.$eval(row + " .record-save", e => e.click());
+  await t.page.waitForTimeout(200);
+  t.is("正解数（連続）が0〜7の外なら保存しない", (await t.stats())[id], seed);
+
+  // 4つ直して保存
+  await setField("box", "3");
+  await setField("wrong", "4");
+  await setField("lastCorrectAt", "2026-09-03");
+  await setField("lastAnswered", "2026-09-05");
+  await t.page.$eval(row + " .record-save", e => e.click());
+  await t.page.waitForTimeout(200);
+  const rec = (await t.stats())[id];
+  t.is("★保存すると4つが入る（連続3・誤答4・日付2つ）",
+    [rec.box, rec.wrong, ymd(rec.lastCorrectAt), ymd(rec.lastAnswered)], [3, 4, "2026-09-03", "2026-09-05"]);
+  t.ok("累計の正解数は連続より小さくならない（2→3）", rec.correct === 3, rec.correct);
+  t.ok("連続正解数を変えたので、次に出す日が決め直される", rec.nextDue !== seed.nextDue, rec.nextDue);
+  const line2 = await t.page.$eval(row + " .list-record-line", e => e.textContent);
+  t.ok("保存したら1行の表示にもどり、新しい値が出る", line2.includes("正解数（連続）3") && line2.includes("誤答数 4"), line2);
 });
 
 await test("CSVの書き出しと読み込みで記録が失われない", async t => {
@@ -772,11 +796,12 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
   const r = await t.page.evaluate(() => {
     const rows = () => [...document.querySelectorAll("#list-items .list-item")];
     const target = rows()[5], neighbor = rows()[6], qid = target.dataset.qid;
-    target.querySelector('.count-btn[data-field="correct"][data-delta="1"]').click();
+    // 行の＋−は「記録を直す」に置きかわったので、〇ボタンで記録を変える
+    target.querySelector('.status-btn[data-status="mastered"]').click();
     const now = document.querySelector('#list-items .list-item[data-qid="' + qid + '"]');
     const res = {
       replaced: now !== target,
-      correctNum: now.querySelector(".count-stepper.ok .count-num").textContent,
+      correctNum: now.querySelector(".list-record-line").textContent,
       neighborSame: rows()[6] === neighbor,
       rowCount: rows().length
     };
@@ -791,7 +816,7 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
     res.neighborSameAfterCancel = rows()[6] === neighbor;
     return res;
   });
-  t.is("＋を押した行の正解数が1になる", r.correctNum, "1");
+  t.ok("〇を押した行の記録が「正解数（連続）1」になる", r.correctNum.includes("正解数（連続）1"), r.correctNum);
   t.ok("押した行は新しく描き直される", r.replaced);
   t.ok("★となりの行は作り直されない（同じ要素のまま）", r.neighborSame);
   t.is("行の数は変わらない", r.rowCount, total);
