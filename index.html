@@ -3643,12 +3643,16 @@ function buildReviewPool(){
   if(reviewLevel !== "all") pool = pool.filter(i => QA_DATA[i].level === reviewLevel);
   return pool;
 }
+// 最後に正解した日。★無ければ 0 ＝「いちばん古い」として扱う。
+// 一度も正解していない記録や、lastCorrectAt を導入する前の古い記録が
+// 0 になるが、昇順（古い順）に並べるので**先頭に来る**。それが望ましい。
+// ★復習ミックスと「よく間違える問題」で、同じ読み方を使うためにここへ出した。
+function lastCorrectOf(i){
+  const s = stats[QA_DATA[i].id];
+  return (s && s.lastCorrectAt) ? s.lastCorrectAt : 0;
+}
 // ---- 復習ミックスの並び順（苦手な問題から選ぶ）----
 function orderReviewCandidatesByWeakness(indices){
-  const lastCorrectOf = i => {
-    const s = stats[QA_DATA[i].id];
-    return (s && s.lastCorrectAt) ? s.lastCorrectAt : 0;
-  };
   // 3段階の苦手優先順（ランダム要素なし）：
   // ①一度も正解していない問題（未回答も含む）
   // ②苦手な問題（ホームの「よく間違える問題」と同じ判定）を、最後に正解した日が古い順
@@ -3689,11 +3693,26 @@ function orderReviewCandidatesByWeakness(indices){
 //      everything NOT selected ----
 function buildFinalPool(){
   let pool = buildPool();
-  if(filterUnmastered && filterWeak){
-    // 段に分けてから、段ごとにシャッフルして連結する
-    const tiers = [[], []];   // [0]=未クリア、[1]=正解ずみだが苦手
-    pool.forEach(i=> tiers[isMastered(QA_DATA[i].id) ? 1 : 0].push(i));
-    pool = (currentShuffle ? tiers.map(t => shuffleArray(t)) : tiers).flat();
+  if(filterWeak){
+    // ★「よく間違える問題」を選んだときは、**最後に正解した日が古い順**に出す。
+    //   ランダムにはしない（ユーザー指定）。
+    //
+    // ★これだけで「昨日間違えた問題が翌日また出る」が満たされる。
+    //   正解すると lastCorrectAt が今日になって沈み、
+    //   まちがえても lastCorrectAt は変わらないので順位が動かない。
+    //   → 正解した問題が席を空け、まちがえた問題が相対的に上がる。
+    //   ★「必ず含める」という特別な処理は要らない（2日ぶん動かして 5/5 で確認）。
+    //
+    // ★間違えた回数（累計）では並べない。累計は減らないので、
+    //   5回間違えた問題は解けるようになっても上位に居座り続ける。
+    //   「いま苦手か」を表さないため、ユーザーの意図に合わない。
+    //
+    // ★box（連続正解数）は読まない・書かない。box は出題間隔と共有しており、
+    //   書き換えると次にいつ出るかまで動く。対象の絞りこみ（isWeak）で既に効いている。
+    //
+    // 同じ日付のもの（または両方「正解日なし」）が並んだときは、
+    // ★並べ替えが安定なので元の順序を保つ。日によって出る問題は変わらない。
+    pool = pool.slice().sort((a, b) => lastCorrectOf(a) - lastCorrectOf(b));
   }else if(currentShuffle){
     pool = shuffleArray(pool);
   }

@@ -465,6 +465,80 @@ await test("未クリア優先（両方ONのとき未クリアが先）", async 
   t.is("定着ずみは混ざらない", picked.filter(id => target.rest.includes(id)).length, 0);
 });
 
+await test("よく間違える: 最後に正解した日が古い順／まちがえた問題は翌日も出る", async t => {
+  await t.open();
+  const { history } = await pickUnits(t.page);
+  // 苦手な問題を12問つくる。★4問は「正解日なし」（古い記録・一度も正解していない扱い）
+  const target = await t.page.evaluate(u => QA_DATA.filter(q => q.u === u).slice(0, 16).map(q => q.id), history);
+  const day = 86400000, base = new Date(2026, 8, 12).getTime();
+  await t.page.evaluate(([ids, base, day]) => {
+    localStorage.clear();
+    const st = {};
+    ids.forEach((id, i) => {
+      // isWeak = まちがい1回以上 かつ box<=1
+      st[id] = i < 4 ? { correct: 1, wrong: 2, box: 0, lastAnswered: base }
+                     : { correct: 2, wrong: 1, box: 1, lastCorrectAt: base - (16 - i) * day, lastAnswered: base };
+    });
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+  }, [target, base, day]);
+  await t.reload();
+
+  await t.clickUnit("ALL");
+  await t.openHistory();
+  await t.clickUnit(history);
+  // ★トグルと出題数は科目別に保存される。リロード後に押すと OFF になるので、
+  //   「押す」のではなく「ONにする」形で書く（ここで一度ハマった）
+  const setWeakOn = () => t.page.evaluate(() => {
+    const w = document.getElementById("mode-weak");
+    if (!w.classList.contains("on")) w.click();
+    const u = document.getElementById("mode-unmastered");
+    if (u.classList.contains("on")) u.click();
+    const c = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
+    if (c && !c.classList.contains("on")) c.click();
+  });
+  await setWeakOn(); await t.page.waitForTimeout(250);
+  const picked = () => t.page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("kq_battle_solo_session_v1"));
+    return s.quizIds || s.quizQueue.map(i => QA_DATA[i].id);
+  });
+
+  // ---- 1日目 ----
+  await t.page.click("#solo-start-btn"); await t.page.waitForTimeout(700);
+  const day1 = await picked();
+  t.is("10問選ばれる", day1.length, 10);
+  // ★正解日なしの4問が先頭（0 扱い＝いちばん古い）
+  t.ok("★正解日なしが先頭に来る", day1.slice(0, 4).every(id => target.slice(0, 4).includes(id)), day1);
+  // ★ランダムではない: 同じ条件でもう一度組み立てて、同じ並びになる
+  await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
+  await t.page.click("#solo-start-btn"); await t.page.waitForTimeout(700);
+  t.is("★毎回同じ並び（ランダムでない）", await picked(), day1);
+
+  // ---- 2日目 ----
+  // ★リロードを挟まない。トグルと出題数は科目別に保存されるので、
+  //   リロードして押し直すと設定が入れかわり、何を測っているか分からなくなる
+  //   （ここで一度ハマった）。設定はそのまま、記録だけ翌日の状態にする。
+  const ok = day1.filter((_, i) => i % 2 === 0), ng = day1.filter((_, i) => i % 2 === 1);
+  await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
+  await t.page.evaluate(([ok, ng, tomorrow]) => {
+    const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
+    // 正解 … lastCorrectAt が新しくなり、box が上がる
+    ok.forEach(id => { st[id].correct++; st[id].lastCorrectAt = tomorrow; st[id].box = Math.min((st[id].box||0)+1, 7); st[id].lastAnswered = tomorrow; });
+    // ★まちがい … lastCorrectAt は触らない（ここが「順位が動かない」の要）
+    ng.forEach(id => { st[id].wrong++; st[id].box = 0; st[id].lastAnswered = tomorrow; });
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.removeItem("kq_battle_solo_session_v1");
+  }, [ok, ng, base + day]);
+  // ★記録を読み直させるためリロードする。ただし★トグルには触らない
+  //   （科目別に保存されているので、そのまま復元される）。
+  await t.reload();
+  await t.page.click("#solo-start-btn"); await t.page.waitForTimeout(700);
+  const day2 = await picked();
+  t.is("★まちがえた問題は翌日も全部出る", ng.filter(id => day2.includes(id)).length, ng.length);
+  t.is("★正解した問題は沈んで出ない", ok.filter(id => day2.includes(id)).length, 0);
+  t.ok("★まちがえた問題が先頭に並ぶ", day2.slice(0, ng.length).every(id => ng.includes(id)), day2);
+});
+
 await test("基本の通し（出題・問題一覧）", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());
