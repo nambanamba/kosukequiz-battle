@@ -42,6 +42,14 @@
     padding:18px 16px 40px;
     min-height:100vh;
   }
+  /* ★タブレット・PCでは、画面全体の最大幅を広げる（2026-09-13 ユーザー判断）。
+     対戦に使っている端末はタブレット。520pxのままだと、画像が端末の幅に合わせて大きくならない。
+     一覧の下に出る選択バー（.selection-bar）も同じ幅にそろえる（あちらにも520pxが書いてある）。
+     ★body を付けて強さを上げている。.selection-bar の本体の規則はこの下にあり、付けないと上書きされる */
+  @media (min-width:768px){
+    .wrap{ max-width:720px; }
+    body .selection-bar{ max-width:720px; }
+  }
   header.top{
     display:flex;
     align-items:baseline;
