@@ -74,7 +74,7 @@ async function makePeer(viewport) {
   return { ctx, page };
 }
 const tap = (page, sel) => page.$eval(sel, e => e.click());
-const settingsFor = unit => ({ subject: "社会", unitsBySubject: { "社会": [unit] }, units: [unit],
+const settingsFor = (unit, subj = "社会") => ({ subject: subj, unitsBySubject: { [subj]: [unit] }, units: [unit],
   answerTimeSec: 600, judgeTimeSec: 600, nextTimeSec: 600, headStartSec: 0, fairMode: false });
 
 // ---------------------------------------------------------------- A. 画面の並び
@@ -136,7 +136,8 @@ for (const [w, h] of [[390, 844], [800, 1280], [768, 1024], [1024, 768], [1280, 
 
 // ---------------------------------------------------------------- B. 対戦の画面（タブレット）
 console.log(`==== B. 対戦の画面（${LABEL}）: 問題文と「こたえを見る」がスクロールせずに見えるか`);
-const TARGETS = ["g2r66", "g3r67", "g1r57"];
+// TARGETS=r3m81,r3m88 のように渡すと、その問題を出す（科目は問題のデータから決める）
+const TARGETS = process.env.TARGETS ? process.env.TARGETS.split(",") : ["g2r66", "g3r67", "g1r57"];
 let n = 0;
 // ★先頭2つがユーザーの端末（Android タブレット・Chrome）でよくある大きさ。向きはまだ分からない
 // ONLY_A=1 のときは、対戦の画面（時間がかかる）を飛ばす
@@ -147,14 +148,14 @@ for (const [w, h] of (process.env.ONLY_A ? [] : process.env.B_SMALL ? [[800, 128
     const code = String(5000 + (n++));
     const host = await makePeer({ width: w, height: h }), guest = await makePeer({ width: 390, height: 844 });
     await host.page.goto(BASE); await guest.page.goto(BASE);
-    const unit = await host.page.evaluate(id => QA_DATA.find(q => q.id === id).u, id);
+    const { unit, subj } = await host.page.evaluate(id => { const q = QA_DATA.find(q => q.id === id); return { unit: q.u, subj: q.subj }; }, id);
     await host.page.evaluate(([s, id, code]) => {
       localStorage.clear();
       localStorage.setItem("kq_battle_settings_v1", JSON.stringify(s));
       localStorage.setItem("kq_battle_host_session_v1", JSON.stringify({ code, questionIds: [id], currentIndex: 0,
         scores: { host: 0, guest: 0 }, hostSkippedIds: [], inMissRetryRound: false, misses: [], recordedIdx: -1, scoredIdx: -1 }));
-    }, [settingsFor(unit), id, code]);
-    await guest.page.evaluate(s => { localStorage.clear(); localStorage.setItem("kq_battle_settings_v1", JSON.stringify(s)); }, settingsFor(unit));
+    }, [settingsFor(unit, subj), id, code]);
+    await guest.page.evaluate(s => { localStorage.clear(); localStorage.setItem("kq_battle_settings_v1", JSON.stringify(s)); }, settingsFor(unit, subj));
     await host.page.reload(); await guest.page.reload();
     await host.page.waitForTimeout(700); await guest.page.waitForTimeout(700);
     await tap(host.page, "#resume-battle-btn");
@@ -163,8 +164,11 @@ for (const [w, h] of (process.env.ONLY_A ? [] : process.env.B_SMALL ? [[800, 128
     await guest.page.fill("#join-code-input", code);
     await tap(guest.page, "#join-btn");
     try {
+      // ★画像の無い問題（理科の文章だけの問題など）もあるので、画像を待つのは画像の枠が出ているときだけ
+      //   （2026-09-13 に r3m81 で「対戦の画面が出なかった」と誤って出た）
       await host.page.waitForFunction(() => { const b = document.getElementById("answer-reveal-btn"); const i = document.getElementById("battle-img");
-        return b && getComputedStyle(b).display !== "none" && i.complete && i.naturalWidth > 0; }, null, { timeout: 8000 });
+        const hasImg = getComputedStyle(document.getElementById("battle-img-wrap")).display !== "none";
+        return b && getComputedStyle(b).display !== "none" && (!hasImg || (i.complete && i.naturalWidth > 0)); }, null, { timeout: 8000 });
     } catch { console.log(`  ${w}x${h} ${id}: ★対戦の画面が出なかった`); await host.ctx.close(); await guest.ctx.close(); continue; }
     await host.page.evaluate(() => scrollTo(0, 0));
     await host.page.waitForTimeout(500);
