@@ -1633,7 +1633,7 @@
     <div class="toggle-row" id="list-status-filters">
       <div class="toggle list-filter-toggle" data-filter="unmastered">未クリアの問題</div>
       <div class="toggle list-filter-toggle" data-filter="weak">よく間違える問題</div>
-      <div class="toggle list-filter-toggle" data-filter="unseen">未解答のみ</div>
+      <div class="toggle list-filter-toggle" data-filter="unseen">未実施のみ</div>
     </div>
 
     <div class="list-section-title">優先度</div>
@@ -3696,7 +3696,9 @@ function lastCorrectOf(i){
 //
 // ⚠️ **「未実施」の定義に注意。**アプリの中に似た語が2つあり、中身が違う:
 //      ホーム「未クリアの問題」 = correct が 0   （★まちがえた問題も含む）
-//      一覧　「未解答のみ」     = 記録が1件も無い（★一度も答えていない）
+//      一覧　「未実施のみ」     = 〇も✕も付いていない（★一度も答えていない）
+//      ※2026-09-13 に一覧の呼び名を「未解答のみ」から「未実施のみ」に変えて、ここにそろえた。
+//        一覧で〇✕の数を両方0に直した問題は、一覧では「未」だが、ここでは「記録あり」で3段目になる
 //    ★ここで言う「未実施」は後者（一度も答えていない）。ユーザーの言葉に合わせている。
 //
 // ★box（連続正解数）は読むだけ。書き換えない。
@@ -3722,17 +3724,6 @@ function orderReviewCandidatesByWeakness(indices){
   return orderByTiers(indices);
 }
 
-// ---- 「未クリアの問題」と「よく間違える問題」を両方ONにしたときの優先順 ----
-// 両方ONのとき、プールは applyPoolFiltersExceptPriority で
-// 「一度も正解していない」∪「苦手」のOR和になる。
-// このままプール全体をシャッフルして先頭から切り出すと、未クリアと苦手が
-// 混ざって選ばれる。未クリアのほうが先に手をつけたいので、段に分けて
-// 「未クリア → 苦手」の順に並べ、そこから切り出す。
-//   例: 10問で未クリアが6問なら、未クリア6問＋苦手4問（合計は10問のまま）
-//   未クリアが15問あるなら、10問すべて未クリアになる
-// ★シャッフルは段ごとにかける。プール全体をシャッフルすると優先順が壊れる。
-//   段の中をシャッフルしないと、毎回同じ問題ばかりが選ばれてしまう。
-// 片方だけONのときは段が1つしかできないので、何も起きない（従来どおり）。
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
 //      everything NOT selected ----
