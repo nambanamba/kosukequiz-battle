@@ -747,6 +747,58 @@ await test("補う: 苦手が0問でも「全部」で始められる", async t 
     await startAndPick(t), g.unseen.concat(g.restExp, g.weakExp));
 });
 
+await test("一覧: 押した行だけ描き直す／開いたあと全行そろう／途中の描き直しで混ざらない", async t => {
+  // 2026-09-13。以前は〇✕や正解数を1つ変えるたびに一覧を全部作り直し、押した行が318pxずれていた
+  await t.open();
+  await t.page.evaluate(() => localStorage.clear());
+  await t.reload();
+
+  // ★開いた直後に絞りこみを変える。古い「続き」が止まらないと、0件のはずの一覧に行が足される
+  await t.page.click("#list-btn");
+  await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-filter="weak"]').click());
+  await t.page.waitForTimeout(1500);
+  t.is("★描き直しが途中で始まっても、古い行が混ざらない（苦手0問なので0行）",
+    await t.page.evaluate(() => document.querySelectorAll("#list-items .list-item").length), 0);
+  await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-filter="weak"]').click());
+
+  const total = await t.page.evaluate(() => parseInt(document.getElementById("list-count").textContent, 10));
+  let all = true;
+  try {
+    await t.page.waitForFunction(n => document.querySelectorAll("#list-items .list-item").length === n, total, { timeout: 60000 });
+  } catch { all = false; }
+  t.ok("★少しずつ足して、最後は全行そろう", all,
+    await t.page.evaluate(() => document.querySelectorAll("#list-items .list-item").length) + " / " + total);
+
+  const r = await t.page.evaluate(() => {
+    const rows = () => [...document.querySelectorAll("#list-items .list-item")];
+    const target = rows()[5], neighbor = rows()[6], qid = target.dataset.qid;
+    target.querySelector('.count-btn[data-field="correct"][data-delta="1"]').click();
+    const now = document.querySelector('#list-items .list-item[data-qid="' + qid + '"]');
+    const res = {
+      replaced: now !== target,
+      correctNum: now.querySelector(".count-stepper.ok .count-num").textContent,
+      neighborSame: rows()[6] === neighbor,
+      rowCount: rows().length
+    };
+    // 編集 → キャンセル も、その行だけ
+    now.querySelector(".edit-link").click();
+    const editRow = document.querySelector('#list-items .list-item[data-edit-qid="' + qid + '"]');
+    res.editShown = !!editRow && !!editRow.querySelector("#edit-q-input");
+    res.neighborSameAfterEdit = rows()[6] === neighbor;
+    document.getElementById("edit-cancel-btn").click();
+    res.backToNormal = !!document.querySelector('#list-items .list-item[data-qid="' + qid + '"]') &&
+      !document.querySelector('#list-items .list-item[data-edit-qid]');
+    res.neighborSameAfterCancel = rows()[6] === neighbor;
+    return res;
+  });
+  t.is("＋を押した行の正解数が1になる", r.correctNum, "1");
+  t.ok("押した行は新しく描き直される", r.replaced);
+  t.ok("★となりの行は作り直されない（同じ要素のまま）", r.neighborSame);
+  t.is("行の数は変わらない", r.rowCount, total);
+  t.ok("「文章を直す」でその行だけ編集の形になる", r.editShown && r.neighborSameAfterEdit);
+  t.ok("キャンセルでその行だけ元にもどる", r.backToNormal && r.neighborSameAfterCancel);
+});
+
 await test("基本の通し（出題・問題一覧）", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());

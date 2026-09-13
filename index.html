@@ -4286,6 +4286,7 @@ function renderListItems(){
   }
   els["list-count"].textContent = indices.length+"問";
   els["list-items"].innerHTML = "";
+  const gen = ++listRenderGen;   // ★前の描き直しの「続き」が残っていたら、ここで捨てる
   if(indices.length === 0){
     const empty = document.createElement("div");
     empty.className = "empty-note";
@@ -4293,7 +4294,40 @@ function renderListItems(){
     els["list-items"].appendChild(empty);
     return;
   }
-  indices.forEach(i=>{
+  // ★開いた時点では全部を描かない（2026-09-13）。
+  //   以前は全件（1377行）をいっぺんに作っていたので、行が1つも出ないまま待たされていた。
+  //   最初の20行だけすぐ描き、残りは60行ずつ、あいだに画面の更新と操作を挟みながら足す。
+  //   ★行を足す途中で絞りこみなどの描き直しが始まったら、古い続きは gen で止める
+  //   （止めないと、新しい一覧の後ろに古い一覧の行がつながる）
+  const FIRST_ROWS = 20, ROWS_PER_STEP = 60;
+  let pos = 0;
+  const appendUpTo = end => { for(; pos < end; pos++) els["list-items"].appendChild(buildListRow(indices[pos])); };
+  appendUpTo(Math.min(FIRST_ROWS, indices.length));
+  const step = () => {
+    if(gen !== listRenderGen) return;
+    appendUpTo(Math.min(pos + ROWS_PER_STEP, indices.length));
+    if(pos < indices.length) setTimeout(step, 0);
+  };
+  if(pos < indices.length) setTimeout(step, 0);
+}
+let listRenderGen = 0;
+
+// ★押した行だけ描き直す（2026-09-13）。
+//   以前は〇✕・正解数・日付を1つ変えるたびに一覧を全部作り直していた。
+//   画面の外の行は content-visibility で「高さの仮置き 400px」に戻るため、
+//   押した行の位置が318pxずれ、描き直しにも時間がかかっていた（tools/mikaku/jump3.mjs）。
+//   ★絞りこみ（未実施のみ など）の条件から外れた行も、その場では消さない。
+//   押した指の下から行が消えると、次に押す行がずれるため。絞りこみを押し直すと反映される
+function renderListRow(qid){
+  const sel = '.list-item[data-qid="'+CSS.escape(qid)+'"], .list-item[data-edit-qid="'+CSS.escape(qid)+'"]';
+  const old = els["list-items"].querySelector(sel);
+  if(!old) return;   // まだ描いていない行（続きを足す途中）なら、足すときに新しい状態で描かれる
+  const i = QA_DATA.findIndex(d => d.id === qid);
+  if(i < 0) return;
+  old.replaceWith(buildListRow(i));
+}
+
+function buildListRow(i){
     const base = QA_DATA[i];
     const d = getQ(i);
     const isEdited = !!edits[base.id];
@@ -4302,6 +4336,7 @@ function renderListItems(){
     item.className = "list-item";
 
     if(editingId === base.id){
+      item.dataset.editQid = base.id;   // 押した行だけ描き直すときの目印（data-qid は振り分けの対象外にするため付けない）
       item.innerHTML =
         '<div class="list-unit-tag">'+escapeHtml(d.u)+'</div>'+
         '<div class="edit-field-label">問題文</div>'+
@@ -4313,14 +4348,13 @@ function renderListItems(){
           '<div class="edit-btn save" id="edit-save-btn">保存する</div>'+
         '</div>'+
         '<div class="edit-link" id="edit-report-btn" style="margin-top:10px; text-align:center; display:block;">🐙 保存してGitHubに報告する</div>';
-      els["list-items"].appendChild(item);
       const qInput = item.querySelector("#edit-q-input");
       const aInput = item.querySelector("#edit-a-input");
       qInput.value = d.q;
       aInput.value = d.a;
       item.querySelector("#edit-cancel-btn").addEventListener("click", ()=>{
         editingId = null;
-        renderListItems();
+        renderListRow(base.id);
       });
       function applyListEdit(){
         const newQ = qInput.value.trim();
@@ -4336,7 +4370,7 @@ function renderListItems(){
         }
         saveEdits();
         editingId = null;
-        renderListItems();
+        renderListRow(base.id);
         return {newQ, newA};
       }
       item.querySelector("#edit-save-btn").addEventListener("click", ()=>{
@@ -4347,7 +4381,7 @@ function renderListItems(){
         if(!result) return;
         reportEditToGitHub(base.id, base.u, base.q, base.a, result.newQ, result.newA);
       });
-      return;
+      return item;
     }
 
     const s = stats[base.id] || {correct:0, wrong:0};
@@ -4398,8 +4432,7 @@ function renderListItems(){
     // 行ごとのボタンにはリスナーを付けない。親に1組だけ付けて振り分ける（下の
     // setupListDelegation を参照）。どの問題の行かは data-qid から取る
     item.dataset.qid = base.id;
-    els["list-items"].appendChild(item);
-  });
+    return item;
 }
 
 // ---- 一覧の各行のボタンは、行ごとにリスナーを付けず、親に1組だけ付けて振り分ける。
@@ -4418,19 +4451,27 @@ function setupListDelegation(){
     const img = e.target.closest(".list-img-wrap img");
     if(img){ openLightbox(img.src); return; }
     const statusBtn = e.target.closest(".status-btn");
-    if(statusBtn){ setStatus(qid, statusBtn.dataset.status); renderListItems(); return; }
+    // ★ここから下は、押した行だけ描き直す（renderListRow）。一覧全体は作り直さない
+    if(statusBtn){ setStatus(qid, statusBtn.dataset.status); renderListRow(qid); return; }
     const countBtn = e.target.closest(".count-btn");
     if(countBtn){
       adjustStat(qid, countBtn.dataset.field, parseInt(countBtn.dataset.delta, 10));
-      renderListItems();
+      renderListRow(qid);
       return;
     }
-    if(e.target.closest(".edit-link")){ editingId = qid; renderListItems(); return; }
+    if(e.target.closest(".edit-link")){
+      // 別の行を編集中だったら、その行は元の表示にもどす（編集できるのは1行だけ）
+      const prev = editingId;
+      editingId = qid;
+      if(prev && prev !== qid) renderListRow(prev);
+      renderListRow(qid);
+      return;
+    }
     if(e.target.closest(".revert-link")){
       if(confirm("この問題を元の文章にもどしますか？")){
         delete edits[qid];
         saveEdits();
-        renderListItems();
+        renderListRow(qid);
       }
       return;
     }
@@ -4440,7 +4481,7 @@ function setupListDelegation(){
     if(!item || !item.dataset.qid) return;
     const qid = item.dataset.qid;
     const dateInput = e.target.closest("[data-date-field]");
-    if(dateInput){ setStatDate(qid, dateInput.dataset.dateField, dateInput.value); renderListItems(); return; }
+    if(dateInput){ setStatDate(qid, dateInput.dataset.dateField, dateInput.value); renderListRow(qid); return; }
     if(e.target.classList.contains("q-select-checkbox")){
       if(e.target.checked) selectedQuestionIds.add(qid);
       else selectedQuestionIds.delete(qid);
