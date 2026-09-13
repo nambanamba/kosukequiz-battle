@@ -446,8 +446,17 @@
   }
   .img-wrap{ position:relative; }   /* 赤丸の層を重ねる基準 */
   .img-wrap img{
-    max-width:100%;
-    max-height:220px;
+    /* ★2026-09-13 ユーザー依頼「横に隙間はいらない」「横幅はデバイスに合わせて大きく」。
+       以前は max-height 220px（縦長は400px）で止めていたため、contain で縮めた絵の左右に
+       白い帯が出ていた（実測: 幅390pxで年表 kai2_05 は絵が229px／枠314px、左右42pxずつ）。
+       ★幅は枠いっぱい。高さは縦横比で決める（height:auto で width/height 属性の実寸を打ち消す。
+         属性は、読み込み前に縦横比ぶんの場所を取るために残してある）。
+       ★画面の高さの85%を超える縦長の画像だけ、幅ごと縮める。--img-ratio（幅÷高さ）は
+         setImgWithSize が入れる。高さで止めて幅を枠いっぱいのままにすると、また白い帯が出る。 */
+    width:100%;
+    width:min(100%, calc(85vh * var(--img-ratio, 100)));
+    width:min(100%, calc(85svh * var(--img-ratio, 100)));
+    height:auto;
     /* ★object-fit を指定しないと既定の fill になり、縦横比が壊れる。
        max-width と max-height は別々に効くので、縦長の画像は
        枠（312×220）にあわせて横に伸ばされる。2026-09-12 の実測では、
@@ -478,12 +487,9 @@
     border-radius:50%;
     box-shadow:0 0 0 1px rgba(255,255,255,.7) inset;
   }
-  /* ★縦長の画像だけ、枠を高くする（setImgWithSize が .tall を付ける）。
-     220pxのままだと年表（1216×2126）が幅126pxにしかならず、
-     「一目で年表に見える」必要を満たせない。横長は220pxで足りている。 */
-  .img-wrap img.tall{
-    max-height:400px;
-  }
+  /* 以前ここにあった「縦長の画像だけ max-height 400px」は、2026-09-13 に上の
+     「幅いっぱい＋画面の高さの85%まで」に置きかえた（400pxで止めると左右に白い帯が出るため）。
+     .tall のクラスは、問題一覧（.list-img-wrap img.tall）でまだ使っている。 */
   /* ---- 問題文と答えは、データに入れた改行をそのまま出す。
          チャレンジ問題の引用など、選択肢ア〜エが並ぶ長い問題文が1行に潰れて
          スマホで読めなかったため。pre-wrap は連続スペースもそのまま出すが、
@@ -2041,8 +2047,8 @@ function isTallImg(filename){
 }
 function setImgWithSize(imgEl, filename, qid, layerEl){
   const sz = IMG_SIZES[filename];
-  if(sz){ imgEl.width = sz[0]; imgEl.height = sz[1]; }
-  else { imgEl.removeAttribute("width"); imgEl.removeAttribute("height"); }
+  if(sz){ imgEl.width = sz[0]; imgEl.height = sz[1]; imgEl.style.setProperty("--img-ratio", sz[0] / sz[1]); }
+  else { imgEl.removeAttribute("width"); imgEl.removeAttribute("height"); imgEl.style.removeProperty("--img-ratio"); }
   imgEl.classList.toggle("tall", isTallImg(filename));
   imgEl.src = "images/"+filename;
   if(layerEl){
