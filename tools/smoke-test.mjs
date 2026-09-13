@@ -832,6 +832,63 @@ await test("一覧: 絞りこみはたたんでおけて、閉じても条件が
   t.ok("★開いたままにしたら、次に一覧を開いたときも開いている", s.panel, s);
 });
 
+await test("正解数＝連続正解数: まちがえると未クリアにもどる（保存された記録は書きかえない）", async t => {
+  // 2026-09-13 ユーザー判断「正解数そのものを連続正解数にする」。
+  // 以前は累計の正解数で「正解ずみ」を決めていたので、一度正解すると、まちがえても未クリアに戻らなかった
+  await t.open();
+  const { history } = await pickUnits(t.page);
+  const ids = await t.page.evaluate(u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").slice(0, 4).map(q => q.id), history);
+  const T = new Date(2026, 8, 1).getTime();
+  const seed = {
+    [ids[0]]: { correct: 5, wrong: 2, box: 0, lastCorrectAt: T, lastAnswered: T },   // ① 累計5回正解・直近まちがえた
+    [ids[1]]: { correct: 3, wrong: 0, box: 3, lastCorrectAt: T, lastAnswered: T },   // ② 3回続けて正解
+    [ids[2]]: { correct: 1, wrong: 1, box: 0, lastCorrectAt: T, lastAnswered: T },   // ③ 1回正解してから、まちがえた
+  };                                                                                // ④ ids[3] は記録なし
+  await t.page.evaluate(s => {
+    localStorage.clear();
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(s));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+  }, seed);
+  await t.reload();
+  await t.clickUnit("ALL");
+  await t.openHistory();
+  await t.clickUnit(history);
+  const home = await t.page.evaluate(() => ({
+    total: +document.getElementById("stat-total").textContent,
+    mastered: +document.getElementById("stat-mastered").textContent,
+    weak: +document.getElementById("stat-weak").textContent }));
+  t.is("★ホームの「正解済み数」は、連続正解がある②だけの1問（以前は累計で①②③の3問）", home.mastered, 1);
+  t.is("苦手な問題は①③の2問（判定は変えていない）", home.weak, 2);
+  t.ok("未クリア＝全問題数−正解済み数", home.total - home.mastered >= 3, home);
+
+  const stored = await t.stats();
+  t.is("★保存された記録は書きかわっていない", ids.slice(0, 3).map(i => stored[i]), ids.slice(0, 3).map(i => seed[i]));
+
+  // CSV: 「正解した回数」は累計のまま、最後に「連続正解数」の列
+  const [dl] = await Promise.all([t.page.waitForEvent("download"), t.page.click("#export-link")]);
+  const csvPath = path.join(await fs.promises.mkdtemp(path.join(os.tmpdir(), "kq-")), "export.csv");
+  await dl.saveAs(csvPath);
+  const lines = fs.readFileSync(csvPath, "utf8").replace(/^﻿/, "").split("\r\n");
+  t.ok("CSVの最後の列が「連続正解数」", lines[0].endsWith(",連続正解数"), lines[0]);
+  const line2 = lines.find(l => l.startsWith(ids[1] + ","));
+  t.ok("②の行: 正解した回数は累計3・連続正解数は3", line2 && line2.endsWith(",3") && line2.includes(",3,0,"), line2);
+
+  // まっさらに読みこむ → 新しくできた記録は、列の値を連続正解数にする
+  await t.page.evaluate(() => localStorage.setItem("kq_battle_stats_v1", "{}"));
+  await t.reload();
+  await t.page.setInputFiles("#import-file", csvPath); await t.page.waitForTimeout(1200);
+  let st = await t.stats();
+  t.is("新しくできた記録は、CSVの連続正解数を使う（①0・②3）", [st[ids[0]] && st[ids[0]].box, st[ids[1]] && st[ids[1]].box], [0, 3]);
+
+  // すでに記録がある問題 → 連続正解数は上げない（古いファイルで苦手が消えないように）
+  await t.page.evaluate(([i, T]) => localStorage.setItem("kq_battle_stats_v1",
+    JSON.stringify({ [i]: { correct: 3, wrong: 1, box: 0, lastCorrectAt: T, lastAnswered: T } })), [ids[1], T]);
+  await t.reload();
+  await t.page.setInputFiles("#import-file", csvPath); await t.page.waitForTimeout(1200);
+  st = await t.stats();
+  t.is("★すでにある記録の連続正解数は、CSVを読んでも上がらない", st[ids[1]].box, 0);
+});
+
 await test("基本の通し（出題・問題一覧）", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());

@@ -2442,9 +2442,15 @@ function saveStats(){
     console.error("save stats failed", e);
   }
 }
+// ★「正解ずみ（未クリアではない）」＝連続正解数（box）が1以上（2026-09-13 ユーザー判断）。
+//   以前は累計の正解数（correct）で決めていたので、一度でも正解すれば、そのあと何度まちがえても
+//   「未クリア」に戻らなかった。ユーザーの選択は「正解数そのものを連続正解数にする」
+//   （まちがえると0に戻る）。★苦手の判定（isWeak）と次に出す日（nextDue）の仕組みは変えていない。
+//   ★端末に保存された記録は書きかえない。box はふだん答えるたびに既に保存されているので、読む値を
+//   変えるだけで済む。累計の correct は残してあるが、判定と画面の「正解数」には使わない
 function isMastered(id){
   const s = stats[id];
-  return !!(s && (s.correct||0) > 0);
+  return !!(s && (s.box||0) > 0);
 }
 // ---- 間隔反復（スペースドリピティション）: 正解するたび「箱」を1つ進めて
 //      次に出す間隔を伸ばし、間違えたら箱を0に戻す。box自体が「直近の連続
@@ -2490,13 +2496,25 @@ function setStatus(id, status){
   }
   saveStats();
 }
+// ひとり練習の「正解数」「誤答数」の＋－と、「ひとつ前にもどる」から使う。
+// ★2026-09-13 から「正解数」は連続正解数（box）。＋で1つ上げ、－で1つ下げる（0〜BOX_INTERVAL_DAYS の上限）。
+//   ＋したときは、ふだん正解したときと同じく累計（correct）と最後に正解した日も進める。
+//   誤答を＋したときは、ふだんまちがえたときと同じく連続が切れる（box を0に戻す）。
+//   box を動かしたら、次に出す日（nextDue）もその箱の間隔で決め直す。
+//   ⚠️「ひとつ前にもどる」で✕を取り消しても、切れる前の連続正解数は戻らない（前からそう。保存していないため）
 function adjustStat(qid, field, delta){
   const s = stats[qid] || {correct:0, wrong:0};
-  s[field] = Math.max(0, (s[field]||0) + delta);
-  if(field === "correct" && delta > 0) s.lastCorrectAt = Date.now();
-  if(field === "correct" && s.correct === 0) delete s.lastCorrectAt; // 正解を0まで戻したら正解日も消す
-  if(s.correct === 0 && s.wrong === 0){
-    delete stats[qid];
+  const maxBox = BOX_INTERVAL_DAYS.length - 1;
+  if(field === "correct"){
+    s.box = Math.min(maxBox, Math.max(0, (s.box||0) + delta));
+    if(delta > 0){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = Date.now(); }
+  }else{
+    s.wrong = Math.max(0, (s.wrong||0) + delta);
+    if(delta > 0) s.box = 0;
+  }
+  s.nextDue = Date.now() + BOX_INTERVAL_DAYS[s.box||0] * 24 * 60 * 60 * 1000;
+  if((s.box||0) === 0 && (s.wrong||0) === 0){
+    delete stats[qid];   // 正解数（連続）も誤答数も0なら「未実施」にもどす
   }else{
     s.lastAnswered = Date.now();
     stats[qid] = s;
@@ -4477,7 +4495,7 @@ function buildListRow(i){
           '<span class="count-label">正解数</span>'+
           '<span class="count-controls">'+
             '<span class="count-btn" data-field="correct" data-delta="-1">－</span>'+
-            '<span class="count-num">'+(s.correct||0)+'</span>'+
+            '<span class="count-num">'+(s.box||0)+'</span>'+
             '<span class="count-btn" data-field="correct" data-delta="1">＋</span>'+
           '</span>'+
         '</div>'+
@@ -4740,17 +4758,20 @@ function parseCSV(text){
 }
 
 els["export-link"].addEventListener("click", ()=>{
-  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日","最終回答日"]];
+  // ★「正解した回数」は、これまでどおり累計（correct）。元のアプリや古いファイルとの読み書きを変えないため。
+  //   2026-09-13 からアプリの「正解数」は連続正解数なので、最後に「連続正解数」の列を足した
+  const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日","最終回答日","連続正解数"]];
   QA_DATA.forEach(d=>{
     const s = stats[d.id] || {correct:0, wrong:0};
     const correct = s.correct||0;
+    const streak = stats[d.id] ? (s.box||0) : "";
     const wrong = s.wrong||0;
     let status = "未回答";
     if(isWeak(d.id)) status = "苦手";
     else if(isMastered(d.id)) status = "正解ずみ";
     const lastCorrect = s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "";
     const lastAnswered = s.lastAnswered ? dateToYMD(s.lastAnswered) : "";
-    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect, lastAnswered]);
+    rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect, lastAnswered, streak]);
   });
   const csv = rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
@@ -4820,6 +4841,7 @@ els["import-file"].addEventListener("change", (e)=>{
       const lastCorrectIdx = header.indexOf("最終正答日");
       const lastAnsweredIdx = header.indexOf("最終回答日");
       const statusIdx = header.indexOf("状態");
+      const streakIdx = header.indexOf("連続正解数");   // 2026-09-13 に足した列。古いファイルには無い
       if(qIdx === -1 || correctIdx === -1 || wrongIdx === -1){
         alert("このCSVの形式を読み取れませんでした。kosukequiz（元のアプリ）またはこの対戦アプリからエクスポートしたファイルを選んでください。");
         return;
@@ -4860,6 +4882,13 @@ els["import-file"].addEventListener("change", (e)=>{
         // 取り込みで初めてできた記録には間隔反復の箱が無い。「状態」列があれば
         // それに合わせ（苦手→0、正解ずみ→1）、無ければ正誤の回数から決める。
         // 箱は「直近の連続正解数」を兼ねるので、苦手判定にもそのまま効く
+        // ★2026-09-13 から box は画面の「正解数」そのもの。すでに記録がある問題の box は、これまでどおり触らない
+        //   （古いファイルを読んで連続正解数が上がり、苦手が消えてしまわないように）。
+        //   初めてできる記録だけ、「連続正解数」の列があればその値を使う
+        const importedStreak = streakIdx !== -1 ? parseInt(row[streakIdx], 10) : NaN;
+        if(next.box === undefined && !isNaN(importedStreak)){
+          next.box = Math.min(BOX_INTERVAL_DAYS.length - 1, Math.max(0, importedStreak));
+        }
         if(next.box === undefined){
           const status = statusIdx !== -1 ? row[statusIdx] : "";
           if(status === "苦手") next.box = 0;
@@ -4954,7 +4983,7 @@ function startSoloCard(){
 function refreshSoloCountRow(){
   const qid = QA_DATA[quizQueue[quizPos]].id;
   const s = stats[qid] || {correct:0, wrong:0};
-  els["solo-count-correct"].textContent = s.correct||0;
+  els["solo-count-correct"].textContent = s.box||0;   // ★正解数＝連続正解数（2026-09-13）
   els["solo-count-wrong"].textContent = s.wrong||0;
 }
 
