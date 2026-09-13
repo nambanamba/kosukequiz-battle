@@ -3183,7 +3183,11 @@ function saveBattleSession(){
       currentIndex: currentIndex,
       scores: scores,
       hostSkippedIds: Array.from(hostSkippedIds),
-      inMissRetryRound: inMissRetryRound
+      inMissRetryRound: inMissRetryRound,
+      // ★再開で失うと困るもの（2026-09-13）: まちがいリスト／記録ずみ・採点ずみの問題番号
+      misses: myMissesThisRound,
+      recordedIdx: hostRecordedIdx,
+      scoredIdx: hostScoredIdx
     }));
   }catch(e){}
 }
@@ -4925,6 +4929,13 @@ let opponentVerdictOfMe = null; // true/false: what my opponent decided about my
 let scored = false;
 let hostSkippedIds = new Set(); // host-only: question ids the host has skipped this game
 let myMissesThisRound = []; // this device's own wrong answers this round, for "前回まちがえた問題"
+// ★ホストの再開用（2026-09-13）。この問題番号の「自分の記録」を入れた／採点まで済んだ。
+//   リロードして同じ問題に戻ったとき、記録を二重に入れないために使う
+let hostRecordedIdx = -1;
+let hostScoredIdx = -1;
+// ★まちがいリストを持たない古い保存から再開したとき true。途中までのリストが分からないので、
+//   ラウンドの最後に「前回まちがえた問題」を上書きしない
+let missesUnknown = false;
 let inMissRetryRound = false; // 「まちがえた問題だけもう一勝負」ラウンド中かどうか（host/guest共通）。
                                // このラウンドは元々間違えた問題だけなので、正解できても
                                // 持ち越しの正誤記録は「誤り」のまま扱う（+1されない）
@@ -5256,6 +5267,9 @@ function leaveRoom(){
   hostSkippedIds = new Set();
   inMissRetryRound = false;
   myMissesThisRound = [];
+  hostRecordedIdx = -1;
+  hostScoredIdx = -1;
+  missesUnknown = false;
   gameStarted = false;
   joinFairUnits = new Set();
   els["join-fair-units"].style.display = "none";
@@ -5365,8 +5379,13 @@ function setupActions(){
     const qid = questionIds[currentIndex];
     const forcedWrong = inMissRetryRound || (role === "host" && hostSkippedIds.has(qid));
     const finalCorrect = forcedWrong ? false : data.correct;
-    recordResult(qid, finalCorrect);
-    if(!data.correct) myMissesThisRound.push(qid);
+    // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
+    //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
+    if(!(role === "host" && hostRecordedIdx === currentIndex)){
+      recordResult(qid, finalCorrect);
+      if(!data.correct) myMissesThisRound.push(qid);
+      if(role === "host"){ hostRecordedIdx = currentIndex; saveBattleSession(); }
+    }
     updateMyResultUI(forcedWrong);
     maybeFinishQuestion();
   };
@@ -5481,7 +5500,17 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   scores = session.scores;
   hostSkippedIds = new Set(session.hostSkippedIds || []);
   inMissRetryRound = !!session.inMissRetryRound;
-  myMissesThisRound = [];
+  // ★まちがいリストも戻す。戻さないと、ラウンドの最後に「もう一勝負」が出ず、
+  //   「前回まちがえた問題」まで空で上書きしてしまう（2026-09-13 実機で発覚）
+  missesUnknown = !Array.isArray(session.misses);
+  myMissesThisRound = missesUnknown ? [] : session.misses.slice();
+  hostRecordedIdx = typeof session.recordedIdx === "number" ? session.recordedIdx : -1;
+  hostScoredIdx = -1;
+  // 採点まで済んだ問題には戻らない（戻ると記録と得点が二重に入る）
+  if(session.scoredIdx === currentIndex) currentIndex += 1;
+  // ★表示欄に部屋のコードを戻す。saveBattleSession はここから読むので、
+  //   戻さないと次の保存で「----」になり、2回目のリロードで相手のいない部屋に入る
+  els["room-code-display"].textContent = session.code;
   gameStarted = true; // a peer joining now is a reconnect, not a fresh start
   resetAvatars(); // the power-up level is cosmetic only and not persisted
   setupAvatarLabels();
@@ -5810,6 +5839,7 @@ function maybeFinishQuestion(){
   if(hostCorrect && !guestCorrect) triggerAttackEffect();
   if(role === "host"){
     els["next-btn"].classList.add("show");
+    hostScoredIdx = currentIndex;
     saveBattleSession();
     startNextCountdown();
   }
@@ -5855,7 +5885,7 @@ function endGame(){
   const opp = role === "host" ? scores.guest : scores.host;
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
-  saveLastMiss(myMissesThisRound);
+  if(!missesUnknown) saveLastMiss(myMissesThisRound);
   stopResultRetryCountdown();
   hideGuestRetryCountdown();
   // only the host can start a new round (host is the questionIds authority),
@@ -5884,6 +5914,9 @@ function startMissRetryRound(){
   inMissRetryRound = true;
   scores = {host:0, guest:0};
   myMissesThisRound = [];
+  missesUnknown = false;
+  hostRecordedIdx = -1;
+  hostScoredIdx = -1;
   resetAvatars();
   setupAvatarLabels();
   showScreen("screen-battle");
@@ -5914,6 +5947,9 @@ const FAIR_START_TOGETHER_COUNTDOWN_SEC = 20; // 公平モード: ゲストが�
 function startBattleNow(){
   scores = {host:0, guest:0};
   myMissesThisRound = [];
+  missesUnknown = false;
+  hostRecordedIdx = -1;
+  hostScoredIdx = -1;
   resetAvatars();
   setupAvatarLabels();
   showScreen("screen-battle");
