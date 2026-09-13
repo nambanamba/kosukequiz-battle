@@ -291,63 +291,51 @@ await test("やり直しラウンドで正解しても苦手のまま", async t 
   t.is("正解日は入らない", s.lastCorrectAt, undefined);
 });
 
-await test("一覧の「記録を直す」: 保存を押すまで変わらない／4つの欄を直せる", async t => {
-  // 2026-09-13 ユーザー判断（案2）。以前は＋−と日付の欄がその場で保存されていた。
-  // 直せるのは 正解数（＝連続正解数 box）／誤答数／最後に正解した日／最後に解いた日
+await test("一覧で、正解数（連続）・誤答数・2つの日付を行の上で直せる", async t => {
+  // 2026-09-13 ユーザー原文「一覧画面で、正答数、誤答数の修正、正答日、実施日の修正がしたいです」。
+  // いちど「記録を直す」の画面にしたが意図と違ったので、行の上の＋−と日付の欄に戻した（正解数は連続正解数）
   await t.open();
-  const id = await t.page.evaluate(() => QA_DATA[0].id);
+  const { id, unit } = await t.page.evaluate(() => ({ id: QA_DATA[0].id, unit: QA_DATA[0].u }));
   const c = new Date(2026, 7, 15).getTime(), a = new Date(2026, 7, 20).getTime();
-  const seed = { correct: 2, wrong: 1, box: 1, lastCorrectAt: c, lastAnswered: a, nextDue: new Date(2026, 7, 21).getTime() };
-  await t.page.evaluate(([i, s]) => {
+  await t.page.evaluate(([i, cc, aa]) => {
     localStorage.clear();
-    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({ [i]: s }));
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify({ [i]: { correct: 2, wrong: 1, box: 1, lastCorrectAt: cc, lastAnswered: aa } }));
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
-  }, [id, seed]);
+  }, [id, c, a]);
   await t.reload();
-  await t.page.click("#list-btn");
+  await t.page.click("#list-btn"); await t.page.waitForTimeout(400);
+  await t.page.selectOption("#list-unit-select", unit);
   const row = `#list-items .list-item[data-qid="${id}"]`;
   await t.page.waitForSelector(row);
-  const line = await t.page.$eval(row + " .list-record-line", e => e.textContent);
-  t.ok("行に記録が1行で出る（正解数は連続・日付2つ）",
-    line.includes("正解数（連続）1") && line.includes("誤答数 1") && line.includes("2026/08/15") && line.includes("2026/08/20"), line);
-  t.ok("〇✕ボタンは残っている", !!(await t.page.$(row + ' .status-btn[data-status="mastered"]')));
+  const read = () => t.page.$eval(row, e => ({
+    correctAt: e.querySelector('[data-date-field="lastCorrectAt"]').value,
+    answered: e.querySelector('[data-date-field="lastAnswered"]').value,
+    nums: [...e.querySelectorAll(".count-num")].map(n => n.textContent)
+  }));
+  let v = await read();
+  t.is("最後に正解した日が出る", v.correctAt, "2026-08-15");
+  t.is("最後に解いた日も出る", v.answered, "2026-08-20");
+  t.is("正解数（連続）と誤答数が行に出る", v.nums, ["1", "1"]);
+  t.ok("〇✕ボタンも残っている", !!(await t.page.$(row + ' .status-btn[data-status="mastered"]')));
 
-  const setField = (f, v) => t.page.$eval(`${row} [data-rec-field="${f}"]`, (e, v) => {
-    e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); e.dispatchEvent(new Event("change", { bubbles: true }));
-  }, v);
+  // 日付を直す → その場で記録に入り、正誤の数は変わらない
+  await t.page.$eval(row + ' [data-date-field="lastCorrectAt"]', e => {
+    e.value = "2026-09-03"; e.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await t.page.waitForTimeout(300);
+  let rec = (await t.stats())[id];
+  t.is("直した日付が記録に入る", ymd(rec.lastCorrectAt), "2026-09-03");
+  t.is("正解数（連続）・誤答数は変わらない", [rec.box, rec.wrong], [1, 1]);
 
-  // 開いて書きかえてもキャンセル → 何も変わらない
-  await t.page.$eval(row + " .record-edit-link", e => e.click());
-  t.ok("★開いている間は〇✕ボタンを出さない（保存のすぐ下で押しまちがえないように）",
-    !!(await t.page.$(row + " .record-form")) && !(await t.page.$(row + " .status-btn")));
-  await setField("wrong", "5");
-  await setField("lastCorrectAt", "2026-09-03");
-  t.is("★保存を押すまで記録は変わらない", (await t.stats())[id], seed);
-  await t.page.$eval(row + " .record-cancel", e => e.click());
-  t.is("キャンセルしたら記録はそのまま", (await t.stats())[id], seed);
-  t.ok("キャンセルで1行の表示にもどる", !(await t.page.$(row + " .record-form")) && !!(await t.page.$(row + " .list-record-line")));
-
-  // 範囲外は保存しない
-  await t.page.$eval(row + " .record-edit-link", e => e.click());
-  await setField("box", "9");
-  await t.page.$eval(row + " .record-save", e => e.click());
-  await t.page.waitForTimeout(200);
-  t.is("正解数（連続）が0〜7の外なら保存しない", (await t.stats())[id], seed);
-
-  // 4つ直して保存
-  await setField("box", "3");
-  await setField("wrong", "4");
-  await setField("lastCorrectAt", "2026-09-03");
-  await setField("lastAnswered", "2026-09-05");
-  await t.page.$eval(row + " .record-save", e => e.click());
-  await t.page.waitForTimeout(200);
-  const rec = (await t.stats())[id];
-  t.is("★保存すると4つが入る（連続3・誤答4・日付2つ）",
-    [rec.box, rec.wrong, ymd(rec.lastCorrectAt), ymd(rec.lastAnswered)], [3, 4, "2026-09-03", "2026-09-05"]);
-  t.ok("累計の正解数は連続より小さくならない（2→3）", rec.correct === 3, rec.correct);
-  t.ok("連続正解数を変えたので、次に出す日が決め直される", rec.nextDue !== seed.nextDue, rec.nextDue);
-  const line2 = await t.page.$eval(row + " .list-record-line", e => e.textContent);
-  t.ok("保存したら1行の表示にもどり、新しい値が出る", line2.includes("正解数（連続）3") && line2.includes("誤答数 4"), line2);
+  // ＋− → 正解数は連続正解数（box）
+  await t.page.$eval(row + ' .count-btn[data-field="correct"][data-delta="1"]', e => e.click());
+  rec = (await t.stats())[id];
+  t.is("★正解数（連続）の＋で連続が1つ上がる", rec.box, 2);
+  await t.page.$eval(row + ' .count-btn[data-field="wrong"][data-delta="1"]', e => e.click());
+  rec = (await t.stats())[id];
+  t.is("★誤答数を＋すると連続が0に切れる", [rec.box, rec.wrong], [0, 2]);
+  v = await read();
+  t.is("行の数字も変わる", v.nums, ["0", "2"]);
 });
 
 await test("CSVの書き出しと読み込みで記録が失われない", async t => {
@@ -777,8 +765,19 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
   await t.page.evaluate(() => localStorage.clear());
   await t.reload();
 
-  // ★開いた直後に絞りこみを変える。古い「続き」が止まらないと、0件のはずの一覧に行が足される
   await t.page.click("#list-btn");
+  await t.page.waitForTimeout(300);
+  // ★2026-09-13 ユーザー原文「絞り込みを押すまで何も出さない。いまだといきなり全件読もうとするので非常に時間が掛かります」
+  t.ok("★開いたときは何も描かず「単元か絞りこみを選んでください」と出す",
+    await t.page.evaluate(() => document.querySelectorAll("#list-items .list-item").length === 0 &&
+      document.getElementById("list-items").textContent.includes("単元か絞りこみを選んでください")));
+  // ★いちばん問題の多い単元を選び、その直後に絞りこみを変える。古い「続き」が止まらないと、0件のはずの一覧に行が足される
+  const bigUnit = await t.page.evaluate(() => {
+    const c = {};
+    QA_DATA.filter(q => q.subj === "社会" && q.kind !== "calc").forEach(q => { c[q.u] = (c[q.u] || 0) + 1; });
+    return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
+  });
+  await t.page.selectOption("#list-unit-select", bigUnit);
   await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-filter="weak"]').click());
   await t.page.waitForTimeout(1500);
   t.is("★描き直しが途中で始まっても、古い行が混ざらない（苦手0問なので0行）",
@@ -796,12 +795,11 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
   const r = await t.page.evaluate(() => {
     const rows = () => [...document.querySelectorAll("#list-items .list-item")];
     const target = rows()[5], neighbor = rows()[6], qid = target.dataset.qid;
-    // 行の＋−は「記録を直す」に置きかわったので、〇ボタンで記録を変える
-    target.querySelector('.status-btn[data-status="mastered"]').click();
+    target.querySelector('.count-btn[data-field="correct"][data-delta="1"]').click();
     const now = document.querySelector('#list-items .list-item[data-qid="' + qid + '"]');
     const res = {
       replaced: now !== target,
-      correctNum: now.querySelector(".list-record-line").textContent,
+      correctNum: now.querySelector(".count-stepper.ok .count-num").textContent,
       neighborSame: rows()[6] === neighbor,
       rowCount: rows().length
     };
@@ -816,7 +814,7 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
     res.neighborSameAfterCancel = rows()[6] === neighbor;
     return res;
   });
-  t.ok("〇を押した行の記録が「正解数（連続）1」になる", r.correctNum.includes("正解数（連続）1"), r.correctNum);
+  t.is("＋を押した行の正解数（連続）が1になる", r.correctNum, "1");
   t.ok("押した行は新しく描き直される", r.replaced);
   t.ok("★となりの行は作り直されない（同じ要素のまま）", r.neighborSame);
   t.is("行の数は変わらない", r.rowCount, total);
@@ -824,37 +822,39 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
   t.ok("キャンセルでその行だけ元にもどる", r.backToNormal && r.neighborSameAfterCancel);
 });
 
-await test("一覧: 絞りこみはたたんでおけて、閉じても条件が1行で出る", async t => {
-  // 2026-09-13 ユーザー判断（案A）。開閉は覚える／閉じていても条件を1行で出す
+await test("メイン画面: 出題タイプ・優先度・難易度はたたんでおけて、閉じても条件が1行で出る", async t => {
+  // 2026-09-13 ユーザー原文「メインの画面の難易度などのフィルタをパネルで隠してほしい件、対応されていません」
+  // ★いちど一覧の絞りこみのほうをたたんでいた（取り違え）。一覧はたたまない形に戻した
   await t.open();
   await t.page.evaluate(() => localStorage.clear());
   await t.reload();
-  await t.page.click("#list-btn"); await t.page.waitForTimeout(400);
   const st = () => t.page.evaluate(() => ({
-    panel: !document.getElementById("list-filter-panel").hidden,
-    btn: document.getElementById("list-filter-open").textContent,
-    summaryShown: !document.getElementById("list-filter-summary").hidden,
-    summary: document.getElementById("list-filter-summary").textContent
+    panel: !document.getElementById("setup-filter-panel").hidden,
+    btn: document.getElementById("setup-filter-open").textContent,
+    summaryShown: !document.getElementById("setup-filter-summary").hidden,
+    summary: document.getElementById("setup-filter-summary").textContent
   }));
   let s = await st();
   t.ok("はじめは閉じている（条件が無いので要約も出ない）", !s.panel && !s.summaryShown && s.btn === "絞りこみ ▾", s);
-  await t.page.click("#list-filter-open"); await t.page.waitForTimeout(150);
+  t.ok("一覧の絞りこみにはたたむボタンが無い（状態・解いた日はいつも見える）",
+    await t.page.evaluate(() => !document.getElementById("list-filter-open") && !!document.getElementById("list-status-filters")
+      && !!document.getElementById("list-date-from")));
+  await t.page.click("#setup-filter-open"); await t.page.waitForTimeout(150);
   s = await st();
   t.ok("押すと開く", s.panel && s.btn === "絞りこみ ▴", s);
-  await t.page.click('.list-filter-toggle[data-filter="weak"]');
-  await t.page.click('#list-priority-row .toggle[data-list-priority="高"]');
+  await t.page.click("#priority-high");
+  await t.page.click("#level-basic");
   await t.page.waitForTimeout(300);
   s = await st();
   t.is("★ボタンにかかっている条件の数が出る", s.btn, "絞りこみ ▴（2件）");
-  await t.page.click("#list-filter-open"); await t.page.waitForTimeout(150);
+  await t.page.click("#setup-filter-open"); await t.page.waitForTimeout(150);
   s = await st();
-  t.ok("★閉じると、かかっている条件が1行で出る", !s.panel && s.summaryShown && s.summary === "よく間違える・優先度：高", s);
+  t.ok("★閉じると、かかっている条件が1行で出る", !s.panel && s.summaryShown && s.summary === "優先度：高・難易度：基礎", s);
   // 開いたままにして、リロードしても開いている
-  await t.page.click("#list-filter-open");
+  await t.page.click("#setup-filter-open");
   await t.reload();
-  await t.page.click("#list-btn"); await t.page.waitForTimeout(400);
   s = await st();
-  t.ok("★開いたままにしたら、次に一覧を開いたときも開いている", s.panel, s);
+  t.ok("★開いたままにしたら、リロードしても開いている", s.panel, s);
 });
 
 await test("正解数＝連続正解数: まちがえると未クリアにもどる（保存された記録は書きかえない）", async t => {
@@ -934,6 +934,8 @@ await test("基本の通し（出題・問題一覧）", async t => {
   t.is("ホームにもどれる", await t.screen(), "screen-home");
   await t.page.click("#list-btn"); await t.page.waitForTimeout(700);
   t.is("問題一覧をひらける", await t.screen(), "screen-list");
+  // 2026-09-13 から一覧は単元か絞りこみを選ぶまで何も出さないので、単元を選ぶ
+  await t.page.selectOption("#list-unit-select", history); await t.page.waitForTimeout(700);
   const n = await t.page.evaluate(() => document.querySelectorAll(".list-item").length);
   t.ok("一覧に問題が並ぶ", n > 0, n + "件");
 });

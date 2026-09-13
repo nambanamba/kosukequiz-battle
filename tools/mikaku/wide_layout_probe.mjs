@@ -79,7 +79,7 @@ const settingsFor = unit => ({ subject: "社会", unitsBySubject: { "社会": [u
 
 // ---------------------------------------------------------------- A. 画面の並び
 console.log(`==== A. 画面の並び（${LABEL}）`);
-for (const [w, h] of [[390, 844], [768, 1024], [1024, 768], [1280, 800]]) {
+for (const [w, h] of [[390, 844], [800, 1280], [768, 1024], [1024, 768], [1280, 800]]) {
   const { ctx, page } = await makePeer({ width: w, height: h });
   await page.goto(BASE); await page.waitForTimeout(500);
   const unit = await page.evaluate(() => QA_DATA.find(q => q.id === "g2r66").u);
@@ -90,8 +90,35 @@ for (const [w, h] of [[390, 844], [768, 1024], [1024, 768], [1280, 800]]) {
   const shot = async name => { const o = await over(); console.log(`  ${w}x${h} ${name}: 入れ物の幅${o.wrap}px 横スクロール${o.hscroll ? "★あり" : "なし"}`);
     await page.screenshot({ path: path.join(SHOTS, `${LABEL}_${w}x${h}_${name}.png`) }); };
   await shot("home");
+  // メイン画面の「出題タイプ・優先度・難易度」のあたり（2026-09-13 からパネルでたためる）
+  const homeAnchor = (await page.$("#setup-filter-open")) ? "#setup-filter-open" : "#type-all";
+  await page.$eval(homeAnchor, e => e.scrollIntoView({ block: "center" })); await page.waitForTimeout(300);
+  await shot("home_filters");
+  if (await page.$("#setup-filter-open")) {
+    await tap(page, "#setup-filter-open"); await page.waitForTimeout(300);
+    await page.$eval("#setup-filter-open", e => e.scrollIntoView({ block: "start" })); await page.waitForTimeout(300);
+    await shot("home_filters_open");
+    await tap(page, "#setup-filter-open"); await page.waitForTimeout(200);
+  }
+  await page.evaluate(() => scrollTo(0, 0));
   await tap(page, "#list-btn"); await page.waitForTimeout(2500);
   await shot("list");
+  // 単元を1つ選んだ形（2026-09-13 から、一覧は選ぶまで何も出さない）
+  await page.selectOption("#list-unit-select", unit).catch(() => {});
+  await page.waitForTimeout(2500);
+  await shot("list_unit");
+  // 一覧の年表①（g2r66「演習年表①」）の行（2026-09-13 ユーザーが写真で「左右に余白」と指摘した画面）
+  try {
+    await page.waitForSelector('#list-items .list-item[data-qid="g2r66"]', { timeout: 15000 });
+    await page.$eval('#list-items .list-item[data-qid="g2r66"]', e => e.scrollIntoView({ block: "start" }));
+    await page.waitForTimeout(1500);
+    const lm = await page.$eval('#list-items .list-item[data-qid="g2r66"] .list-img-wrap img', img => {
+      const r = img.getBoundingClientRect(), w = img.closest(".list-img-wrap").getBoundingClientRect();
+      return { img: [Math.round(r.width), Math.round(r.height)], wrap: Math.round(w.width) };
+    });
+    console.log(`  ${w}x${h} 一覧の年表① g2r66: 画像${lm.img[0]}×${lm.img[1]}／枠${lm.wrap}px`);
+    await shot("list_g2r66");
+  } catch (e) { console.log(`  ${w}x${h} 一覧の年表①: 行が見つからない（${String(e.message).slice(0, 60)}）`); }
   // 絞りこみのパネルを開いた形も撮る（はじめは閉じている）
   if (await page.$("#list-filter-open")) {
     await tap(page, "#list-filter-open"); await page.waitForTimeout(300);
@@ -110,7 +137,10 @@ console.log(`==== B. 対戦の画面（${LABEL}）: 問題文と「こたえを�
 const TARGETS = ["g2r66", "g3r67", "g1r57"];
 let n = 0;
 // ★先頭2つがユーザーの端末（Android タブレット・Chrome）でよくある大きさ。向きはまだ分からない
-for (const [w, h] of [[800, 1280], [390, 844], [1280, 800], [768, 1024], [820, 1180], [1024, 768], [1180, 820]]) {
+// ONLY_A=1 のときは、対戦の画面（時間がかかる）を飛ばす
+// B_SMALL=1 のときは、スマホとユーザーのタブレット（縦）の2つだけ
+for (const [w, h] of (process.env.ONLY_A ? [] : process.env.B_SMALL ? [[800, 1280], [390, 844]]
+    : [[800, 1280], [390, 844], [1280, 800], [768, 1024], [820, 1180], [1024, 768], [1180, 820]])) {
   for (const id of TARGETS) {
     const code = String(5000 + (n++));
     const host = await makePeer({ width: w, height: h }), guest = await makePeer({ width: 390, height: 844 });

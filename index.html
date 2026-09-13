@@ -454,16 +454,15 @@
   }
   .img-wrap{ position:relative; }   /* 赤丸の層を重ねる基準 */
   .img-wrap img{
-    /* ★2026-09-13 ユーザー依頼「横に隙間はいらない」「横幅はデバイスに合わせて大きく」。
+    /* ★2026-09-13 ユーザー依頼「横に隙間はいらない」「横幅はデバイスに合わせて大きく」、さらに
+       「なんで年表は横に余白を作って縮小してるんですか？大きく出してほしいです」→「すべての画面で幅いっぱい」。
        以前は max-height 220px（縦長は400px）で止めていたため、contain で縮めた絵の左右に
        白い帯が出ていた（実測: 幅390pxで年表 kai2_05 は絵が229px／枠314px、左右42pxずつ）。
        ★幅は枠いっぱい。高さは縦横比で決める（height:auto で width/height 属性の実寸を打ち消す。
          属性は、読み込み前に縦横比ぶんの場所を取るために残してある）。
-       ★画面の高さの85%を超える縦長の画像だけ、幅ごと縮める。--img-ratio（幅÷高さ）は
-         setImgWithSize が入れる。高さで止めて幅を枠いっぱいのままにすると、また白い帯が出る。 */
+       ★縦長の画像（年表など）も高さで縮めない。いちど「画面の高さの85%」「縦向きの画面は42%」で止めたが、
+         左右に余白ができて縮んで見えるので外した。対戦で問題文を見るのにスクロールが要るのは了承ずみ */
     width:100%;
-    width:min(100%, calc(85vh * var(--img-ratio, 100)));
-    width:min(100%, calc(85svh * var(--img-ratio, 100)));
     height:auto;
     /* ★object-fit を指定しないと既定の fill になり、縦横比が壊れる。
        max-width と max-height は別々に効くので、縦長の画像は
@@ -497,19 +496,7 @@
   }
   /* 以前ここにあった「縦長の画像だけ max-height 400px」は、2026-09-13 に上の
      「幅いっぱい＋画面の高さの85%まで」に置きかえた（400pxで止めると左右に白い帯が出るため）。
-     .tall のクラスは、問題一覧（.list-img-wrap img.tall）でも使っている。 */
-  /* ★縦向きの画面では、縦長の画像（年表など）を画面の高さの42%までにする（2026-09-13 ユーザー判断）。
-     対戦で使う端末は Android タブレットの縦向き（800×1280）。85%のままだと、
-     画像の下の問題文と「こたえを見る」ボタンがスクロールしないと見えなかった。
-     実測: 画像の上端は406px（キャラ・得点の箱の下）。800×1280 で入る画像の高さは563px＝44%。
-     ぎりぎりなので42%にした。★幅も縦横比で一緒に縮むので、白い帯は出ない（左右は背景になる）。
-     横向きの画面・横長の画像は、上の「幅いっぱい」のまま。 */
-  @media (orientation:portrait){
-    .img-wrap img.tall{
-      width:min(100%, calc(42vh * var(--img-ratio, 100)));
-      width:min(100%, calc(42svh * var(--img-ratio, 100)));
-    }
-  }
+     .tall のクラスは今も付けているが、2026-09-13 から見た目（大きさ）にはどの画面でも使っていない。 */
   /* ---- 問題文と答えは、データに入れた改行をそのまま出す。
          チャレンジ問題の引用など、選択肢ア〜エが並ぶ長い問題文が1行に潰れて
          スマホで読めなかったため。pre-wrap は連続スペースもそのまま出すが、
@@ -965,43 +952,32 @@
     letter-spacing:.08em;
     margin:14px 0 6px;
   }
-  /* ---- 一覧の絞りこみ: 単元の選択と「絞りこみ ▾」を1行に。中身はたたむ（2026-09-13・案A）---- */
-  .list-filter-bar{
-    display:flex;
-    gap:8px;
-    align-items:stretch;
-  }
-  .list-filter-open{
-    flex:0 0 auto;
-    padding:10px 14px;
+  /* ---- メイン画面の「出題タイプ・優先度・難易度」をたたむボタン（2026-09-13 ユーザー判断）---- */
+  .setup-filter-open{
+    display:block;
+    width:100%;
+    margin-top:18px;
+    padding:12px 14px;
     border:1.5px solid var(--paper-line);
     border-radius:10px;
     background:#fff;
     font:inherit;
-    font-size:13px;
+    font-size:14px;
     font-weight:700;
     color:var(--ink);
+    text-align:left;
     cursor:pointer;
   }
   /* 条件が1つでもかかっているときは、閉じていても気づけるように色を付ける */
-  .list-filter-open.has-filter{
+  .setup-filter-open.has-filter{
     border-color:var(--gold);
     background:#fbf3e4;
   }
-  .list-filter-summary{
+  .setup-filter-summary{
     margin-top:6px;
     font-size:12px;
     color:var(--ink-soft);
     line-height:1.5;
-  }
-  .list-filter-panel{ margin-top:4px; }
-  /* タブレット以上では、優先度と難易度を横に並べる（高さを減らす） */
-  @media (min-width:768px){
-    .list-meta-cols{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:16px;
-    }
   }
   /* 一覧の各行に出す優先度・難易度。データに無いものは「未設定」を薄く出す */
   .list-item .list-meta{
@@ -1034,16 +1010,15 @@
     text-align:center;
   }
   .list-item .list-img-wrap img{
-    max-width:100%;
-    max-height:160px;
+    /* ★一覧でも幅いっぱいに出す（2026-09-13 ユーザー原文「なんで年表は横に余白を作って縮小してるんですか？
+       大きく出してほしいです」。一覧の年表①の写真つき）。以前は高さ160px（縦長は280px）で止めていた */
+    width:100%;
+    height:auto;
     object-fit:contain;   /* 上の .img-wrap img と同じ理由（縦横比が壊れるのを防ぐ） */
     border-radius:8px;
     border:1px solid var(--paper-line);
     background:#fff;
     cursor:zoom-in;
-  }
-  .list-item .list-img-wrap img.tall{
-    max-height:280px;   /* 一覧は行が長くなりすぎないよう、出題画面より控えめ */
   }
   .list-item .list-q{
     font-size:13.5px;
@@ -1221,6 +1196,11 @@
     font-size:12px;
     color:var(--ink-soft);
   }
+  .list-stat-dates{
+    display:flex;
+    gap:8px;
+    margin-bottom:8px;
+  }
   .list-stat-date{
     flex:1;
     display:flex;
@@ -1243,9 +1223,10 @@
     box-sizing:border-box;
     font-size:12px;
     padding:4px 6px;
-    border:1px solid var(--line);
+    /* ★前は var(--line)・var(--card) を使っていたが、どちらも定義されておらず枠が見えなかった */
+    border:1.5px solid var(--paper-line);
     border-radius:6px;
-    background:var(--card);
+    background:#fff;
     color:var(--ink);
   }
   .solo-retry-note{
@@ -1293,28 +1274,12 @@
     gap:12px;
     margin-top:10px;
   }
-  /* ---- 一覧の記録: ふだんは1行で出し、「記録を直す」で開く（2026-09-13 ユーザー判断・案2）---- */
-  .list-record-line{
-    margin:8px 0 2px;
-    font-size:12px;
-    color:var(--ink-soft);
-    line-height:1.6;
-  }
-  .record-form{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:8px 10px;
+  .count-row-list{
+    display:flex;
+    gap:8px;
     margin-top:10px;
   }
-  /* 入力欄だと分かるように、枠をはっきり付ける（写真で、数字がただの文字に見えていた） */
-  .record-form input{
-    border:1.5px solid var(--paper-line);
-    border-radius:8px;
-    background:#fff;
-    padding:8px;
-    font-size:14px;
-  }
-  .edit-link, .record-edit-link{
+  .edit-link{
     font-size:11.5px;
     color:var(--gold);
     font-weight:700;
@@ -1514,6 +1479,11 @@
         <div class="toggle mode-filter" id="mode-weak" data-mode="weak">よく間違える問題</div>
       </div>
 
+      <!-- ★「出題タイプ・優先度・難易度」はたたんでおく（2026-09-13 ユーザー原文「メインの画面の難易度などのフィルタをパネルで隠してほしい」）。
+           はじめは閉じる。開閉は覚える。閉じていても、かかっている条件は下の1行に出す -->
+      <button type="button" class="setup-filter-open" id="setup-filter-open" aria-expanded="false" aria-controls="setup-filter-panel">絞りこみ ▾</button>
+      <div class="setup-filter-summary" id="setup-filter-summary" hidden></div>
+      <div id="setup-filter-panel" hidden>
       <div class="section-title">出題タイプ</div>
       <div class="toggle-row">
         <div class="toggle on" id="type-all" data-type="all">文章・図をすべて</div>
@@ -1536,6 +1506,7 @@
         <div class="toggle" id="level-standard" data-level="標準">標準</div>
         <div class="toggle" id="level-advanced" data-level="発展">発展</div>
       </div>
+      </div><!-- /setup-filter-panel -->
 
       <div class="section-title">問題数</div>
       <div class="toggle-row" id="count-row">
@@ -1704,24 +1675,16 @@
       <div class="back" id="list-back">← もどる</div>
       <div class="counter" id="list-count">0問</div>
     </div>
-    <!-- ★絞りこみはたたんでおけるようにした（2026-09-13 ユーザー判断・案A）。
-         以前は単元・状態・優先度・難易度・日付が全部開いていて、1問目が出るまでに約350px使っていた。
-         閉じていても、かかっている条件は下の1行（list-filter-summary）に出す。開閉は覚える -->
-    <div class="list-filter-bar">
-      <select id="list-unit-select" class="list-select"></select>
-      <button type="button" class="list-filter-open" id="list-filter-open" aria-expanded="false" aria-controls="list-filter-panel">絞りこみ ▾</button>
-    </div>
-    <div class="list-filter-summary" id="list-filter-summary" hidden></div>
+    <!-- 一覧の絞りこみは、たたまずに見える形（2026-09-13 ユーザー原文「これまであった実施日やステータスでの絞り込みは消さないでほしい」）。
+         ★いちど「絞りこみ ▾」でたたむ形にしたが、たたむのはメイン画面のほうだった（取り違え）。元の形に戻した -->
+    <select id="list-unit-select" class="list-select" style="width:100%;"></select>
 
-    <div class="list-filter-panel" id="list-filter-panel" hidden>
     <div class="toggle-row" id="list-status-filters">
       <div class="toggle list-filter-toggle" data-filter="unmastered">未クリアの問題</div>
       <div class="toggle list-filter-toggle" data-filter="weak">よく間違える問題</div>
       <div class="toggle list-filter-toggle" data-filter="unseen">未実施のみ</div>
     </div>
 
-    <div class="list-meta-cols">
-    <div>
     <div class="list-section-title">優先度</div>
     <div class="toggle-row" id="list-priority-row">
       <div class="toggle on" data-list-priority="all">すべて</div>
@@ -1730,8 +1693,7 @@
       <div class="toggle" data-list-priority="低">低</div>
       <div class="toggle" data-list-priority="none">未設定</div>
     </div>
-    </div>
-    <div>
+
     <div class="list-section-title">難易度</div>
     <div class="toggle-row" id="list-level-row">
       <div class="toggle on" data-list-level="all">すべて</div>
@@ -1739,8 +1701,6 @@
       <div class="toggle" data-list-level="標準">標準</div>
       <div class="toggle" data-list-level="発展">発展</div>
       <div class="toggle" data-list-level="none">未設定</div>
-    </div>
-    </div>
     </div>
 
     <div class="list-date-row">
@@ -1750,7 +1710,6 @@
       <input type="date" id="list-date-to" class="list-date-input">
       <div class="back-link" id="list-date-clear" style="margin-top:0;">クリア</div>
     </div>
-    </div><!-- /list-filter-panel -->
 
     <div class="list-items" id="list-items"></div>
 
@@ -2533,56 +2492,22 @@ function adjustStat(qid, field, delta){
   }
   saveStats();
 }
-// ---- 一覧の「記録を直す」（2026-09-13 ユーザー判断・案2）----
-//   以前は＋−と日付の欄が行に出ていて、押す・変えるたびにその場で保存されていた（押しまちがいがそのまま残る）。
-//   ★いまは「記録を直す」を開き、「保存する」を押したときだけ、ここで4つをまとめて書く。
-//   直せるのは: 正解数（＝連続正解数 box。0〜7）／誤答数／最後に正解した日／最後に解いた日
-//   ・累計の correct は画面に出さないが、連続より小さくはしない（連続3回なら、少なくとも3回は正解している）
-//   ・連続正解数を変えたときだけ、次に出す日（nextDue）をその箱の間隔で決め直す
-//   ・4つとも空（0・0・日付なし）にしたら記録ごと消す＝「未実施」にもどる
-//   「未／〇 正解／✕ 不正解」ボタン（setStatus）は、ユーザー判断で今の動きのまま残してある
-function saveRecordEdit(qid, v){
-  const toTs = ymd => { if(!ymd) return null; const ts = new Date(ymd+"T00:00:00").getTime(); return isNaN(ts) ? null : ts; };
-  const lc = toTs(v.lastCorrectAt), la = toTs(v.lastAnswered);
-  if(v.box === 0 && v.wrong === 0 && !lc && !la){ delete stats[qid]; saveStats(); return; }
-  const s = Object.assign({correct:0, wrong:0}, stats[qid] || {});
-  const boxChanged = (s.box||0) !== v.box || s.nextDue === undefined;
-  s.box = v.box;
-  s.wrong = v.wrong;
-  if((s.correct||0) < v.box) s.correct = v.box;
-  if(lc) s.lastCorrectAt = lc; else delete s.lastCorrectAt;
-  if(la) s.lastAnswered = la; else delete s.lastAnswered;
-  if(boxChanged) s.nextDue = Date.now() + BOX_INTERVAL_DAYS[v.box] * 24 * 60 * 60 * 1000;
-  stats[qid] = s;
-  saveStats();
-}
-// 一覧の行の「記録」の部分。ふだんは1行、「記録を直す」を開いている行だけ入力欄
-function recordBlockHtml(qid, s){
-  if(recordEditingId !== qid){
-    const text = stats[qid]
-      ? "正解数（連続）"+(s.box||0)+"・誤答数 "+(s.wrong||0)+
-        "・最後に正解 "+(s.lastCorrectAt ? formatDate(s.lastCorrectAt) : "なし")+
-        "・最後に解いた "+(s.lastAnswered ? formatDate(s.lastAnswered) : "なし")
-      : "記録なし（まだ解いていません）";
-    return '<div class="list-record-line">'+text+'</div>';
+// ---- 一覧から日付を直接なおす。空にしたらその日付を消す。
+//      日付だけの記録は意味がないので、正解数（連続）・誤答数・日付がどれも無くなったら記録ごと消す ----
+//      ★2026-09-13 に「記録を直す」の画面をやめて、この形に戻した（ユーザー原文は行の上で直したい）。
+//        「正解数」は連続正解数（box）なので、判定も correct ではなく box を見る
+function setStatDate(qid, field, ymd){
+  const s = stats[qid] || {correct:0, wrong:0};
+  if(ymd){
+    const ts = new Date(ymd+"T00:00:00").getTime();
+    if(isNaN(ts)) return;
+    s[field] = ts;
+  }else{
+    delete s[field];
   }
-  const maxBox = BOX_INTERVAL_DAYS.length - 1;
-  const field = (label, note, input) =>
-    '<label class="list-stat-date"><span class="list-stat-date-label">'+label+'<em>'+note+'</em></span>'+input+'</label>';
-  return '<div class="record-form">'+
-      field("正解数（連続）", "まちがえると0にもどる数（0〜"+maxBox+"）",
-        '<input type="number" min="0" max="'+maxBox+'" step="1" inputmode="numeric" data-rec-field="box" value="'+(s.box||0)+'">')+
-      field("誤答数", "まちがえた回数",
-        '<input type="number" min="0" step="1" inputmode="numeric" data-rec-field="wrong" value="'+(s.wrong||0)+'">')+
-      field("最後に正解した日", "苦手な問題の出題順に使います",
-        '<input type="date" data-rec-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'">')+
-      field("最後に解いた日", "上の日付での絞りこみに使います",
-        '<input type="date" data-rec-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'">')+
-    '</div>'+
-    '<div class="edit-actions">'+
-      '<div class="edit-btn cancel record-cancel">キャンセル</div>'+
-      '<div class="edit-btn save record-save">保存する</div>'+
-    '</div>';
+  if(!(s.box > 0) && !(s.wrong > 0) && !s.lastCorrectAt && !s.lastAnswered) delete stats[qid];
+  else stats[qid] = s;
+  saveStats();
 }
 function formatDate(ts){
   const d = new Date(ts);
@@ -4060,6 +3985,7 @@ function refreshReviewUnitSelection(){
   });
 }
 function refreshCreateButton(){
+  refreshSetupFilterSummary();   // メイン画面の絞りこみ（出題タイプ・優先度・難易度）を変えると必ずここを通る
   // ★補った問題も数に入れる（buildFinalPool と同じ数を出す。ずれると「問題がありません」なのに始められる、などになる）
   const pool = (filterWeak || filterUnmastered) ? fillFromRest(buildPool()) : buildPool();
   const mainN = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
@@ -4390,7 +4316,6 @@ function renderListScreen(){
 }
 
 let editingId = null;
-let recordEditingId = null;   // 「記録を直す」を開いている行（1行だけ）。文章を直す editingId とは別
 let selectedQuestionIds = new Set();
 
 function dateToYMD(ts){
@@ -4399,6 +4324,13 @@ function dateToYMD(ts){
 }
 
 function renderListItems(){
+  // ★単元・状態・解いた日のどれも選んでいなければ、何も描かない（listHasCondition のコメント参照）
+  if(!listHasCondition()){
+    ++listRenderGen;   // 描いている途中の続きがあれば止める
+    els["list-count"].textContent = "";
+    els["list-items"].innerHTML = '<div class="empty-note">単元か絞りこみを選んでください。</div>';
+    return;
+  }
   let indices = unitIndices(listUnit);
   if(listFilterUnmastered) indices = indices.filter(i => !isMastered(QA_DATA[i].id));
   if(listFilterWeak) indices = indices.filter(i => isWeak(QA_DATA[i].id));
@@ -4415,7 +4347,6 @@ function renderListItems(){
       return true;
     });
   }
-  refreshListFilterSummary();   // 絞りこみを変えたときは必ずここを通るので、ボタンの件数と1行の要約もここで直す
   els["list-count"].textContent = indices.length+"問";
   els["list-items"].innerHTML = "";
   const gen = ++listRenderGen;   // ★前の描き直しの「続き」が残っていたら、ここで捨てる
@@ -4528,19 +4459,40 @@ function buildListRow(i){
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
-      recordBlockHtml(base.id, s)+
-      // ★「記録を直す」を開いている行では、〇✕ボタンを出さない。
-      //   開いたままだと「保存する」のすぐ下に「✕ 不正解」が並び、少し下を押すと記録がまるごと置きかわる
-      //   （写真で見つけた）。閉じればボタンは今の動きのまま出る
-      (recordEditingId === base.id ? '' :
+      '<div class="list-stat-dates">'+
+        '<label class="list-stat-date"><span class="list-stat-date-label">最後に正解した日<em>苦手な問題の出題順に使います</em></span>'+
+          '<input type="date" data-date-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'"></label>'+
+        '<label class="list-stat-date"><span class="list-stat-date-label">最後に解いた日<em>上の日付での絞りこみに使います</em></span>'+
+          '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
+      '</div>'+
       '<div class="status-toggle">'+
         '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
         '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
         '<div class="status-btn ng'+(status==="weak"?" active":"")+'" data-status="weak">✕ 不正解</div>'+
-      '</div>')+
+      '</div>'+
+      // ★行の上でそのまま直す（2026-09-13 ユーザー原文「一覧画面で、正答数、誤答数の修正、正答日、実施日の修正がしたいです」）。
+      //   いちど「記録を直す」の画面にしたが、意図と違ったので元の＋−と日付の欄に戻した。
+      //   「正解数」は連続正解数（box）。＋−は adjustStat（まちがいを＋すると連続が0に切れる）
+      '<div class="count-row-list">'+
+        '<div class="count-stepper ok">'+
+          '<span class="count-label">正解数（連続）</span>'+
+          '<span class="count-controls">'+
+            '<span class="count-btn" data-field="correct" data-delta="-1">－</span>'+
+            '<span class="count-num">'+(s.box||0)+'</span>'+
+            '<span class="count-btn" data-field="correct" data-delta="1">＋</span>'+
+          '</span>'+
+        '</div>'+
+        '<div class="count-stepper ng">'+
+          '<span class="count-label">誤答数</span>'+
+          '<span class="count-controls">'+
+            '<span class="count-btn" data-field="wrong" data-delta="-1">－</span>'+
+            '<span class="count-num">'+(s.wrong||0)+'</span>'+
+            '<span class="count-btn" data-field="wrong" data-delta="1">＋</span>'+
+          '</span>'+
+        '</div>'+
+      '</div>'+
       '<div class="list-item-footer">'+
         '<span class="edit-link">✎ 文章を直す</span>'+
-        '<span class="record-edit-link">✎ 記録を直す</span>'+
         (isEdited ? '<span class="revert-link">元にもどす</span>' : '')+
       '</div>';
     // 行ごとのボタンにはリスナーを付けない。親に1組だけ付けて振り分ける（下の
@@ -4567,23 +4519,9 @@ function setupListDelegation(){
     const statusBtn = e.target.closest(".status-btn");
     // ★ここから下は、押した行だけ描き直す（renderListRow）。一覧全体は作り直さない
     if(statusBtn){ setStatus(qid, statusBtn.dataset.status); renderListRow(qid); return; }
-    // ---- 「記録を直す」（2026-09-13・案2）。★保存を押すまで記録は変えない ----
-    if(e.target.closest(".record-edit-link")){
-      const prev = recordEditingId;
-      recordEditingId = qid;
-      if(prev && prev !== qid) renderListRow(prev);   // 開いていた別の行は閉じる
-      renderListRow(qid);
-      return;
-    }
-    if(e.target.closest(".record-cancel")){ recordEditingId = null; renderListRow(qid); return; }
-    if(e.target.closest(".record-save")){
-      const get = f => item.querySelector('[data-rec-field="'+f+'"]').value.trim();
-      const box = Number(get("box")), wrong = Number(get("wrong"));
-      const maxBox = BOX_INTERVAL_DAYS.length - 1;
-      if(!Number.isInteger(box) || box < 0 || box > maxBox){ alert("正解数（連続）は0から"+maxBox+"までの数で入れてください。"); return; }
-      if(!Number.isInteger(wrong) || wrong < 0){ alert("誤答数は0以上の数で入れてください。"); return; }
-      saveRecordEdit(qid, {box: box, wrong: wrong, lastCorrectAt: get("lastCorrectAt"), lastAnswered: get("lastAnswered")});
-      recordEditingId = null;
+    const countBtn = e.target.closest(".count-btn");
+    if(countBtn){
+      adjustStat(qid, countBtn.dataset.field, parseInt(countBtn.dataset.delta, 10));
       renderListRow(qid);
       return;
     }
@@ -4608,6 +4546,8 @@ function setupListDelegation(){
     const item = e.target.closest(".list-item");
     if(!item || !item.dataset.qid) return;
     const qid = item.dataset.qid;
+    const dateInput = e.target.closest("[data-date-field]");
+    if(dateInput){ setStatDate(qid, dateInput.dataset.dateField, dateInput.value); renderListRow(qid); return; }
     if(e.target.classList.contains("q-select-checkbox")){
       if(e.target.checked) selectedQuestionIds.add(qid);
       else selectedQuestionIds.delete(qid);
@@ -4726,41 +4666,50 @@ els["list-date-clear"].addEventListener("click", ()=>{
   renderListItems();
 });
 
-// ---- 絞りこみのたたみ（2026-09-13 ユーザー判断・案A）----
-//   ★開いているか閉じているかは覚える（次に一覧を開いたときも同じ）。はじめは閉じている。
-//   ★閉じていても、かかっている条件は1行で出す（何で絞っているか分からないまま、問題が少なく見えないように）。
+// ---- 一覧: 単元・状態・解いた日のどれかを選ぶまで、何も描かない（2026-09-13 ユーザー原文
+//      「一覧画面は初期表示で絞込が効いている状態、または絞り込みを押すまで何も出さない。
+//        いまだといきなり全件読もうとするので非常に時間が掛かります」）。
+//      ★優先度・難易度だけでは出さない（「高」だけでも数百問になり、全件と同じくらい遅いため）。
+//      条件は画面を閉じても覚えているので、次に一覧を開くとその条件で出る ----
+function listHasCondition(){
+  return listUnit !== "ALL" || listFilterUnmastered || listFilterWeak || listFilterUnseen || !!listDateFrom || !!listDateTo;
+}
+
+// ---- メイン画面の「出題タイプ・優先度・難易度」をたたむ（2026-09-13 ユーザー原文
+//      「メインの画面の難易度などのフィルタをパネルで隠してほしい」）----
+//   ★はじめは閉じる。開いているか閉じているかは覚える。閉じていても、かかっている条件を1行で出す。
+//   ★いちど一覧の絞りこみのほうをたたんでしまった（取り違え）。一覧はたたまない形に戻した。
 //   中身の絞りこみ（何で絞るか）は変えていない
-const LIST_FILTER_OPEN_KEY = "kq_battle_list_filter_open_v1";
-let listFilterOpen = false;
-try{ listFilterOpen = window.localStorage.getItem(LIST_FILTER_OPEN_KEY) === "1"; }catch(e){}
-function shortYMD(ymd){ const p = ymd.split("-"); return (+p[1])+"/"+(+p[2]); }
-function listFilterParts(){
+const SETUP_FILTER_OPEN_KEY = "kq_battle_setup_filter_open_v1";
+let setupFilterOpen = false;
+try{ setupFilterOpen = window.localStorage.getItem(SETUP_FILTER_OPEN_KEY) === "1"; }catch(e){}
+function setupFilterParts(){
   const parts = [];
-  if(listFilterUnmastered) parts.push("未クリア");
-  if(listFilterWeak) parts.push("よく間違える");
-  if(listFilterUnseen) parts.push("未実施のみ");
-  if(listPriority !== "all") parts.push("優先度："+(listPriority === "none" ? "未設定" : listPriority));
-  if(listLevel !== "all") parts.push("難易度："+(listLevel === "none" ? "未設定" : listLevel));
-  if(listDateFrom || listDateTo) parts.push("解いた日："+(listDateFrom ? shortYMD(listDateFrom) : "")+"〜"+(listDateTo ? shortYMD(listDateTo) : ""));
+  if(currentType === "image") parts.push("図の問題だけ");
+  else if(currentType === "text") parts.push("文章問題だけ");
+  if(currentPriority !== "all") parts.push("優先度："+currentPriority);
+  if(currentLevel !== "all") parts.push("難易度："+currentLevel);
   return parts;
 }
-function refreshListFilterSummary(){
-  const parts = listFilterParts();
-  const btn = document.getElementById("list-filter-open");
-  const summary = document.getElementById("list-filter-summary");
-  document.getElementById("list-filter-panel").hidden = !listFilterOpen;
-  btn.setAttribute("aria-expanded", listFilterOpen ? "true" : "false");
-  btn.textContent = "絞りこみ "+(listFilterOpen ? "▴" : "▾")+(parts.length ? "（"+parts.length+"件）" : "");
+function refreshSetupFilterSummary(){
+  const btn = document.getElementById("setup-filter-open");
+  if(!btn) return;
+  const parts = setupFilterParts();
+  document.getElementById("setup-filter-panel").hidden = !setupFilterOpen;
+  btn.setAttribute("aria-expanded", setupFilterOpen ? "true" : "false");
+  btn.textContent = "絞りこみ "+(setupFilterOpen ? "▴" : "▾")+(parts.length ? "（"+parts.length+"件）" : "");
   btn.classList.toggle("has-filter", parts.length > 0);
   // 開いているときは中身が見えているので、要約は出さない
-  summary.hidden = listFilterOpen || parts.length === 0;
+  const summary = document.getElementById("setup-filter-summary");
+  summary.hidden = setupFilterOpen || parts.length === 0;
   summary.textContent = parts.join("・");
 }
-document.getElementById("list-filter-open").addEventListener("click", ()=>{
-  listFilterOpen = !listFilterOpen;
-  try{ window.localStorage.setItem(LIST_FILTER_OPEN_KEY, listFilterOpen ? "1" : "0"); }catch(e){}
-  refreshListFilterSummary();
+document.getElementById("setup-filter-open").addEventListener("click", ()=>{
+  setupFilterOpen = !setupFilterOpen;
+  try{ window.localStorage.setItem(SETUP_FILTER_OPEN_KEY, setupFilterOpen ? "1" : "0"); }catch(e){}
+  refreshSetupFilterSummary();
 });
+refreshSetupFilterSummary();
 
 // ---- CSV export/import: same file format as kosukequiz, so records can be
 // carried between the two apps (they run on different origins and can't

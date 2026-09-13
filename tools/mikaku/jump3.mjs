@@ -13,7 +13,11 @@ const br=await chromium.launch({channel:"chrome"});
 const p=await (await br.newContext({viewport:{width:390,height:844}})).newPage();
 p.on("dialog",d=>d.accept());
 await p.goto(B); await p.waitForTimeout(900);
-await p.click("#list-btn"); await p.waitForTimeout(2500);   // ★画像が落ち着くまで待つ
+await p.click("#list-btn"); await p.waitForTimeout(500);
+// 2026-09-13 から一覧は単元を選ぶまで何も出さない。いちばん問題の多い単元を選ぶ
+const bigUnit=await p.evaluate(()=>{const c={};QA_DATA.filter(q=>q.subj==="社会").forEach(q=>{c[q.u]=(c[q.u]||0)+1;});
+  return Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];});
+await p.selectOption("#list-unit-select", bigUnit); await p.waitForTimeout(2500);   // ★画像が落ち着くまで待つ
 await p.evaluate(()=>window.scrollTo(0,6000)); await p.waitForTimeout(1500);
 const mark0=null; const mark=await p.evaluate(()=>{const all=[...document.querySelectorAll(".list-item")];
   const r=all.find(e=>{const b=e.getBoundingClientRect();return b.top>100&&b.top<700;}) || all.find(e=>e.getBoundingClientRect().top>0);
@@ -22,9 +26,8 @@ const mark0=null; const mark=await p.evaluate(()=>{const all=[...document.queryS
 const ALLH=await p.evaluate(()=>[...document.querySelectorAll(".list-item")].map(r=>({qid:r.dataset.qid,h:Math.round(r.getBoundingClientRect().height)})));
 // ★「日付だけ」を書き換えて描き直させる（記録の中身は同じ値を入れ直す＝実質変化なし）
 await p.evaluate(q=>{
-  // 2026-09-13 に行の＋−は「記録を直す」に置きかわったので、〇ボタンで記録を変える
-  const el=document.querySelector('.list-item[data-qid="'+q+'"] .status-btn[data-status="mastered"]');
-  el.click();
+  const el=document.querySelector('.list-item[data-qid="'+q+'"] .count-btn[data-field="correct"][data-delta="1"]');
+  el.click();  // +1
 }, mark.qid);
 await p.waitForTimeout(2500);   // ★画像が落ち着くまで待つ
 // ★全行の高さを比べて、どの行が伸びたのかを特定する
