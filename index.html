@@ -3583,8 +3583,10 @@ function unitIndices(unit){
   QA_DATA.forEach((d,i)=>{ if(d.subj !== currentSubject) return; if(unit==="ALL" || d.u===unit) arr.push(i); });
   return arr;
 }
-function applyPoolFiltersExceptPriority(pool){
-  if(filterUnmastered && filterWeak){
+function applyPoolFiltersExceptPriority(pool, skipModes){
+  if(skipModes){
+    // 補う側の候補を作るとき（fillFromRest）は、トグル（未クリア／よく間違える）の絞りこみだけをかけない
+  }else if(filterUnmastered && filterWeak){
     // 両方ONの場合は「一度も正解していない」か「苦手」のどちらかに当てはまれば対象（OR）。
     // 順にfilterするとANDになり、正解済みだが直近間違えている「苦手」問題が両方チェック時に
     // 消えてしまうため、ここだけ一括でOR判定する。
@@ -3604,20 +3606,20 @@ function applyPoolFiltersExceptPriority(pool){
   }
   return pool;
 }
-function applyPoolFilters(pool){
-  pool = applyPoolFiltersExceptPriority(pool);
+function applyPoolFilters(pool, skipModes){
+  pool = applyPoolFiltersExceptPriority(pool, skipModes);
   if(currentPriority !== "all"){
     pool = pool.filter(i => QA_DATA[i].priority === currentPriority);
   }
   return pool;
 }
-function buildPool(){
+function buildPool(skipModes){
   let pool = [];
   // kind==="calc"の問題は対戦・ソロには出さない（理科の計算問題は姉妹アプリ
   // keisan-print-appに独立しており、このアプリのdata.jsには存在しないが、
   // 念のためのガードとして残している）。
   QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && selectedUnits.has(d.u) && d.kind !== "calc") pool.push(i); });
-  return applyPoolFilters(pool);
+  return applyPoolFilters(pool, skipModes);
 }
 // ---- 復習ミックス: 選んでいない単元のうち、復習単元として選ばれているものから
 //      追加する分の候補プール（単元・優先度は復習ミックス専用の設定を使う）----
@@ -3687,6 +3689,7 @@ function lastCorrectOf(i){
 //   各段の中は … 最後に正解した日が古い順
 //
 // ★3段目は「一度も間違えていない」と「2回連続正解した」を分けない。混ぜる。
+// ★2026-09-13 決定: トグルで絞った問題が足りなければ、残りから段の順で補う。「全部」で0問なら、残り全部を段の順で出す（fillFromRest）。
 // ★1段目が足りないときだけ2段目から足す（繋げて先頭から切り出すので自動的にそうなる）。
 //
 // ⚠️ **この順序は間違えやすい。**2026-09-13 の1日で、司令塔が2回取り違えている
@@ -3717,6 +3720,21 @@ function orderByTiers(indices){
   tiers.forEach(t => t.sort((a, b) => lastCorrectOf(a) - lastCorrectOf(b)));
   return tiers[0].concat(tiers[1], tiers[2]);
 }
+// ★トグル（よく間違える／未クリア）で絞った問題が足りないとき、選んだ単元の残りから
+//   段の順（未実施→苦手→それ以外・各段は正解日の古い順）で補う（2026-09-13 ユーザー判断）。
+//   ★トグルの問題が必ず先。補う問題は後ろにつなぐ。種別・優先度・レベルの絞りこみは補う側にもかける。
+//   出題数を決めているとき … 足りない数だけ補う
+//   「全部」のとき          … トグルの問題が1問でもあればそれだけ。★0問のときだけ残り全部を段の順で出す
+//                             （「苦手が0問になってもボタンが押せる」がユーザーの選んだ理由）
+function fillFromRest(picked){
+  const want = questionCount === "all"
+    ? (picked.length > 0 ? 0 : Infinity)
+    : questionCount - picked.length;
+  if(want <= 0) return picked;
+  const has = new Set(picked);
+  const rest = buildPool(true).filter(i => !has.has(i));
+  return picked.concat(orderByTiers(rest).slice(0, want));
+}
 // ---- 復習ミックスの並び順 ★上の3段に統一した（2026-09-13）----
 //   以前は「①一度も正解していない ②苦手 ③それ以外」で、①の判定だけが違った
 //   （まちがえた問題も①に入っていた）。ユーザーの指示で揃えた。
@@ -3743,12 +3761,10 @@ function buildFinalPool(){
     //     両方ON（OR）                                        → **1段目と2段目**
     //   → ★**3段すべてが実際に並ぶのは復習ミックス側**（buildReviewPool は
     //     苦手／未クリアで絞りこまないため）。
-    // ⚠️ **対象が尽きたときに次の段から補う仕組みは、まだありません。**
-    //   苦手が0問になるとボタンが「問題がありません」で押せなくなります
-    //   （tools/mikaku/empty_probe.mjs で実測）。**受け皿を作るかは未判断。**
-    //   ★2026-09-13 に私はここに「尽きたら3段目が受け皿になる」と書きましたが、
-    //   **コードはそうしていませんでした。**書いた本人がテストで気づいたので直しました
-    pool = orderByTiers(pool);
+    // ★対象が足りないときは、上の fillFromRest で選んだ単元の残りから段の順に補う（2026-09-13 ユーザー判断）。
+    //   以前は補う仕組みが無く、苦手が0問になるとボタンが「問題がありません」で押せなかった
+    //   （tools/mikaku/empty_probe.mjs で実測）。
+    pool = fillFromRest(orderByTiers(pool));
   }else if(currentShuffle){
     pool = shuffleArray(pool);
   }
@@ -3900,7 +3916,8 @@ function refreshReviewUnitSelection(){
   });
 }
 function refreshCreateButton(){
-  const pool = buildPool();
+  // ★補った問題も数に入れる（buildFinalPool と同じ数を出す。ずれると「問題がありません」なのに始められる、などになる）
+  const pool = (filterWeak || filterUnmastered) ? fillFromRest(buildPool()) : buildPool();
   const mainN = questionCount === "all" ? pool.length : Math.min(questionCount, pool.length);
   const reviewN = reviewMixCount > 0 ? Math.min(reviewMixCount, buildReviewPool().length) : 0;
   const n = mainN + reviewN;

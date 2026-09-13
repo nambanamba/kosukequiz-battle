@@ -706,6 +706,47 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
   t.is("★同じ集合なら、両経路で並びが完全に一致する", viaReview, viaMain);
 });
 
+await test("補う: トグルの問題が足りないとき、残りから段の順で補う", async t => {
+  // 2026-09-13 ユーザー判断。★トグルの問題が必ず先、補う分は後ろ（未実施→苦手→それ以外・各段は古い順）
+  await t.open();
+  const g = await seedTiers(t, true);              // 1段目4・2段目4・3段目8
+  await onlyUnit(t, TIER_UNIT);
+  await setModes(t, true, false);                  // よく間違えるだけ → 対象は2段目の4問
+  await setOrdered(t);
+  await setReviewMix(t, 0, TIER_MAIN);
+  await setCount(t, "10");
+  const p = await startAndPick(t);
+  t.is("★10問: 苦手4問（古い順）→ 未実施4問 → それ以外の古い2問",
+    p, g.weakExp.concat(g.unseen, g.restExp.slice(0, 2)));
+
+  // 「全部」のとき: トグルの問題があれば、それだけ
+  await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
+  await setCount(t, "all");
+  t.is("★「全部」で苦手が4問あるときは、その4問だけ", await startAndPick(t), g.weakExp);
+});
+
+await test("補う: 苦手が0問でも「全部」で始められる", async t => {
+  await t.open();
+  const g = await seedTiers(t, true);
+  // 2段目の4問を卒業させる（box 2）→ 苦手が0問になる。★日付は3段目より新しいまま
+  await t.page.evaluate(ids => {
+    const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
+    ids.forEach(id => { st[id].box = 2; });
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+  }, g.weak);
+  await t.reload();
+  await onlyUnit(t, TIER_UNIT);
+  await setModes(t, true, false);
+  await setOrdered(t);
+  await setReviewMix(t, 0, TIER_MAIN);
+  await setCount(t, "all");
+  await t.page.waitForTimeout(200);
+  const btn = await t.page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent }));
+  t.ok("★ボタンが押せる（「問題がありません」にならない）", !btn.disabled && btn.text.includes("16問"), btn);
+  t.is("★未実施4問 → それ以外12問（古い順）",
+    await startAndPick(t), g.unseen.concat(g.restExp, g.weakExp));
+});
+
 await test("基本の通し（出題・問題一覧）", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());
