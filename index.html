@@ -862,8 +862,6 @@
     border:1.5px solid var(--ok);
   }
   .judge-btn:active{transform:translateY(1px);}
-  /* 判定ボタンが出た直後の1秒は押しても反応しない（押しまちがい対策）。そのあいだは薄く出す */
-  .judge-row.guarded .judge-btn{ opacity:.45; }
 
   .next-btn{
     width:100%;
@@ -6062,25 +6060,27 @@ function enterAnsweringPhase(){
   startAnswerCountdown();
 }
 
-// ★判定ボタンが出てから少しのあいだは、押しても判定を入れない（2026-09-16 ユーザー原文
-//   「わかったを押した瞬間に画面が切り替わって、間違いを押してしまうことがあります」）。
-//   「わかった！」→「こたえを見る」を続けて押すと、相手が先に押していればすぐ判定ボタンが出るので、
-//   同じ指の続きの一押しが「✕ 相手はまちがい」に入ってしまう。出てから JUDGE_GUARD_MS は手で押しても無視する。
-//   ★時間切れで自動で押される判定（startJudgeCountdown）は、これまでどおり効く
-const JUDGE_GUARD_MS = 1000;
-let judgeGuardUntil = 0;
-let judgeGuardTimer = null;
-function judgeGuarded(){ return Date.now() < judgeGuardUntil; }
+// ★判定ボタンは0.3秒遅れて出す（2026-09-16 ユーザー原文「わかったを押した瞬間に画面が切り替わって、
+//   間違いを押してしまうことがあります」→「一秒は長いです。反応しないのはいやなので、0.3秒くらいボタンが
+//   出るのが遅いとかがいいです」）。
+//   実測（800×1280）で、判定ボタンの列は「わかった！」のちょうど真下に出る。続けて押した指が
+//   「✕ 相手はまちがい」に入らないよう、出るのを少し遅らせる。
+//   ★出たらすぐ押せる（薄い表示・反応しない時間は無し）。いちど「出てから1秒は反応しない」にしたが、ユーザー判断でやめた。
+//   ★判定のカウントダウンは、ボタンが出たときから数える（遅らせたぶん判定の時間が短くならない）
+const JUDGE_SHOW_DELAY_MS = 300;
+let judgeShowTimer = null;
 function revealAnswer(){
   stopAnswerCountdown();
   els["status-banner"].classList.remove("show","win","lose","info");
   els["battle-a-block"].classList.add("show");
-  els["judge-row"].style.display = "flex";
-  judgeGuardUntil = Date.now() + JUDGE_GUARD_MS;
-  els["judge-row"].classList.add("guarded");
-  clearTimeout(judgeGuardTimer);
-  judgeGuardTimer = setTimeout(()=>els["judge-row"].classList.remove("guarded"), JUDGE_GUARD_MS);
-  startJudgeCountdown();
+  const idx = currentIndex;
+  clearTimeout(judgeShowTimer);
+  judgeShowTimer = setTimeout(()=>{
+    // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
+    if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
+    els["judge-row"].style.display = "flex";
+    startJudgeCountdown();
+  }, JUDGE_SHOW_DELAY_MS);
 }
 
 function judgeOpponent(correct){
@@ -6095,9 +6095,8 @@ function judgeOpponent(correct){
   updateMyResultUI();
   maybeFinishQuestion();
 }
-// 手で押したときだけ、出た直後の1秒を無視する（上の judgeGuarded）
-els["judge-ok"].addEventListener("click", ()=>{ if(judgeGuarded()) return; judgeOpponent(true); });
-els["judge-ng"].addEventListener("click", ()=>{ if(judgeGuarded()) return; judgeOpponent(false); });
+els["judge-ok"].addEventListener("click", ()=>judgeOpponent(true));
+els["judge-ng"].addEventListener("click", ()=>judgeOpponent(false));
 
 function updateMyResultUI(forcedWrong){
   els["my-result"].style.display = "block";

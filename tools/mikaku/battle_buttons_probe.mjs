@@ -127,23 +127,19 @@ console.log(`  「答えを見る」の場所 (${rx}, ${ry})`);
 await visible(guest.page, "#answer-reveal-btn");
 await tap(guest.page, "#answer-reveal-btn");
 await host.page.waitForTimeout(200);
+const tReveal = Date.now();
 await tap(host.page, "#answer-reveal-btn");
+const hiddenRightAfter = await host.page.$eval("#judge-row", e => getComputedStyle(e).display === "none");
 await visible(host.page, "#judge-row");
+console.log(`  判定ボタン: 「答えを見る」を押した直後は ${hiddenRightAfter ? "まだ出ていない" : "★もう出ている"}／出るまで 約${Date.now() - tReveal}ms（0.3秒遅れて出す）`);
 console.log(`  二人とも「答えを見る」を押して判定ボタンが出たとき: 「わかった！」の場所 → ${await at(host.page, wx, wy)}／「答えを見る」の場所 → ${await at(host.page, rx, ry)}`);
-// 出た直後（1秒以内）に「✕ 相手はまちがい」
-await tap(host.page, "#judge-ng");
-const early = await host.page.evaluate(() => ({
-  rowStillShown: getComputedStyle(document.getElementById("judge-row")).display !== "none",
-  guarded: document.getElementById("judge-row").classList.contains("guarded")
-}));
+// 出たらすぐ押せる（反応しない時間・薄い表示は無い）
 await host.page.$eval("#judge-row", e => e.scrollIntoView({ block: "center" }));
-await host.page.screenshot({ path: path.join(SHOTS, "after_battle_800x1280_buttons_judge_guarded.png") });
-console.log(`判定ボタンが出た直後に「✕」: ${early.rowStillShown ? "入らなかった（判定ボタンが残っている）" : "★入ってしまった"}／薄く表示: ${early.guarded ? "はい" : "いいえ"}`);
-await host.page.waitForTimeout(1200);
+await host.page.screenshot({ path: path.join(SHOTS, "after_battle_800x1280_buttons_judge_shown.png") });
 await tap(host.page, "#judge-ng");
-await host.page.waitForTimeout(300);
-const late = await host.page.evaluate(() => getComputedStyle(document.getElementById("judge-row")).display === "none");
-console.log(`1.2秒たってから「✕」: ${late ? "入った（判定ボタンが消えた）" : "★入らなかった"}`);
+await host.page.waitForTimeout(200);
+const took = await host.page.evaluate(() => getComputedStyle(document.getElementById("judge-row")).display === "none");
+console.log(`判定ボタンが出てすぐ「✕」: ${took ? "入った（判定ボタンが消えた）" : "★入らなかった"}`);
 await host.page.screenshot({ path: path.join(SHOTS, "after_battle_800x1280_buttons_judge_done.png") });
 console.log(`JSエラー: ${errors.length}件 ${errors.slice(0, 3).join(" / ")}`);
 
