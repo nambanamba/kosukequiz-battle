@@ -147,6 +147,9 @@ async function reveal(host, guest) {
   await tap(guest.page,"#answer-reveal-btn");
   await visible(host.page, "#judge-row");
   await visible(guest.page, "#judge-row");
+  // ★2026-09-16 から、判定ボタンは出てから1秒（JUDGE_GUARD_MS）押しても入らない（押しまちがい対策）。
+  //   人の指と同じく、それを過ぎてから押す。待たないと判定が入らず「つぎの問題へ」が出ないまま30秒で落ちる
+  await host.page.waitForTimeout(1100);
 }
 async function guestJudgesHost(guest, hostCorrect) {
   await tap(guest.page,hostCorrect ? "#judge-ok" : "#judge-ng");
