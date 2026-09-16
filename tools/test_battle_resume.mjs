@@ -146,7 +146,7 @@ async function reveal(host, guest) {
   await tap(host.page,"#answer-reveal-btn");
   await tap(guest.page,"#answer-reveal-btn");
   await visible(host.page, "#judge-row");
-  await visible(guest.page, "#judge-row");
+  await visible(guest.page, "#judge-row");   // 2026-09-16 から判定ボタンは0.3秒遅れて出る。出るのを待ってから押す
 }
 async function guestJudgesHost(guest, hostCorrect) {
   await tap(guest.page,hostCorrect ? "#judge-ok" : "#judge-ng");

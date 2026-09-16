@@ -573,14 +573,17 @@
   }
 
   .skip-btn{
+    /* ★子どもの指で押しやすい大きさに（2026-09-16 ユーザー原文「スキップのボタンが小さいそうです」）。
+       以前は padding 12px・文字 13px で、「わかった！」の下に細く出ていた */
     width:100%;
-    margin-top:10px;
-    padding:12px;
-    border:1.5px dashed var(--gold);
-    border-radius:12px;
+    min-height:68px;
+    margin-top:14px;
+    padding:20px 12px;
+    border:2px dashed var(--gold);
+    border-radius:14px;
     background:#fff;
     color:#7a561f;
-    font-size:13px;
+    font-size:18px;
     font-weight:700;
     cursor:pointer;
     -webkit-tap-highlight-color:transparent;
@@ -6077,12 +6080,27 @@ function enterAnsweringPhase(){
   startAnswerCountdown();
 }
 
+// ★判定ボタンは0.3秒遅れて出す（2026-09-16 ユーザー原文「わかったを押した瞬間に画面が切り替わって、
+//   間違いを押してしまうことがあります」→「一秒は長いです。反応しないのはいやなので、0.3秒くらいボタンが
+//   出るのが遅いとかがいいです」）。
+//   実測（800×1280）で、判定ボタンの列は「わかった！」のちょうど真下に出る。続けて押した指が
+//   「✕ 相手はまちがい」に入らないよう、出るのを少し遅らせる。
+//   ★出たらすぐ押せる（薄い表示・反応しない時間は無し）。いちど「出てから1秒は反応しない」にしたが、ユーザー判断でやめた。
+//   ★判定のカウントダウンは、ボタンが出たときから数える（遅らせたぶん判定の時間が短くならない）
+const JUDGE_SHOW_DELAY_MS = 300;
+let judgeShowTimer = null;
 function revealAnswer(){
   stopAnswerCountdown();
   els["status-banner"].classList.remove("show","win","lose","info");
   els["battle-a-block"].classList.add("show");
-  els["judge-row"].style.display = "flex";
-  startJudgeCountdown();
+  const idx = currentIndex;
+  clearTimeout(judgeShowTimer);
+  judgeShowTimer = setTimeout(()=>{
+    // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
+    if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
+    els["judge-row"].style.display = "flex";
+    startJudgeCountdown();
+  }, JUDGE_SHOW_DELAY_MS);
 }
 
 function judgeOpponent(correct){
