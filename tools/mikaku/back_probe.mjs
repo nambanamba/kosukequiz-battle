@@ -9,7 +9,7 @@ const M={".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-
 const s=http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent(q.url.split("?")[0]).replace(/^\/+/,"")||"index.html");
  fs.readFile(f,(e,b)=>e?r.writeHead(404).end():(r.writeHead(200,{"content-type":M[path.extname(f).toLowerCase()]||"application/octet-stream"}),r.end(b)));});
 await new Promise(r=>s.listen(0,"127.0.0.1",r));
-const B="http://127.0.0.1:"+s.address().port+"/index.html";
+const B=process.env.KQ_URL || ("http://127.0.0.1:"+s.address().port+"/index.html");
 const br=await chromium.launch({channel:"chrome"});
 const ctx=await br.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
 const p=await ctx.newPage();

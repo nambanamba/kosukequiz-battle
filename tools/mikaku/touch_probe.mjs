@@ -9,7 +9,7 @@ const M = {".html":"text/html; charset=utf-8",".js":"text/javascript; charset=ut
 const s = http.createServer((q,r)=>{const f=path.join(ROOT,decodeURIComponent(q.url.split("?")[0]).replace(/^\/+/,"")||"index.html");
  fs.readFile(f,(e,b)=>e?r.writeHead(404).end():(r.writeHead(200,{"content-type":M[path.extname(f).toLowerCase()]||"application/octet-stream"}),r.end(b)));});
 await new Promise(r=>s.listen(0,"127.0.0.1",r));
-const B="http://127.0.0.1:"+s.address().port+"/index.html";
+const B=process.env.KQ_URL || ("http://127.0.0.1:"+s.address().port+"/index.html");
 const br=await chromium.launch({channel:"chrome"});
 const ctx=await br.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:2});
 const p=await ctx.newPage();
@@ -37,6 +37,9 @@ const box = await p.evaluate(()=>{const r=document.querySelector("#solo-img").ge
   return {x:Math.round(r.x+r.width/2), y:Math.round(r.y+r.height/2)};});
 // ★画像の中心に指を置いて、上へスワイプする（本物のタッチ）
 const cdp = await ctx.newCDPSession(p);
+// ★先に上まで戻す。下端にいると「動く余地が無い」だけで false になる（公開版で踏んだ）
+await p.evaluate(()=>window.scrollTo(0,0)); await p.waitForTimeout(300);
+const canScroll = await p.evaluate(()=>document.documentElement.scrollHeight > window.innerHeight);
 const before = await p.evaluate(()=>window.scrollY);
 const t=(x,y)=>[{x,y,radiusX:8,radiusY:8,force:1,id:1}];
 await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:t(box.x,box.y)});
@@ -53,6 +56,7 @@ const opened = await p.evaluate(()=>{const lb=document.querySelector("#lightbox-
   let e=lb, shown=false; while(e){ if(e.classList&&e.classList.contains("show")){shown=true;break;} e=e.parentElement;} return shown;});
 console.log(JSON.stringify({
   "計算後のtouch-action": css,
+  "そもそもスクロールできる高さがあるか": canScroll,
   "スワイプ前のscrollY": before, "スワイプ後のscrollY": after,
   "★画像の上からスクロールできた": after > before,
   "★タップで拡大が開いた": opened
