@@ -719,6 +719,57 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
   t.is("★同じ集合なら、両経路で並びが完全に一致する", viaReview, viaMain);
 });
 
+await test("★1段目は「まだ一度も正解していない」（未実施と未正解を同じ扱いにする・2026-09-16）", async t => {
+  // ユーザー報告の再現:「未クリアでフィルタして単元を1つ選んだのに、
+  //   一覧画面で単元の1問目が未クリアなのに出題されなかった」
+  // 原因は、1段目が「記録が1件も無い」だけだったこと。✕がついていて一度も正解して
+  //   いない問題は2段目に落ち、**手つかずの問題すべての後ろ**に回るため、出題数で
+  //   切られると永久に出てこなかった。
+  // ⚠️ この仕込みは「並べ替えを壊すと鳴る」ようにしてあります。
+  //    ・未正解にする問題を**先頭(0)と途中(8)**に置く（後ろにまとめると差が出ない）
+  //    ・2段目の問題を**先頭寄り(2)**に置く（後ろにあると、末尾に回っても気づけない）
+  await t.open();
+  const g = await t.page.evaluate(u => {
+    const ids = QA_DATA.filter(q => q.u === u).map(q => q.id);
+    return { ids, neverCorrect: [ids[0], ids[8]], wasCorrect: ids[2] };
+  }, TIER_UNIT);
+  await t.page.evaluate(([g, T0, DAY]) => {
+    localStorage.clear();
+    const st = {};
+    // ✕はついたが一度も正解していない（lastCorrectAt なし・correct 0）→ ★1段目
+    g.neverCorrect.forEach(id => { st[id] = { correct: 0, wrong: 3, box: 0, lastAnswered: T0 }; });
+    // 一度は正解したが、また間違えてまだ2連続正解していない → 2段目（＝後ろに回る）
+    st[g.wasCorrect] = { correct: 2, wrong: 1, box: 0, lastCorrectAt: T0 - 50 * DAY, lastAnswered: T0 };
+    // 残りは記録なし（未実施）→ 1段目
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.setItem("kq_battle_migrations_v1",
+      JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
+  }, [g, T0, DAY]);
+  await t.reload();
+
+  // 16問とも box は 0 なので「未クリアの問題」では1問も落ちない。並び順だけを見る
+  await onlyUnit(t, TIER_UNIT);
+  await setModes(t, false, true);                  // 未クリアの問題だけON
+  await setOrdered(t);
+  await setReviewMix(t, 0, TIER_MAIN);
+  await setCount(t, "all");
+  const all = await startAndPick(t);
+
+  // 1段目は全員「正解日なし」＝同点。安定ソートなので data.js の並び（＝一覧の並び）が残る
+  const tier1 = g.ids.filter(id => id !== g.wasCorrect);
+  t.is("未クリアの16問すべてが対象", all.length, g.ids.length);
+  t.is("★1段目は一覧と同じ並びで、未正解も未実施も混ざらず同じ扱い", all.slice(0, 15), tier1);
+  t.is("★一度は正解した苦手は2段目（後ろ）", all.slice(15), [g.wasCorrect]);
+
+  // ★報告された事象そのもの: 出題数で切っても単元の1問目が出る
+  await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
+  await setCount(t, "10");
+  const ten = await startAndPick(t);
+  t.is("★出題数10問でも、単元の1問目（✕あり・未正解）が1問目に出る", ten[0], g.ids[0]);
+  t.ok("★途中の未正解の問題も10問の中に入る", ten.includes(g.neverCorrect[1]), ten);
+  t.is("★10問は一覧の並びの先頭10問", ten, tier1.slice(0, 10));
+});
+
 await test("補う: トグルの問題が足りないとき、残りから段の順で補う", async t => {
   // 2026-09-13 ユーザー判断。★トグルの問題が必ず先、補う分は後ろ（未実施→苦手→それ以外・各段は古い順）
   await t.open();
