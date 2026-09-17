@@ -1702,6 +1702,7 @@
       <div class="waiting-note" id="home-waiting-note"><span class="spinner"></span>相手の参加を待っています…</div>
       <button class="start-btn fill-btn" id="start-together-btn" data-label="二人で開始する" style="display:none; margin-top:14px;"><span class="fill-label">二人で開始する</span></button>
       <div class="error-note" id="create-error"></div>
+      <button class="btn-secondary" id="create-retry-btn" style="display:none; margin-top:10px;">もう一度つなぐ</button>
       <div class="back-link" id="room-code-change">別のコードにする</div>
       <div class="back-link" id="create-cancel">✕ やめる</div>
     </div>
@@ -1723,6 +1724,7 @@
     <div id="join-waiting" style="display:none;">
       <div class="waiting-note" id="join-waiting-note"><span class="spinner"></span>接続しています…</div>
       <div class="error-note" id="join-error"></div>
+      <button class="btn-secondary" id="join-retry-btn" style="display:none; margin-top:10px;">もう一度つなぐ</button>
       <div id="join-fair-units" style="display:none; margin-top:16px;">
         <div class="section-title">公平モード：あなたも出したい単元を選べます</div>
         <div class="choice-grid" id="join-fair-unit-choices"></div>
@@ -2039,6 +2041,59 @@ function preloadJoinRoom(){
 
 const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 
+// ---- 対戦のつなぎ方（2026-09-18 ユーザー報告「対戦が、インターネットにつながっていても
+//      つながらないときはつながらない」。2台とも4G/5G、ホストが「相手の参加を待っています…」のまま）----
+//   ★2台とも携帯回線だと、端末どうしが直接つながれないことが多い（CGNAT・対称NAT）。
+//     Trystero の既定は STUN だけ（trystero 0.25.4 の core は stun.cloudflare.com:3478）で、
+//     STUN は「自分の外から見える住所」を教えるだけなので、道が作れないと部屋は見つかるのに
+//     通信だけできず、ホストは待ち続ける。ときどきつながるのは、回線によって直接の道ができるため。
+//   ★そこで中継（TURN）を足す。**直接つながるときは中継は使われない**（ICE が速いほうを選ぶ）。
+//     やりとりは短い文字だけ（問題のidや〇✕）なので、中継を通っても通信量はごくわずか。
+//   ⚠️ Open Relay は無料で誰でも使える他人のサービス。止まる・混むことはある。
+//     それでも困るようなら、自前の TURN（有料のサーバ）を立てる案がある（司令塔に相談ずみ）。
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: "stun:stun.cloudflare.com:3478" },
+    { urls: "stun:stun.l.google.com:19302" },
+    // 80番・443番・TLSの443番。きびしい回線でも、どれかが通りやすい
+    { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turns:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+  ]
+};
+// 部屋を作る・入るときの設定（3か所で同じものを使う）
+const ROOM_CONFIG = { appId: APP_ID, rtcConfig: RTC_CONFIG };
+
+// ---- つながらないときに、待ち続けないで知らせる（2026-09-18）----
+//   ★Trystero は部屋の告知を約5.3秒ごとに出し直している（0.25.4 で実測）ので、
+//     ゲストが少し遅れて入っても、部屋自体は見つかるはず。それでもつながらないときは、
+//     「見つけたが道ができない」ほうが疑わしい。20秒待って何も起きなければ、その場で知らせる。
+const CONNECT_TIMEOUT_MS = 20000;
+let connectTimeoutTimer = null;
+function clearConnectTrouble(){
+  clearTimeout(connectTimeoutTimer);
+  connectTimeoutTimer = null;
+  ["create-error","join-error"].forEach(k => els[k] && els[k].classList.remove("show"));
+  ["create-retry-btn","join-retry-btn"].forEach(k => { if(els[k]) els[k].style.display = "none"; });
+}
+function startConnectTimeout(side){
+  clearTimeout(connectTimeoutTimer);
+  connectTimeoutTimer = setTimeout(()=>{
+    const msg = "つながりませんでした。\n"+
+      "・ふたりとも同じ Wi-Fi につなぐと、つながりやすくなります\n"+
+      "・「もう一度つなぐ」を押すと、つなぎ直します";
+    if(side === "host"){
+      els["create-error"].textContent = msg;
+      els["create-error"].classList.add("show");
+      els["create-retry-btn"].style.display = "block";
+    }else{
+      els["join-error"].textContent = msg;
+      els["join-error"].classList.add("show");
+      els["join-retry-btn"].style.display = "block";
+    }
+  }, CONNECT_TIMEOUT_MS);
+}
+
 // images/内の各画像の実サイズ。<img>にwidth/height属性を設定することで、
 // 読み込み前でも正しい縦横比の分だけ表示スペースを確保でき、
 // 画像読み込み完了時のレイアウトのガタつき（＝それに伴うタップのすれ違い）を防ぐ。
@@ -2185,7 +2240,7 @@ const els = {};
  "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","pool-count-label","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-fair-units","join-fair-unit-choices",
- "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error",
+ "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error","create-retry-btn","join-retry-btn",
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
@@ -5568,6 +5623,7 @@ function saveLastCode(code){
 }
 
 function leaveRoom(){
+  clearConnectTrouble();   // やめる・もどるで抜けたときも、知らせを消してタイマーを止める
   if(room){
     try{ room.leave(); }catch(e){}
   }
@@ -5730,6 +5786,7 @@ function setupActions(){
   };
 
   room.onPeerJoin = ()=>{
+    clearConnectTrouble();   // 相手が来たので、20秒の知らせは消す（ホスト・ゲストどちらでも）
     if(role !== "host") return;
     if(!gameStarted){
       gameStarted = true;
@@ -5771,9 +5828,10 @@ async function hostCreateRoomWithCode(code){
   els["create-error"].classList.remove("show");
   try{
     const joinRoom = await loadJoinRoom();
-    room = joinRoom({appId: APP_ID}, code);
+    room = joinRoom(ROOM_CONFIG, code);
     setupActions();
     saveLastCode(code);
+    startConnectTimeout("host");   // 20秒たっても相手が来なければ知らせる
   }catch(e){
     console.error("room create failed", e);
     els["create-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\n通信環境を確認してもう一度お試しください。";
@@ -5843,7 +5901,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   els["resume-battle-btn"].disabled = true;
   try{
     const joinRoom = await loadJoinRoom();
-    room = joinRoom({appId: APP_ID}, session.code);
+    room = joinRoom(ROOM_CONFIG, session.code);
     setupActions();
   }catch(e){
     console.error("resume failed", e);
@@ -5878,9 +5936,10 @@ async function joinRoomAsGuest(code){
 
   try{
     const joinRoom = await loadJoinRoom();
-    room = joinRoom({appId: APP_ID}, code);
+    room = joinRoom(ROOM_CONFIG, code);
     setupActions();
     saveLastCode(code);
+    startConnectTimeout("guest");   // 20秒たってもつながらなければ知らせる
   }catch(e){
     console.error("room join failed", e);
     els["join-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\nコードを確認してもう一度お試しください。";
@@ -5895,6 +5954,27 @@ els["join-btn"].addEventListener("click", ()=>{
     els["join-error"].classList.add("show");
     return;
   }
+  joinRoomAsGuest(code);
+});
+
+// ---- 「もう一度つなぐ」（2026-09-18）----
+//   つなぎ直す。部屋の番号は変えない（相手に伝えた番号のまま）。
+//   ★いまのつながりをいったん切ってから入り直す。切らないと部屋が2つできる
+els["create-retry-btn"].addEventListener("click", ()=>{
+  const code = els["room-code-display"].textContent;
+  if(!/^\d{4}$/.test(code)) return;
+  clearConnectTrouble();
+  if(room){ try{ room.leave(); }catch(e){} }
+  room = null;
+  els["home-waiting-note"].innerHTML = '<span class="spinner"></span>つなぎ直しています…';
+  hostCreateRoomWithCode(code);
+});
+els["join-retry-btn"].addEventListener("click", ()=>{
+  const code = (els["join-code-input"].value || loadLastCode() || "").trim();
+  if(!/^\d{4}$/.test(code)) return;
+  clearConnectTrouble();
+  if(room){ try{ room.leave(); }catch(e){} }
+  room = null;
   joinRoomAsGuest(code);
 });
 
