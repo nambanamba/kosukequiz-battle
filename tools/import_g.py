@@ -5,7 +5,7 @@ kosukequiz-battle の data.js に、社会（通常回）の回別JSONを取り�
 ■ なぜ別のスクリプトなのか
   - `import_quiz.py` … 夏期講習（復習編1〜8）専用。元データの `id` を使う
   - `import_rika.py` … 理科専用。`kai`・`kind` を残し、memo だけを取り込む
-  - `import_g.py`（これ）… 社会の通常回専用。`kai`・`kind`・`sol` を持たない
+  - `import_g.py`（これ）… 社会の通常回専用。`kai`・`kind` を持たない（`sol` は 2026-09-18 から取り込む）
 
 ■ ★通常回の id の決まり（2026-09-12 に既存データから実測して確認した）
   id = "g" + 回 + "r" + no    （例: 第2回の no.114 → `g2r114`。ゼロ詰めしない）
@@ -47,10 +47,14 @@ FILES = {
     4: "第4回_平安時代.json",
 }
 
-# 通常回は kai / kind / sol を持たない
-OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "priority", "level"]
+# 通常回は kai / kind を持たない。
+# ★sol（解説）は 2026-09-18 から取り込む（ユーザー判断）。それまで DROP で捨てていたため、
+#   社会の解説は data.js に1件も入っておらず、画面にも出ていなかった。
+#   第1〜3回は元データに sol が0問なので、この変更で増える差分は無い（第4回の7問だけ）。
+#   並びは理科（import_rika.py）と同じく最後に置く。
+OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "priority", "level", "sol"]
 RENAME = {"subject": "subj", "genre": "u", "file": "img"}
-DROP = {"no", "unit", "folder", "figureNote", "sol"}
+DROP = {"no", "unit", "folder", "figureNote"}
 
 
 def fmt_row(rec):

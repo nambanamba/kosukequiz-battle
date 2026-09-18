@@ -35,7 +35,7 @@ BATTLE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_JS = os.path.join(BATTLE, "data.js")
 SRC = os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv", "第4回_平安時代.json")
 EXPECT_SHA = "959d50c582530ce81b1b91d95ca529e03f34bcb93498fadb05a16565beff1a2d"
-TARGET_NOS = [116, 117]
+TARGET_NOS = [116, 117]        # 既定。--nos で変えられる（2026-09-18: 残り5問の sol を入れるため）
 FIELDS = ["note", "sol"]          # 直してよい欄はこの2つだけ
 LAST_KEY = "level"                # sol を足す位置（この欄のうしろ）
 
@@ -82,7 +82,12 @@ def main():
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--check", action="store_true")
     g.add_argument("--apply", action="store_true")
+    ap.add_argument("--nos", help="直す問題の no をカンマ区切りで（既定: 116,117）")
     a = ap.parse_args()
+
+    global TARGET_NOS
+    if a.nos:
+        TARGET_NOS = [int(x) for x in a.nos.split(",") if x.strip()]
 
     got = sha256_of(SRC)
     if got != EXPECT_SHA:
@@ -173,9 +178,11 @@ def main():
         die("行の数が変わりました。data.js.bak から戻してください。")
     diff = [i for i, (b, c) in enumerate(zip(before_rows, after_rows)) if b != c]
     ids = [re.search(r'"id": "([^"]+)"', after_rows[i]).group(1) for i in diff]
-    if sorted(ids) != sorted("g4r%d" % n for n in TARGET_NOS):
-        die("変わった行が想定と違います: %s" % ids)
-    print("\n  ★変わった行: %s の2行だけ（ほかは1バイトも変わっていない）" % "・".join(ids))
+    # ★もう元データと同じだった問題は変わらない。だから「直す予定だった行」と突き合わせる
+    #   （TARGET_NOS と比べると、直すところが無い問題を混ぜたときに落ちる。2026-09-18 に実際に踏んだ）
+    if sorted(ids) != sorted(qid for qid, _ in plan):
+        die("変わった行が想定と違います: %s（直す予定だった行: %s）" % (ids, [q for q, _ in plan]))
+    print("\n  ★変わった行: %s の%d行だけ（ほかは1バイトも変わっていない）" % ("・".join(ids), len(ids)))
     print("  行の数: %d（変わらず）／元データの sha256: 前後で一致" % len(after_rows))
     print("  控え: data.js.bak")
 
