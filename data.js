@@ -5497,7 +5497,7 @@ const QA_DATA = [
   "a": "4",
   "img": "r2_08.jpg",
   "kai": 2,
-  "kind": "memo",
+  "kind": "calc",
   "priority": "中",
   "level": "標準"
  },
@@ -5510,7 +5510,7 @@ const QA_DATA = [
   "a": "12",
   "img": "r2_08.jpg",
   "kai": 2,
-  "kind": "memo",
+  "kind": "calc",
   "priority": "中",
   "level": "標準"
  },
@@ -5536,7 +5536,7 @@ const QA_DATA = [
   "a": "A:ア、B:ア",
   "img": "r2_15.jpg",
   "kai": 2,
-  "kind": "memo",
+  "kind": "calc",
   "priority": "高",
   "level": "標準"
  },
@@ -5549,7 +5549,7 @@ const QA_DATA = [
   "a": "①:ア、②:イ",
   "img": "r2_26.jpg",
   "kai": 2,
-  "kind": "memo",
+  "kind": "calc",
   "priority": "中",
   "level": "標準"
  },
@@ -5562,7 +5562,7 @@ const QA_DATA = [
   "a": "キ",
   "img": "r2_40.jpg",
   "kai": 2,
-  "kind": "memo",
+  "kind": "calc",
   "priority": "中",
   "level": "発展"
  },
