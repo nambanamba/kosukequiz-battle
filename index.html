@@ -3763,9 +3763,14 @@ function getUnitsForSubject(subject){
 function getUnits(){
   return getUnitsForSubject(currentSubject);
 }
+// ★計算が要る問題（kind:"calc"）は数に入れない（2026-09-18 ユーザー判断で、問題一覧からも消す）。
+//   ここは 問題一覧・単元えらび（ホーム／復習ミックス）・公平モードの単元一覧の「◯問」で使っている。
+//   出題する側（buildPool・buildReviewPool）はもともと calc を外しているので、
+//   ★これで「単元に出ている問数」と「実際に出る問数」がそろう（第2回 17問 → 12問）。
+//   記録そのものは消えない。CSVの書き出し・読み込みは全問が対象なので、記録はそちらで見られる。
 function unitIndices(unit){
   const arr = [];
-  QA_DATA.forEach((d,i)=>{ if(d.subj !== currentSubject) return; if(unit==="ALL" || d.u===unit) arr.push(i); });
+  QA_DATA.forEach((d,i)=>{ if(d.subj !== currentSubject || d.kind === "calc") return; if(unit==="ALL" || d.u===unit) arr.push(i); });
   return arr;
 }
 function applyPoolFiltersExceptPriority(pool, skipModes){

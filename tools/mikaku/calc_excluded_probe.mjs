@@ -3,7 +3,7 @@
 // 使い方: node tools/mikaku/calc_excluded_probe.mjs
 //
 // ・ひとり練習（＝対戦・復習ミックスと同じ buildPool／buildReviewPool を通る）に出ないこと
-// ・問題一覧には出ること（いまの作り。記録の確認・手直しができる）
+// ・問題一覧にも出ないこと（2026-09-18 ユーザー判断で一覧からも消した）
 // ・ホームの「全問題数」にも入らないこと
 import http from "node:http";
 import fs from "node:fs";
@@ -64,6 +64,6 @@ await page.$eval("#solo-back", e => e.click()); await page.waitForTimeout(400);
 await page.$eval("#list-btn", e => e.click()); await page.waitForTimeout(400);
 await page.selectOption("#list-unit-select", info.unit); await page.waitForTimeout(1500);
 const inList = await page.evaluate(ids => ids.filter(id => document.querySelector(`#list-items .list-item[data-qid="${id}"]`)), info.ids);
-console.log(`問題一覧に出ている計算の問題: ${inList.length}問（いまの作りでは出る＝記録を見て直せる）`);
+console.log(`問題一覧に出ている計算の問題: ${inList.length}問（0問なら正しい。記録は残っていて、CSVの書き出しで見られる）`);
 console.log(`JSエラー: ${errs.length}件`);
 await browser.close(); server.close();
