@@ -94,8 +94,17 @@ async function makePeer(label) {
     rooms.set(msg.code, set);
     if (msg.leave) { set.delete(p); return; }
     if (msg.join) {
+      // ★2026-09-19 に直した。前はここで「自分自身にも onPeerJoin を配って」いたので、
+      //   ホストが部屋を作った瞬間に「相手が来た」ことになっていた。そのせいで
+      //   ゲストが本当に入ったときは2回目の onPeerJoin になり、ホストは「再接続の
+      //   追いつき」の枝に入って、開始ボタンを押す前から対戦画面に立っていた。
+      //   本物の trystero は、先にいた人と入ってきた人の双方に1回ずつ配る。
+      const others = [...set];
       set.add(p);
-      for (const q of set) q.evaluate(() => window.__kqPeerJoin && window.__kqPeerJoin()).catch(() => {});
+      for (const q of others) {
+        q.evaluate(() => window.__kqPeerJoin && window.__kqPeerJoin()).catch(() => {});   // 先にいた人へ「新しい人が来た」
+        p.evaluate(() => window.__kqPeerJoin && window.__kqPeerJoin()).catch(() => {});   // 入ってきた人へ「先に人がいた」
+      }
       return;
     }
     for (const q of set) if (q !== p) q.evaluate(([n, d]) => window.__kqDeliver && window.__kqDeliver(n, d), [msg.name, msg.data]).catch(() => {});
@@ -134,8 +143,17 @@ async function setup(host, guest) {
   await tap(guest.page,"#go-join");
   await guest.page.fill("#join-code-input", code);
   await tap(guest.page,"#join-btn");
+  // ★2026-09-19 から、対戦の始まりは二人とも「開始」を押してから（自動開始は無くなった）。
+  //   ユーザー原文「始めるときだけは、双方に開始というボタンを用意して、お互いが押したら開始に」
   await visible(host.page, "#start-together-btn");
+  await visible(guest.page, "#join-start-together-btn");
   await tap(host.page,"#start-together-btn");
+  // ★片方だけでは始まらないこと。ホストが押しただけの状態で、まだ対戦画面に行っていない
+  await host.page.waitForTimeout(400);
+  ok("[0] ★ホストが押しただけでは始まらない",
+     await host.page.evaluate(() => document.getElementById("screen-battle").classList.contains("active") === false),
+     "ホストが押しただけで screen-battle に入ってしまった");
+  await tap(guest.page,"#join-start-together-btn");
   return code;
 }
 
