@@ -49,6 +49,7 @@ FILES = {
     1: "第1回_生物のつながり.json",
     2: "第2回_てこ滑車輪軸.json",
     3: "第3回_水溶液の中和.json",
+    4: "第4回_ヒトと動物の消化吸収.json",
 }
 
 # data.js に出力するキーと、その順番（既存の理科の行と同じ並び）
@@ -142,6 +143,7 @@ def main():
 
     raw, text = read_data_js()
     head, parts, tail = rows_of(text)
+    n_before = len(parts)   # ★書きかえる前の問題数。あとで増減を出すのに使う
 
     # 自己検査: 切って貼り直すとバイト一致するか
     if head + "".join(parts) + tail != text:
@@ -200,7 +202,9 @@ def main():
     raw2, text2 = read_data_js()
     _, parts2, _ = rows_of(text2)
     ids2 = [id_of(p) for p in parts2]
-    print("\n  書きこみ後: %d問（%+d）" % (len(parts2), len(parts2) - len(parts) + len(new_rows) - len(new_rows)))
+    # ★以前はここの引き算が必ず 0 になっていた（parts は差し込んだあとの配列なので、
+    #   それと引いても 0 にしかならない）。書きかえる前の数と比べる
+    print("\n  書きこみ後: %d問 → %d問（%+d）" % (n_before, len(parts2), len(parts2) - n_before))
     print("  総数: %d問" % len(parts2))
     if len(ids2) != len(set(ids2)):
         die("id が重複しました。data.js.bak から戻してください。")
