@@ -68,6 +68,18 @@ export function joinRoom(cfg, code, cb){
     makeAction(){ return { send(){}, onMessage: null }; }, leave(){} };
 }`;
 
+// ★2回目は待ち合わせの接続を**使い回す**スタブ（本物の trystero と同じふるまい）。
+//   これが 2026-09-20 に Chrome 側で「試した0・つながった0」と出た正体。
+//   1回目だけ WebSocket を作り、2回目は作らない。
+const STUB_REUSE = `
+let sock = null;
+export function joinRoom(cfg, code, cb){
+  window.__kqCb = !!(cb && cb.onJoinError && cb.onPeerHandshake);
+  if(!sock){ try{ sock = new WebSocket(${JSON.stringify(WS_URL)}); }catch(e){} }
+  return { onPeerJoin(){}, onPeerLeave(){},
+    makeAction(){ return { send(){}, onMessage: null }; }, leave(){} };
+}`;
+
 let ng = 0;
 const browser = await chromium.launch({ channel: "chrome" });
 
@@ -116,7 +128,10 @@ console.log("\n── ① 相手が来ないまま20秒 ──");
   await page.waitForTimeout(19000);
   const p = await panel(page);
   check("20秒すぎにパネルが出る", p.shown);
-  check("★待ち合わせはできたと分かる（ここが Silk の切り分けの要）", /待ち合わせ: つながった [1-9]/.test(p.text));
+  check("★待ち合わせはできたと分かる（ここが Silk の切り分けの要）", /待ち合わせ: いま開いている [1-9]/.test(p.text));
+  // ★2026-09-20b: **どこにつないだか**が出ること。2台ぶん見くらべる行なので、
+  //   「○」と、つないだ先の名前がそろって出ていなければ意味がない
+  check("★つないだ待ち合わせ先の名前が出る", /待ち合わせ先[^:]*: ○127\.0\.0\.1:\d+\/ws/.test(p.text));
   check("止まった場所を「相手が見つかっていません」と言う", /相手が見つかっていません/.test(p.text));
   check("版が入っている", /版 \d{4}-\d{2}-\d{2}/.test(p.text));
   console.log("  ── 実際の中身 ──\n" + p.text.split("\n").map(l => "    " + l).join("\n"));
@@ -158,6 +173,71 @@ console.log("\n── ③ WebRTC が無い端末のまね（Silk 想定。実機
   check("WebRTC: ★ない と書いてある", /WebRTC: ★ない/.test(p.text));
   console.log("  ── 実際の中身（Silk 想定）──\n" + p.text.split("\n").map(l => "    " + l).join("\n"));
   await page.screenshot({ path: path.join(SHOTS, "3_no_webrtc_390.png"), fullPage: true });
+  await ctx.close();
+}
+
+// ---- ⑤ ★★2回目（待ち合わせの接続を使い回したとき）----
+//   **2026-09-20 に実際に誤診した形。**ここが本命の再発防止。
+//   trystero は appId ごとに待ち合わせの接続を使い回すので、
+//   2回目は「新しく作られた本数」が 0 になる。
+//   **古い判定（diag.ws.open === 0）は、それを見て「探しに行けていません」と言ってしまう。**
+console.log("\n── ⑤ ★2回目（待ち合わせの接続を使い回す）──");
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route(/trystero/, r => r.fulfill({ status: 200, contentType: "application/javascript", body: STUB_REUSE }));
+  const page = await openHost(ctx);
+  await page.waitForTimeout(21000);
+  const p1 = await panel(page);
+  check("1回目は「相手が見つかっていません」", /相手が見つかっていません/.test(p1.text));
+
+  // 「もう一度つなぐ」＝ 2回目。ここで diag の数え直しが起きる
+  await page.$eval("#create-retry-btn", e => e.click());
+  await page.waitForTimeout(21000);
+  const p2 = await panel(page);
+  // ★数字は**画面に出ている文から読む**。中の変数は module の中にいて外から見えないうえ、
+  //   見えたとしても「ユーザーが受け取る文」を確かめたことにならない（C-4d）
+  const mm = p2.text.match(/いま開いている (\d+) 本（この回に 試した (\d+) . つながった (\d+)/);
+  const n = mm ? { now: +mm[1], tried: +mm[2], open: +mm[3] } : { now: -1, tried: -1, open: -1 };
+
+  // ★まず「本当に使い回しが起きたか」を確かめる。起きていなければ、この検査は何も見ていない（D-17）
+  check("★2回目は新しい接続が作られていない（使い回しの再現）",
+        n.tried === 0 && n.open === 0, `試した ${n.tried} / つながった ${n.open}`);
+  check("★それでも「いま開いている」は 1本 以上と分かる", n.now >= 1, `いま開いている ${n.now}本`);
+  // ★★本題。古い判定ならここで「相手を探しに行けていません」と出ていた
+  check("★★2回目でも「探しに行けていません」と誤って言わない",
+        !/探しに行けていません/.test(p2.text));
+  check("★★2回目も「相手が見つかっていません」と正しく言う", /相手が見つかっていません/.test(p2.text));
+  console.log("  ── 2回目の中身 ──\n" + p2.text.split("\n").slice(0, 3).concat(
+        p2.text.split("\n").filter(l => /^待ち合わせ/.test(l))).map(l => "    " + l).join("\n"));
+  await page.screenshot({ path: path.join(SHOTS, "5_reuse_390.png"), fullPage: true });
+  await ctx.close();
+}
+
+// ---- ⑥ ★★相手は見つけたのに、待ち合わせが数えられていないとき ----
+//   **2026-09-20 16:51 に Silk から届いた記録そのもの。**
+//   同じ紙に「相手を見つけた: 1回」と「相手を探しに行けていません」が並んでいた。
+//   数え方のほうが当てにならないので、**相手を見つけたかどうかを先に見る**ように直した。
+console.log("\n── ⑥ ★相手は見つけた／待ち合わせは数えられていない（Silk の実際の記録）──");
+{
+  const STUB_HS = `
+export function joinRoom(cfg, code, cb){
+  setTimeout(()=>{ cb && cb.onPeerHandshake && cb.onPeerHandshake(); }, 500);
+  return { onPeerJoin(){}, onPeerLeave(){},
+    makeAction(){ return { send(){}, onMessage: null }; }, leave(){} };
+}`;
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route(/trystero/, r => r.fulfill({ status: 200, contentType: "application/javascript", body: STUB_HS }));
+  const page = await openHost(ctx);
+  await page.waitForTimeout(21500);
+  const p = await panel(page);
+  // ★まず「その状況を本当に作れたか」を確かめる（D-17）
+  check("★待ち合わせは0本のまま（記録と同じ状況を作れた）", /いま開いている 0 本/.test(p.text));
+  check("★相手は見つけている（記録と同じ）", /相手を見つけた: 1回/.test(p.text));
+  // ★★本題。古いはしごでは、ここで「探しに行けていません」と出ていた
+  check("★★「探しに行けていません」と矛盾したことを言わない", !/探しに行けていません/.test(p.text));
+  check("★★「相手は見つかったが、道ができませんでした」と言う", /相手は見つかったが、道ができませんでした/.test(p.text));
+  console.log("  ── 実際の中身 ──\n" + p.text.split("\n").slice(0, 2).map(l => "    " + l).join("\n"));
+  await page.screenshot({ path: path.join(SHOTS, "6_handshake_no_ws_390.png"), fullPage: true });
   await ctx.close();
 }
 

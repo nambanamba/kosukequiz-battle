@@ -2110,7 +2110,7 @@ const RTC_CONFIG = {
 //     ★読み上げてもらうのではなく、**コピーして送ってもらう**（伝言で数字は必ず崩れる）。
 //   ★この記録の版。**中身を変えたら、ここも変える。**
 //     送られてきた控えが、どの版のアプリで取れたものかを言えるようにするため。
-const DIAG_VERSION = "2026-09-20a";
+const DIAG_VERSION = "2026-09-20b";
 const diag = {
   role: "", startedAt: 0,
   lib: "まだ",             // 通信ライブラリを読めたか
@@ -2118,30 +2118,47 @@ const diag = {
   handshake: 0,            // 相手を見つけて話し始めた回数
   joinError: "",           // ライブラリからの知らせ
   cand: {},                // 集まった道の候補（host / srflx / relay）
-  iceState: "",            // 道づくりの状態のうつりかわり
+  // ★道づくりは**通信路ごとに分けて持つ**（2026-09-20b）。
+  //   ライブラリは相手用のほかに「あらかじめ作っておく用」の通信路も作るので、
+  //   1本の文字列に混ぜると **どれがどれの話か分からなくなる**。
+  //   実際、`disconnected` とだけ出た記録があり、それが相手用なのか使い捨てなのか読めなかった。
+  conns: [],               // [{ st: "new→checking→failed", pair: "" }]
   iceErr: [],              // 道の候補を作るときのエラー
-  pair: ""                 // 実際に選ばれた道
+  pair: ""                 // 実際に選ばれた道（どれか1本でもつながれば、それ）
 };
 function diagReset(role){
   diag.role = role; diag.startedAt = Date.now();
   diag.ws = { tried: 0, open: 0, closed: 0, err: 0 };
   diag.handshake = 0; diag.joinError = "";
-  diag.cand = {}; diag.iceState = ""; diag.iceErr = []; diag.pair = "";
+  diag.cand = {}; diag.conns = []; diag.iceErr = []; diag.pair = "";
 }
 
 // ---- ① 待ち合わせの通信を数える ----
 //   trystero は相手を探すのに WebSocket を使う。つながった本数を数えるだけで、
 //   **中身には一切さわらない**（差し替えた WebSocket は、本物をそのまま返す）。
-//   ⚠️ ここが 0 本なら、**相手がいる／いない以前に、探しに行けていない**。
+//
+// ★★2026-09-20b: ここには**穴が2つ**あった。実際に誤った見立てを出した。
+//   ① **新しく作られた本数しか数えていなかった。**
+//      trystero は待ち合わせ用の接続を appId ごとに**使い回す**ので、
+//      **同じページのまま2回目を試すと「試した0・つながった0」になる。**
+//      それを見て「相手を探しに行けていません」と出してしまった（09-20 の Chrome 側の記録）。
+//      → 作った接続を**ページ全体で覚えておき、いま開いている本数**を数える。
+//        `wsSeen` は **diagReset では消さない**（消すと、使い回しの接続がまた見えなくなる）。
+//   ② **どこにつないだのかが出ていなかった。**
+//      2台が同じ待ち合わせ場所にいるかどうかは、**URL を並べないと分からない**。
+//      → つないだ先を控えて、状態つきで出す。
+var wsSeen = [];   // {url, ws, everOpen, err} … ページを開いている間ずっと残す
 (function(){
   try{
     if(typeof WebSocket !== "function") return;
     var Orig = WebSocket;
     function Counted(url, protocols){
       var ws = (protocols === undefined) ? new Orig(url) : new Orig(url, protocols);
+      var rec = { url: String(url), ws: ws, everOpen: false, err: false };
+      if(wsSeen.length < 60) wsSeen.push(rec);   // 際限なく増やさない
       diag.ws.tried++;
-      ws.addEventListener("open", function(){ diag.ws.open++; });
-      ws.addEventListener("error", function(){ diag.ws.err++; });
+      ws.addEventListener("open", function(){ diag.ws.open++; rec.everOpen = true; });
+      ws.addEventListener("error", function(){ diag.ws.err++; rec.err = true; });
       ws.addEventListener("close", function(){ diag.ws.closed++; });
       return ws;
     }
@@ -2151,6 +2168,39 @@ function diagReset(role){
   }catch(e){ /* 数えられなくても、対戦そのものは動かす */ }
 })();
 
+// いま開いている待ち合わせ接続の本数。**使い回された接続もここに出る**
+//   （`diag.ws.open` は「この回に新しく開いた数」なので、使い回しでは 0 のままになる）
+function diagWsOpenNow(){
+  var n = 0;
+  for(var i = 0; i < wsSeen.length; i++){
+    try{ if(wsSeen[i].ws.readyState === 1) n++; }catch(e){}
+  }
+  return n;
+}
+// 一度でも開いたことがあるか（＝待ち合わせ場所までは行けた、の証拠）
+function diagWsEverOpen(){
+  if(diag.ws.open > 0) return true;
+  for(var i = 0; i < wsSeen.length; i++){ if(wsSeen[i].everOpen) return true; }
+  return false;
+}
+// ★どの待ち合わせ場所につないだか。**2台ぶん並べれば、同じ場所にいるかが一目で分かる**
+//   ○ = いま開いている / △ = 開いたが切れた / ✕ = つながらなかった / … = つなぎ中
+function diagRelayList(){
+  var rank = { "✕": 0, "…": 1, "△": 2, "○": 3 };
+  var order = [], mark = {};
+  for(var i = 0; i < wsSeen.length; i++){
+    var r = wsSeen[i];
+    var host = r.url.replace(/^wss?:\/\//, "").replace(/\/$/, "");
+    var st = 3;
+    try{ st = r.ws.readyState; }catch(e){}
+    var m = (st === 1) ? "○" : (r.everOpen ? "△" : (r.err ? "✕" : (st === 0 ? "…" : "✕")));
+    if(!(host in mark)){ order.push(host); mark[host] = m; }
+    else if(rank[m] > rank[mark[host]]) mark[host] = m;   // 同じ先に何度もつなぐので、良いほうを残す
+  }
+  if(!order.length) return "なし";
+  return order.map(function(h){ return mark[h] + h; }).join(" / ");
+}
+
 // ---- ② 道づくり（ICE）を見る ----
 //   trystero は `rtcPolyfill` に渡したものを `new` して通信路を作る（0.25.4 で確認）。
 //   **本物の RTCPeerConnection を作って返すだけ**なので、動きは何も変わらない。
@@ -2158,6 +2208,9 @@ function diagReset(role){
 var HAS_WEBRTC = (typeof RTCPeerConnection === "function");
 var DiagPeerConnection = !HAS_WEBRTC ? undefined : function(cfg){
   var pc = new RTCPeerConnection(cfg);
+  // ★この通信路ぶんの記録。**混ぜない**
+  var conn = { st: "", pair: "" };
+  if(diag.conns.length < 8) diag.conns.push(conn);
   try{
     pc.addEventListener("icecandidate", function(e){
       if(!e.candidate || !e.candidate.candidate) return;
@@ -2171,14 +2224,14 @@ var DiagPeerConnection = !HAS_WEBRTC ? undefined : function(cfg){
     });
     pc.addEventListener("iceconnectionstatechange", function(){
       var s = pc.iceConnectionState;
-      if(diag.iceState.slice(-s.length) !== s) diag.iceState += (diag.iceState ? "→" : "") + s;
-      if(s === "connected" || s === "completed") diagReadPair(pc);
+      if(conn.st.slice(-s.length) !== s) conn.st += (conn.st ? "→" : "") + s;
+      if(s === "connected" || s === "completed") diagReadPair(pc, conn);
     });
   }catch(e){ /* 見られなくても、対戦そのものは動かす */ }
   return pc;
 };
 // 実際に選ばれた道の種類（host＝同じWi-Fi内 / srflx＝直接 / relay＝中継ごし）
-function diagReadPair(pc){
+function diagReadPair(pc, conn){
   try{
     if(!pc.getStats) return;
     pc.getStats().then(function(stats){
@@ -2187,13 +2240,50 @@ function diagReadPair(pc){
         if(r.type === "local-candidate") local[r.id] = r.candidateType;
         if(r.type === "candidate-pair" && (r.selected || r.state === "succeeded")) pair = r;
       });
-      if(pair) diag.pair = local[pair.localCandidateId] || "?";
+      if(pair){
+        diag.pair = local[pair.localCandidateId] || "?";
+        if(conn) conn.pair = diag.pair;
+      }
     }).catch(function(){});
   }catch(e){}
 }
 
+// ---- 待ち合わせ場所（relay）を決めうちする（2026-09-20）----
+//   ★2台は「同じ待ち合わせ場所」に**同時にいないと**、お互いを見つけられない。
+//
+//   ライブラリの既定まかせだと、28本の一覧から appId をもとに5本が選ばれる。
+//   **選び方は appId で決まるので、2台とも同じ5本になる**（`relay_probe.mjs` で実測。
+//   別ページで2回引いて、同じ並びになることを確かめた）。
+//   ⚠️ **問題はそこではなく、その5本が生き残らないこと。**
+//   実測（2026-09-20・このPCの回線）: 選ばれた5本のうち、**つながったのは3本だけ**。
+//   さらに relay は、こちらの知らせを断ると**ライブラリ側から接続を閉じる**。
+//   → 09-20 の Silk の記録「試した10 / つながった4 / 切れた7」は、この姿と一致する。
+//   → **2台の「生き残った本数」が重ならなければ、両方つながっているのに永遠に出会えない。**
+//
+//   そこで、**実際につながることを確かめた先だけを並べて固定する。**
+//   ★はじめの3本は「いま既定で選ばれている5本のうち、生きている3本」。
+//     こうしておくと、**まだ古い版を開いている端末とも出会える**（入れかえの途中で断絶しない）。
+//   ⚠️ 足す・入れかえるときは、必ず `node tools/mikaku/relay_probe.mjs` で
+//     **つないで返事が来ること**を確かめる。書いただけでは効いている証拠にならない
+//     （09-18 の TURN は、書いてあったのに配信した日から一度も効いていなかった）。
+//   ⚠️ ここで見ているのは**このPCの回線から**の話。Fire タブレットの回線では違うことがある（D-16）。
+//     だから1本に絞らず、散らしてある。
+const RELAY_URLS = [
+  "wss://nostr.sathoarder.com",     // ← いまの既定でも選ばれている（古い版の端末との重なり用）
+  "wss://nostr-01.yakihonne.com",   // ← 同上
+  "wss://top.testrelay.top",        // ← 同上
+  "wss://relay.damus.io",
+  "wss://nos.lol",
+  "wss://relay.primal.net"
+];
+// ★★書き方に注意。**`relayUrls` ではなく `relayConfig.urls`。**
+//   trystero 0.25.4 の実物で両方ためした（`relay_probe.mjs` ③）:
+//     `relayConfig: { urls: [...] }` → 効く
+//     `relayUrls: [...]`            → **黙って無視される**（エラーも出ない）
+const RELAY_CONFIG = { urls: RELAY_URLS };
+
 // 部屋を作る・入るときの設定（3か所で同じものを使う）
-const ROOM_CONFIG = { appId: APP_ID, rtcConfig: RTC_CONFIG, rtcPolyfill: DiagPeerConnection };
+const ROOM_CONFIG = { appId: APP_ID, rtcConfig: RTC_CONFIG, rtcPolyfill: DiagPeerConnection, relayConfig: RELAY_CONFIG };
 // ★ライブラリからの知らせ（joinRoom の第3引数。0.25.4 で確認）。
 //   `onPeerHandshake` が **「待ち合わせまで行けた」**の印、
 //   そのあと `onJoinError` が来たら **「見つけたが道ができなかった」**。ここが切り分けの要。
@@ -2229,10 +2319,17 @@ function diagText(){
   let stop;
   if(!HAS_WEBRTC)                 stop = "このブラウザは対戦のしくみ（WebRTC）を持っていません";
   else if(diag.lib !== "読めた")   stop = "通信ライブラリを読めていません（" + diag.lib + "）";
-  else if(diag.ws.open === 0)     stop = "相手を探しに行けていません（待ち合わせの通信がつながらない）";
-  else if(diag.handshake === 0)   stop = "相手が見つかっていません（部屋には入れている）";
-  else if(!diag.pair)             stop = "相手は見つかったが、道ができませんでした（中継が要る回線の可能性）";
-  else                            stop = "道はできています（" + diag.pair + "）";
+  // ★★ここの順番を 2026-09-20b に入れかえた。**相手を見つけたかどうかを、いちばん先に見る。**
+  //   もとは待ち合わせの本数を先に見ていたため、
+  //   **「相手を見つけた: 1回」と書いてある同じ紙に「探しに行けていません」と出た**（実物の記録）。
+  //   相手を見つけているなら、待ち合わせは必ず成立している。数え方のほうが当てにならない。
+  else if(diag.handshake > 0)     stop = diag.pair
+      ? "道はできています（" + diag.pair + "）"
+      : "相手は見つかったが、道ができませんでした（中継が要る回線の可能性）";
+  // ここから下は「まだ相手を見つけていない」ときの話
+  else if(diagWsOpenNow() > 0)    stop = "相手が見つかっていません（部屋には入れている）";
+  else if(diagWsEverOpen())       stop = "待ち合わせの場所とつながっていません（いちどつながったが、いまは0本）";
+  else                            stop = "相手を探しに行けていません（待ち合わせの通信がつながらない・★数えられていないだけのこともあります）";
   return [
     // ★版の名前を入れる。入れないと「直したものを試してもらえたのか」が分からない
     "【対戦がつながらないときの記録】版 " + DIAG_VERSION,
@@ -2248,11 +2345,20 @@ function diagText(){
       " / WebSocket: " + (typeof WebSocket === "function" ? "ある" : "★ない") +
       " / 暗号: " + ((window.crypto && window.crypto.subtle) ? "ある" : "★ない"),
     "ライブラリ: " + diag.lib,
-    "待ち合わせ: つながった " + diag.ws.open + " / 試した " + diag.ws.tried +
-      "（切れた " + diag.ws.closed + " / 失敗 " + diag.ws.err + "）",
+    // ★「いま開いている」を先頭に置く。**これが本当の状態**で、あとの数字はこの回の出来事
+    "待ち合わせ: いま開いている " + diagWsOpenNow() + " 本" +
+      "（この回に 試した " + diag.ws.tried + " / つながった " + diag.ws.open +
+      " / 切れた " + diag.ws.closed + " / 失敗 " + diag.ws.err + "）",
+    // ★2台ぶん見くらべるための行。同じ○が1つも無ければ、出会えるはずがない
+    "待ち合わせ先（○いま開いている △切れた ✕だめ）: " + diagRelayList(),
     "相手を見つけた: " + (diag.handshake ? diag.handshake + "回" : "★なし"),
     "道の候補: " + cand,
-    "道づくり: " + (diag.iceState || "始まっていない"),
+    // ★通信路ごとに分けて出す。①②…は「何本目の通信路か」。
+    //   相手用のほかに、あらかじめ作っておく用の通信路もあるので、混ぜると読めない
+    "道づくり: " + (diag.conns.filter(function(c){ return c.st; }).length
+      ? diag.conns.map(function(c, i){ return c.st ? "(" + (i+1) + ")" + c.st + (c.pair ? "★" + c.pair : "") : ""; })
+                  .filter(Boolean).join(" / ")
+      : "始まっていない"),
     "選ばれた道: " + (diag.pair || "なし"),
     "ICEエラー: " + (diag.iceErr.length ? diag.iceErr.join(" , ") : "なし"),
     "知らせ: " + (diag.joinError || "なし"),
