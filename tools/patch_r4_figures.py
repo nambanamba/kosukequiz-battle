@@ -28,10 +28,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "..", "5年下", "quiz_csv_理科", "第4回_ヒトと動物の消化吸収.json")
 DATA = os.path.join(ROOT, "data.js")
 # ★納品のたびに書きかえる。宣言値と合わなければ止まる
-SHA = "1f8f0744cfc5c09cea09c5559c6b3fbc217718b70b58d2698df9b5bb4a689aee"
-# ★司令塔が「意図して img を外す」と名指しした id。
-#   実測と突き合わせて、**書き忘れと区別する**（推測では区別できない）
-DECLARED_IMG_REMOVED = "r4m15 r4m16 r4m17 r4m21 r4m22 r4m23 r4m30 r4m32 r4m33 r4m76 r4m77".split()
+SHA = "f5d02d74e27f630d9114d68641a198984d8ccffd91c4ebdc268d2938c8b17348"  # 2026-09-20 夜 納品（47288B・79問）
+# ★司令塔が名指しした「図が付く id」。実測と突き合わせて**書き忘れと区別する**（推測では区別できない）
+#   ★2026-09-20 夜、差分（外れる id）ではなく **最終状態**（付いている id）で見る形に変えた。
+#   理由: data.js 側に前回ぶんが既に当たっていると「外れる差分 0 件」になり、
+#   差分で見る検査は**状態しだいで意味が変わる**＝鳴らない検査になる（確認ポイント 4-1）。
+DECLARED_IMG_IDS = "r4m43 r4m44 r4m46 r4m47 r4m48 r4m49 r4m65 r4m66 r4m67 r4m75".split()
 
 def main():
     ap = argparse.ArgumentParser()
@@ -71,11 +73,12 @@ def main():
 
     # ★「img が外れる」は、意図して外したのか書き忘れなのかが**実物からは区別できない**。
     #   だから司令塔に名指しをもらい、ここで突き合わせる。
-    removed = sorted(qid for qid, _, _, chg in plan if "img" in chg and not chg["img"])
-    if removed != sorted(DECLARED_IMG_REMOVED):
-        sys.exit("✘ img が外れる id が、申告と違います。止まります\n"
-                 "  申告 %s\n  実物 %s" % (sorted(DECLARED_IMG_REMOVED), removed))
-    print("★img が外れる %d 件は、申告どおり" % len(removed))
+    #   ★差分ではなく「元データの最終状態」で見る（data.js が既に一部当たっていても意味が変わらない）
+    src_img = sorted("r4m%02d" % q["no"] for q in src if q.get("file"))
+    if src_img != sorted(DECLARED_IMG_IDS):
+        sys.exit("✘ 元データで図が付く id が、申告と違います。止まります\n"
+                 "  申告 %s\n  実物 %s" % (sorted(DECLARED_IMG_IDS), src_img))
+    print("★元データで図が付くのは %d 件。申告どおり" % len(src_img))
     if not a.apply:
         print("\n（--check なので data.js は変えていません）")
         return
@@ -100,6 +103,20 @@ def main():
                 sys.exit("✘ %s に %s がありません。止まります" % (qid, k))
         text = text[:s0] + new + text[s1:]
     io.open(DATA, "w", encoding="utf-8").write(text)
+
+    # ★書いたあと、data.js を読み直して**最終状態**を確かめる
+    #   （「書いた」を「効いている」の証拠にしない・確認ポイント 0-3）
+    after = io.open(DATA, encoding="utf-8").read()
+    got_img = []
+    for q in src:
+        qid = "r4m%02d" % q["no"]
+        body = re.search(r'\{\s*"id":\s*"%s"[\s\S]*?\n \}' % qid, after).group(0)
+        if re.search(r'"img":\s*"', body):
+            got_img.append(qid)
+    if sorted(got_img) != sorted(DECLARED_IMG_IDS):
+        sys.exit("✘ 書いたあとの data.js で img を持つ id が、申告と違います\n"
+                 "  申告 %s\n  実物 %s" % (sorted(DECLARED_IMG_IDS), sorted(got_img)))
+    print("★書いたあとの data.js で img を持つのは %d 件。申告どおり" % len(got_img))
     print("\n✅ data.js を直しました（控え: data.js.bak）")
     print("★このあと必ず: sync_img_sizes.py / verify_data / smoke-test / 実機で目視（B-12）")
 
