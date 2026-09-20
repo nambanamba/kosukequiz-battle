@@ -69,6 +69,9 @@ const PORT = server.address().port;
 const browser = await chromium.launch({ channel: "chrome" });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
+// ★ライブラリは、切り捨てるときに console.warn で理由を出す（nostr の src で確認）
+const consoleMsgs = [];
+page.on("console", m => { if (/relay|trystero/i.test(m.text())) consoleMsgs.push(m.type() + ": " + m.text()); });
 
 // ── 記録するもの ──────────────────────────────
 const T0 = Date.now();
@@ -91,9 +94,15 @@ page.on("websocket", (ws) => {
     rec.sent.push({ t: at(), verb, kind, len: (f.payload || "").length });
   });
   ws.on("framereceived", (f) => {
-    let verb = "?";
-    try { verb = JSON.parse(f.payload)[0]; } catch {}
-    rec.got.push({ t: at(), verb });
+    let verb = "?", full = null;
+    try {
+      const m = JSON.parse(f.payload);
+      verb = m[0];
+      // ★EVENT 以外は中身ごと控える。trystero は OK=false や CLOSED を受けると
+      //   その待ち合わせ先を**永久に切り捨てる**（retireRelay）。理由が要る。
+      if (verb !== "EVENT") full = String(f.payload).slice(0, 200);
+    } catch {}
+    rec.got.push({ t: at(), verb, full });
   });
   ws.on("close", () => { rec.closedAt = at(); });
 });
@@ -185,6 +194,21 @@ else {
   const last = Math.max(...allEv.map(e => Number(e.t)));
   console.log(`  ★最後に告知を出したのは ${last}秒（記録は ${SEC}秒まで）` +
               (SEC - last > 20 ? "  ← ★★告知が途中で止まっています" : ""));
+}
+
+console.log("\n── ②c ★★待ち合わせ先からの返事のうち、EVENT 以外（切り捨ての理由になる）──");
+for (const [k, r] of socks) {
+  for (const g of r.got) {
+    if (g.full && !/^\["(EOSE|OK",[^,]*,true)/.test(g.full)) {
+      console.log(`  ${host(k.split("#")[0]).padEnd(26)} ${g.t}秒  ${g.full}`);
+    }
+  }
+}
+if (consoleMsgs.length) {
+  console.log("\n── ②d ★ブラウザのコンソールに出た警告 ──");
+  for (const m of consoleMsgs) console.log("  " + m);
+} else {
+  console.log("\n  （コンソールに警告は出ていません）");
 }
 
 console.log("\n── ②b ★ページの中から見た、作った口と閉じられ方 ──");
