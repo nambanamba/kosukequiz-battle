@@ -43,7 +43,7 @@ function* frames(buf) {
   }
 }
 
-export async function startFakeRelay({ closeAfterMs = 0, label = "fake" } = {}) {
+export async function startFakeRelay({ closeAfterMs = 0, label = "fake", rejectWith = null } = {}) {
   const state = { connects: 0, closes: 0, urls: [], lastMsgs: [] };
   const server = http.createServer((_, res) => res.writeHead(426).end());
   server.on("upgrade", (req, sock) => {
@@ -63,7 +63,10 @@ export async function startFakeRelay({ closeAfterMs = 0, label = "fake" } = {}) 
         try {
           const m = JSON.parse(f.text);
           if (m[0] === "REQ") sock.write(frame(0x1, JSON.stringify(["EOSE", m[1]])));
-          else if (m[0] === "EVENT") sock.write(frame(0x1, JSON.stringify(["OK", m[1] && m[1].id, true, ""])));
+          // ★`rejectWith` を渡すと、告知を**断る**（Trystero はこれで relay を切り捨てる）
+          else if (m[0] === "EVENT") sock.write(frame(0x1, rejectWith
+            ? JSON.stringify(["OK", m[1] && m[1].id, false, rejectWith])
+            : JSON.stringify(["OK", m[1] && m[1].id, true, ""])));
         } catch {}
       }
       buf = Buffer.alloc(0);

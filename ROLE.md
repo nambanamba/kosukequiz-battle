@@ -101,6 +101,11 @@
 | `import_rika.py` | **理科**（`r*m*`／`quiz_csv_理科`）の取り込み。★id は **memo だけの並び順**の連番で `no` ではない。calc は落とす |
 | `patch_r4_figures.py` | **理科 第4回**を id 指定で直す（`q`・`note`・`img` だけ）。`import_rika.py` は使わない |
 | `patch_r3_notes.py` | **理科 第3回**の `note` を id 指定で直す。★下の「id の規則」を読んでから使うこと |
+| `audit_fields_vs_src.py` | ★**元データにあって data.js に無い欄**を全教科・全回で洗う（`sol` 事件の型） |
+| `mikaku/fake_relay.mjs` | ★中身を決められる待ち合わせ先。**断る／向こうから切る**を作れる |
+| `mikaku/diag_retired_probe.mjs` | ★診断パネルの「断られて使えなくなった」行が鳴るか（両側） |
+| `mikaku/relay_traffic_probe.mjs` | ★本物のWebSocketの中身・閉じられ方・コンソール警告を記録 |
+| `mikaku/relay_serverclose_probe.mjs` | ★**相手から切られた**あと張り直すか |
 | `sync_img_sizes.py` | `IMG_SIZES` を実物の寸法にそろえる。**足すだけでなく、古い値を直す**（C-4b） |
 | `verify_data.mjs` | 取り込み後の照合。図表があるのに画像が無い／★答えが記号なのにその記号が画像に無い、も見る |
 | `step20/scan.mjs` | 「20秒で解けるか」を**長さではなく手順**で測る（A-9） |
@@ -137,6 +142,46 @@
 
 ⚠️ **他セッションから `no.108` のように名指しされたら、それは元データの `no` です。**
 　 **id（`r3m90`）とは別物。**受け取ったら、まず自分で対応づけ直すこと。
+
+### ★★待ち合わせ先（relay）で、必ず知っておくこと（2026-09-20・ライブラリのソースで確認）
+
+#### ① **一度断られた先は、開き直すまで二度と使われません**
+`@trystero-p2p/nostr@0.25.4` の元ソース:
+```ts
+isTerminalRejection = CLOSED || (OK=false && !rate-limited: && !duplicate:)
+if (isTerminalRejection) retireRelay(client)     // WeakSet に入れて client.close()
+```
+`@trystero-p2p/core` の `createRelayManager`:
+```ts
+const relays = {}                                 // ★ページの寿命ぶん残る
+register: (key, create) => { const r = relays[key]; if (r) return r; … }
+```
+★**`register` は切り捨てずみの接続もそのまま返します。**
+→ ★**部屋を出て入り直しても戻りません。戻す手段は「ページを開き直す」だけ。**
+→ **だから「2台とも閉じて開き直して、同時に開く」が効きます。**これはソースで裏が取れています。
+→ **生きている本数は減る一方**で、**2台の重なりが0になった瞬間から、開き直すまで永久に出会えません**
+　（重なりが1本あれば出会えることは `meet_probe --overlap` で実測）。
+
+#### ② **既定の一覧には、構造的に使えない先が混じっています**
+```
+relay-rpi.edufeed.org → "blocked: ephemeral kinds are not accepted on this relay"
+```
+★**Trystero は ephemeral（kind 2xxxx）しか使いません。**＝**つないだ瞬間に必ず切り捨てられます。**
+⚠️ **これは Trystero の既定の一覧に入っています。**決めうちを外すと、1本を確実に無駄にします。
+→ **待ち合わせ先を足す・入れ替えるときは「つながるか」だけでなく「書き込みを受け付けるか」を必ず見ること。**
+
+#### ③ ⚠️ `relay_probe.mjs` の ⑤ は **繰り返し走らせないこと**
+⑤ は**本物の待ち合わせ先に告知を実際に出します。**
+★**2026-09-20、一日に何十回も試験を回して `relay.damus.io` に
+`banned: too many rate-limit violations` を食らいました**（十数分で解けました）。
+→ **必要なときに1回だけ。**続けて回さない。
+→ ★**自分の作った告知が正しいかを先に検算する自己確認**が入っています。
+　 **これが無いと、こちらの不具合を relay のせいにします**（実際1回やりました）。
+
+#### ④ 診断パネルに「★断られて使えなくなった」行があります
+**本数と、断られた理由がそのまま出ます。**2台ぶん見くらべれば、
+**共通の○が1本もないか**／**何と言われて切り捨てられたか**が一目で分かります。
+検査は `tools/mikaku/diag_retired_probe.mjs`（鳴る／鳴りすぎない の両側を見ます）。
 
 ⚠️ **2026-09-20 まで、対戦の「待ち合わせ」は一度も検査されていませんでした。**
 `battle_buttons_probe`・`test_battle_resume`・`battle_start_timeup_probe` などの**2人ぶんの検査は、

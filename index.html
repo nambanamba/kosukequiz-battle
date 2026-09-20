@@ -2148,6 +2148,9 @@ function diagReset(role){
 //      2台が同じ待ち合わせ場所にいるかどうかは、**URL を並べないと分からない**。
 //      → つないだ先を控えて、状態つきで出す。
 var wsSeen = [];   // {url, ws, everOpen, err} … ページを開いている間ずっと残す
+// ★断られて「二度と使われなくなった」待ち合わせ先。{host, reason}
+//   ★`wsSeen` と同じく **diagReset では消さない**。ページを開き直すまで消えないのが実態に合う
+var diagRetired = [];
 (function(){
   try{
     if(typeof WebSocket !== "function") return;
@@ -2160,6 +2163,34 @@ var wsSeen = [];   // {url, ws, everOpen, err} … ページを開いている�
       ws.addEventListener("open", function(){ diag.ws.open++; rec.everOpen = true; });
       ws.addEventListener("error", function(){ diag.ws.err++; rec.err = true; });
       ws.addEventListener("close", function(){ diag.ws.closed++; });
+      // ★★2026-09-20: **断られた待ち合わせ先は、二度と使われない**ことを画面に出す。
+      //   Trystero（@trystero-p2p/nostr 0.25.4）の元ソースに、こうある:
+      //       isTerminalRejection = CLOSED || (OK=false && !rate-limited: && !duplicate:)
+      //       if (isTerminalRejection) retireRelay(client)   // WeakSet に入れて close()
+      //   そして core 側は**接続を URL ごとにページ内で使い回す**ので、
+      //   ★**一度切り捨てられた先は、部屋を入り直しても戻りません。開き直すまで失われたままです。**
+      //   ここが見えないと、「いま開いている N 本」が減った理由が永久に分かりません
+      //   （2026-09-20、それを突き止めるのに丸一日かかりました）。
+      //   ⚠️ ここでは**ライブラリと同じ区切り**で数えるだけ。判定はしません
+      ws.addEventListener("message", function(ev){
+        try{
+          var s = ev.data;
+          if(typeof s !== "string") return;
+          // ★安い見分け方を先に。中身のほとんどは EVENT なので、そこで帰す
+          if(s.lastIndexOf('["OK"', 0) !== 0 && s.lastIndexOf('["CLOSED"', 0) !== 0) return;
+          var a = JSON.parse(s);
+          var reason = "";
+          if(a[0] === "CLOSED"){ reason = String(a[2] || "（理由なし）"); }
+          else if(a[0] === "OK" && a[2] === false){
+            reason = String(a[3] || "（理由なし）");
+            // ★この2つだけは切り捨てられない（ライブラリと同じ区切り）
+            if(reason.lastIndexOf("rate-limited:", 0) === 0 || reason.lastIndexOf("duplicate:", 0) === 0) return;
+          } else { return; }
+          var host = rec.url.replace(/^wss?:\/\//, "").replace(/\/$/, "");
+          for(var j = 0; j < diagRetired.length; j++){ if(diagRetired[j].host === host) return; }
+          if(diagRetired.length < 20) diagRetired.push({ host: host, reason: reason });
+        }catch(e){ /* 読めなくても対戦そのものは動かす */ }
+      });
       return ws;
     }
     Counted.prototype = Orig.prototype;
@@ -2196,6 +2227,8 @@ function diagRelayList(){
     var m = (st === 1) ? "○" : (r.everOpen ? "△" : (r.err ? "✕" : (st === 0 ? "…" : "✕")));
     if(!(host in mark)){ order.push(host); mark[host] = m; }
     else if(rank[m] > rank[mark[host]]) mark[host] = m;   // 同じ先に何度もつなぐので、良いほうを残す
+    // ★断られた先は「切れた（△）」とは意味が違う。**開き直すまで戻らない**ので、最後に上書きする
+    for(var k = 0; k < diagRetired.length; k++){ if(diagRetired[k].host === host) mark[host] = "✘"; }
   }
   if(!order.length) return "なし";
   return order.map(function(h){ return mark[h] + h; }).join(" / ");
@@ -2350,7 +2383,14 @@ function diagText(){
       "（この回に 試した " + diag.ws.tried + " / つながった " + diag.ws.open +
       " / 切れた " + diag.ws.closed + " / 失敗 " + diag.ws.err + "）",
     // ★2台ぶん見くらべるための行。同じ○が1つも無ければ、出会えるはずがない
-    "待ち合わせ先（○いま開いている △切れた ✕だめ）: " + diagRelayList(),
+    "待ち合わせ先（○いま開いている △切れた ✕だめ ✘断られた）: " + diagRelayList(),
+    // ★★断られた先は、**開き直すまで二度と使われません**（上の message の注を参照）。
+    //   理由は**そのまま**出す。要約すると、次に読む人が原因を絞れなくなる
+    "★断られて使えなくなった: " + (diagRetired.length
+      ? diagRetired.length + " 本 ／ " +
+        diagRetired.map(function(r){ return r.host + "「" + r.reason + "」"; }).join(" ／ ") +
+        "（アプリを閉じて開き直すと戻ります）"
+      : "なし"),
     "相手を見つけた: " + (diag.handshake ? diag.handshake + "回" : "★なし"),
     "道の候補: " + cand,
     // ★通信路ごとに分けて出す。①②…は「何本目の通信路か」。
