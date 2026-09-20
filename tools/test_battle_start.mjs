@@ -46,7 +46,11 @@ function check(name, got, want){
   ok ? pass++ : fail++;
 }
 
-const browser = await pw.chromium.launch();
+// ★このPCでは `npx playwright install` が通らない（ROLE.md）。
+//   既定のブラウザが無ければ、入っている Chrome を使う（ほかの検査と同じ形）
+let browser;
+try { browser = await pw.chromium.launch(); }
+catch { browser = await pw.chromium.launch({ channel: "chrome" }); }
 
 // 「二人で始める」を押して、部屋ができて相手を待つ状態まで行けるか。
 // 2台目が無くても、ホスト側が待機に入るところまでは確かめられる

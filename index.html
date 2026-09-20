@@ -377,6 +377,22 @@
   }
   .error-note.show{display:block;}
 
+  /* つながらなかったときの「くわしい状態」（2026-09-20）。
+     ★お子さんに読ませるものではない。親が大人に見せるための控え。
+     ふだんは出さず、つながらなかったときだけ出す */
+  .diag-box{display:none; margin-top:14px; text-align:left;}
+  .diag-box.show{display:block;}
+  .diag-title{font-size:12px; color:var(--ink-soft); margin-bottom:4px;}
+  .diag-text{
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:11px; line-height:1.6; color:var(--ink-soft);
+    background:rgba(127,127,127,.10); border-radius:8px;
+    padding:8px 10px; margin:0;
+    white-space:pre-wrap; word-break:break-all;
+    max-height:220px; overflow:auto;
+  }
+  .diag-copy{margin-top:8px; font-size:13px;}
+
   /* ---- battle screen ---- */
   .quiz-head{
     display:flex;
@@ -1702,6 +1718,11 @@
       <button class="start-btn" id="start-together-btn" style="display:none; margin-top:14px;">二人で開始する</button>
       <div class="error-note" id="create-error"></div>
       <button class="btn-secondary" id="create-retry-btn" style="display:none; margin-top:10px;">もう一度つなぐ</button>
+      <div class="diag-box" id="create-diag">
+        <div class="diag-title">くわしい状態（直す人に送る用）</div>
+        <pre class="diag-text" id="create-diag-text"></pre>
+        <button class="btn-secondary diag-copy" id="create-diag-copy">この内容をコピー</button>
+      </div>
       <div class="back-link" id="room-code-change">別のコードにする</div>
       <div class="back-link" id="create-cancel">✕ やめる</div>
     </div>
@@ -1725,6 +1746,11 @@
       <button class="start-btn" id="join-start-together-btn" style="display:none; margin-top:14px;">開始する</button>
       <div class="error-note" id="join-error"></div>
       <button class="btn-secondary" id="join-retry-btn" style="display:none; margin-top:10px;">もう一度つなぐ</button>
+      <div class="diag-box" id="join-diag">
+        <div class="diag-title">くわしい状態（直す人に送る用）</div>
+        <pre class="diag-text" id="join-diag-text"></pre>
+        <button class="btn-secondary diag-copy" id="join-diag-copy">この内容をコピー</button>
+      </div>
       <div id="join-fair-units" style="display:none; margin-top:16px;">
         <div class="section-title">公平モード：あなたも出したい単元を選べます</div>
         <div class="choice-grid" id="join-fair-unit-choices"></div>
@@ -2023,9 +2049,12 @@ function loadJoinRoom(){
       .catch(()=> importTrystero())   // 1回だけ、別のURLで黙ってやり直す
       .then(mod=>{
         joinRoomFn = mod.joinRoom;
+        diag.lib = "読めた";
         return joinRoomFn;
       }).catch(e=>{
         joinRoomLoading = null; // 失敗したら次にもう一度試せるようにする
+        // ★ここで落ちるのは「ブラウザが読めない書き方だった」ときが多い（2026-09-20）
+        diag.lib = "読めない: " + (e && (e.message || e));
         throw e;
       });
   }
@@ -2051,18 +2080,127 @@ const APP_ID = 'kosukequiz-battle-hayaoshi-8f3d2a';
 //     やりとりは短い文字だけ（問題のidや〇✕）なので、中継を通っても通信量はごくわずか。
 //   ⚠️ Open Relay は無料で誰でも使える他人のサービス。止まる・混むことはある。
 //     それでも困るようなら、自前の TURN（有料のサーバ）を立てる案がある（司令塔に相談ずみ）。
+//
+// ★★2026-09-20: **Open Relay の3本を外した。**サービスが無くなっていたため。
+//   実測（`tools/mikaku/ice_probe.mjs`。本物の Chrome に候補を集めさせた）:
+//     ・relay 候補 0件。TURN は 3本とも借りられない（701 host lookup / 400 allocate）
+//     ・`openrelay.metered.ca` は **DNS で名前が引けない**（metered.ca 本体は生きている）
+//     ・metered は **APIキー必須**に変わった。固定の合いことばで使う道は終了
+//   つまり 09-18 に足した中継は、**配信した日から一度も効いていなかった。**
+//   ⚠️ 死んだ URL を残すと、つなぎ始めに毎回そこへ問い合わせて**無駄に待つ**ので消す。
+//   ⚠️ **いまは中継が1本も無い＝直接つながれない回線どうしは、つながらない。**
+//     替えの中継をどうするかは、ユーザーに諮っている（無料のものは合いことばを
+//     このファイルに書くことになり、公開リポジトリなので誰でも使えてしまう）。
+//   → 替えが決まったら、下の配列に足すだけでよい。
 const RTC_CONFIG = {
   iceServers: [
     { urls: "stun:stun.cloudflare.com:3478" },
-    { urls: "stun:stun.l.google.com:19302" },
-    // 80番・443番・TLSの443番。きびしい回線でも、どれかが通りやすい
-    { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
-    { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
-    { urls: "turns:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+    { urls: "stun:stun.l.google.com:19302" }
+    // ここに中継（TURN）を足す。足したら必ず `node tools/mikaku/ice_probe.mjs` で
+    // **relay 候補が実際に取れること**を確かめる。書いただけでは効いている証拠にならない
   ]
 };
+
+// ---- つながらなかったときの「くわしい状態」（2026-09-20）----
+//   ユーザー報告「クロムとクロムだとつながるが、Silk だとつながらない」。
+//   ★いまの知らせ方（「つながりませんでした」）では、
+//     **①ライブラリが読めていない ②待ち合わせができていない ③道ができていない**
+//     の3つが、どれも同じ文面になってしまい、こちらから区別できない。
+//   → 起きたことをその場で控えておき、失敗したときだけ小さく出す。
+//     ★読み上げてもらうのではなく、**コピーして送ってもらう**（伝言で数字は必ず崩れる）。
+//   ★この記録の版。**中身を変えたら、ここも変える。**
+//     送られてきた控えが、どの版のアプリで取れたものかを言えるようにするため。
+const DIAG_VERSION = "2026-09-20a";
+const diag = {
+  role: "", startedAt: 0,
+  lib: "まだ",             // 通信ライブラリを読めたか
+  ws: { tried: 0, open: 0, closed: 0, err: 0 },  // 待ち合わせ（相手を探す通信）
+  handshake: 0,            // 相手を見つけて話し始めた回数
+  joinError: "",           // ライブラリからの知らせ
+  cand: {},                // 集まった道の候補（host / srflx / relay）
+  iceState: "",            // 道づくりの状態のうつりかわり
+  iceErr: [],              // 道の候補を作るときのエラー
+  pair: ""                 // 実際に選ばれた道
+};
+function diagReset(role){
+  diag.role = role; diag.startedAt = Date.now();
+  diag.ws = { tried: 0, open: 0, closed: 0, err: 0 };
+  diag.handshake = 0; diag.joinError = "";
+  diag.cand = {}; diag.iceState = ""; diag.iceErr = []; diag.pair = "";
+}
+
+// ---- ① 待ち合わせの通信を数える ----
+//   trystero は相手を探すのに WebSocket を使う。つながった本数を数えるだけで、
+//   **中身には一切さわらない**（差し替えた WebSocket は、本物をそのまま返す）。
+//   ⚠️ ここが 0 本なら、**相手がいる／いない以前に、探しに行けていない**。
+(function(){
+  try{
+    if(typeof WebSocket !== "function") return;
+    var Orig = WebSocket;
+    function Counted(url, protocols){
+      var ws = (protocols === undefined) ? new Orig(url) : new Orig(url, protocols);
+      diag.ws.tried++;
+      ws.addEventListener("open", function(){ diag.ws.open++; });
+      ws.addEventListener("error", function(){ diag.ws.err++; });
+      ws.addEventListener("close", function(){ diag.ws.closed++; });
+      return ws;
+    }
+    Counted.prototype = Orig.prototype;
+    ["CONNECTING","OPEN","CLOSING","CLOSED"].forEach(function(k){ Counted[k] = Orig[k]; });
+    window.WebSocket = Counted;
+  }catch(e){ /* 数えられなくても、対戦そのものは動かす */ }
+})();
+
+// ---- ② 道づくり（ICE）を見る ----
+//   trystero は `rtcPolyfill` に渡したものを `new` して通信路を作る（0.25.4 で確認）。
+//   **本物の RTCPeerConnection を作って返すだけ**なので、動きは何も変わらない。
+//   ⚠️ WebRTC が無いブラウザでは、ここで落ちないように undefined のままにする。
+var HAS_WEBRTC = (typeof RTCPeerConnection === "function");
+var DiagPeerConnection = !HAS_WEBRTC ? undefined : function(cfg){
+  var pc = new RTCPeerConnection(cfg);
+  try{
+    pc.addEventListener("icecandidate", function(e){
+      if(!e.candidate || !e.candidate.candidate) return;
+      var m = e.candidate.candidate.match(/ typ (\w+)/);
+      var t = m ? m[1] : "?";
+      diag.cand[t] = (diag.cand[t] || 0) + 1;
+    });
+    pc.addEventListener("icecandidateerror", function(e){
+      var s = (e.errorCode || "?") + " " + (e.url || "");
+      if(diag.iceErr.indexOf(s) < 0 && diag.iceErr.length < 6) diag.iceErr.push(s);
+    });
+    pc.addEventListener("iceconnectionstatechange", function(){
+      var s = pc.iceConnectionState;
+      if(diag.iceState.slice(-s.length) !== s) diag.iceState += (diag.iceState ? "→" : "") + s;
+      if(s === "connected" || s === "completed") diagReadPair(pc);
+    });
+  }catch(e){ /* 見られなくても、対戦そのものは動かす */ }
+  return pc;
+};
+// 実際に選ばれた道の種類（host＝同じWi-Fi内 / srflx＝直接 / relay＝中継ごし）
+function diagReadPair(pc){
+  try{
+    if(!pc.getStats) return;
+    pc.getStats().then(function(stats){
+      var pair = null, local = {};
+      stats.forEach(function(r){
+        if(r.type === "local-candidate") local[r.id] = r.candidateType;
+        if(r.type === "candidate-pair" && (r.selected || r.state === "succeeded")) pair = r;
+      });
+      if(pair) diag.pair = local[pair.localCandidateId] || "?";
+    }).catch(function(){});
+  }catch(e){}
+}
+
 // 部屋を作る・入るときの設定（3か所で同じものを使う）
-const ROOM_CONFIG = { appId: APP_ID, rtcConfig: RTC_CONFIG };
+const ROOM_CONFIG = { appId: APP_ID, rtcConfig: RTC_CONFIG, rtcPolyfill: DiagPeerConnection };
+// ★ライブラリからの知らせ（joinRoom の第3引数。0.25.4 で確認）。
+//   `onPeerHandshake` が **「待ち合わせまで行けた」**の印、
+//   そのあと `onJoinError` が来たら **「見つけたが道ができなかった」**。ここが切り分けの要。
+const ROOM_CALLBACKS = {
+  onPeerHandshake: function(){ diag.handshake++; },
+  onJoinError: function(e){ diag.joinError = (e && e.error) ? String(e.error) : String(e); }
+};
 
 // ---- つながらないときに、待ち続けないで知らせる（2026-09-18）----
 //   ★Trystero は部屋の告知を約5.3秒ごとに出し直している（0.25.4 で実測）ので、
@@ -2075,6 +2213,79 @@ function clearConnectTrouble(){
   connectTimeoutTimer = null;
   ["create-error","join-error"].forEach(k => els[k] && els[k].classList.remove("show"));
   ["create-retry-btn","join-retry-btn"].forEach(k => { if(els[k]) els[k].style.display = "none"; });
+  ["create-diag","join-diag"].forEach(k => els[k] && els[k].classList.remove("show"));
+}
+
+// ---- くわしい状態を、送れる文にする（2026-09-20）----
+//   ★1行目に「どこまで行けたか」の答えを置く。以下は根拠。
+//   上から順に ①ブラウザ ②ライブラリ ③待ち合わせ ④相手 ⑤道 と、
+//   **つながるまでの順番どおり**に並べる。止まった場所がそのまま分かる。
+function diagText(){
+  const ua = navigator.userAgent || "?";
+  const br = (ua.match(/(Silk|EdgA?|OPR|SamsungBrowser|CriOS|FxiOS|Firefox|Chrome|Version)\/[\d.]+/g) || []).join(" ") || "?";
+  const cand = Object.keys(diag.cand).length
+    ? Object.keys(diag.cand).map(k => k + " " + diag.cand[k]).join(" / ") : "なし";
+  // ★どこで止まったかの見立て。**順番に見て、最初に引っかかったものを出す**
+  let stop;
+  if(!HAS_WEBRTC)                 stop = "このブラウザは対戦のしくみ（WebRTC）を持っていません";
+  else if(diag.lib !== "読めた")   stop = "通信ライブラリを読めていません（" + diag.lib + "）";
+  else if(diag.ws.open === 0)     stop = "相手を探しに行けていません（待ち合わせの通信がつながらない）";
+  else if(diag.handshake === 0)   stop = "相手が見つかっていません（部屋には入れている）";
+  else if(!diag.pair)             stop = "相手は見つかったが、道ができませんでした（中継が要る回線の可能性）";
+  else                            stop = "道はできています（" + diag.pair + "）";
+  return [
+    // ★版の名前を入れる。入れないと「直したものを試してもらえたのか」が分からない
+    "【対戦がつながらないときの記録】版 " + DIAG_VERSION,
+    "どこで止まったか: " + stop,
+    "――――――",
+    "とき: " + new Date().toLocaleString("ja-JP") + "（" + Math.round((Date.now() - diag.startedAt)/1000) + "秒待った）",
+    "やくわり: " + (diag.role === "host" ? "部屋を作った側" : "部屋に入った側"),
+    "ブラウザ: " + br,
+    // ★Silk のように「アプリは動くのに対戦だけ動かない」端末で、
+    //   何が無いのかを名指しできるようにする（2026-09-20）
+    "WebRTC: " + (HAS_WEBRTC ? "ある" : "★ない") +
+      " / データ通路: " + (HAS_WEBRTC && RTCPeerConnection.prototype.createDataChannel ? "ある" : "★ない") +
+      " / WebSocket: " + (typeof WebSocket === "function" ? "ある" : "★ない") +
+      " / 暗号: " + ((window.crypto && window.crypto.subtle) ? "ある" : "★ない"),
+    "ライブラリ: " + diag.lib,
+    "待ち合わせ: つながった " + diag.ws.open + " / 試した " + diag.ws.tried +
+      "（切れた " + diag.ws.closed + " / 失敗 " + diag.ws.err + "）",
+    "相手を見つけた: " + (diag.handshake ? diag.handshake + "回" : "★なし"),
+    "道の候補: " + cand,
+    "道づくり: " + (diag.iceState || "始まっていない"),
+    "選ばれた道: " + (diag.pair || "なし"),
+    "ICEエラー: " + (diag.iceErr.length ? diag.iceErr.join(" , ") : "なし"),
+    "知らせ: " + (diag.joinError || "なし"),
+    "中継(TURN): " + RTC_CONFIG.iceServers.filter(s => /^turns?:/.test(s.urls)).length + "本",
+    "UA: " + ua
+  ].join("\n");
+}
+function showDiag(side){
+  const box = els[side === "host" ? "create-diag" : "join-diag"];
+  const txt = els[side === "host" ? "create-diag-text" : "join-diag-text"];
+  if(!box || !txt) return;
+  txt.textContent = diagText();
+  box.classList.add("show");
+}
+// コピー。★新しい書き方が使えない端末（まさに Silk が怪しい）でも動くよう、
+//   だめだったときは古いやり方に落とす。**両方だめなら、そう言う**（黙って成功に見せない）
+function diagCopy(btn, txtEl){
+  const done = ok => { btn.textContent = ok ? "コピーしました" : "コピーできません。長押しで選んでください";
+                       setTimeout(()=>{ btn.textContent = "この内容をコピー"; }, 2500); };
+  const legacy = () => {
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = txtEl.textContent;
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      done(ok);
+    }catch(e){ done(false); }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txtEl.textContent).then(()=>done(true), legacy);
+  }else legacy();
 }
 function startConnectTimeout(side){
   clearTimeout(connectTimeoutTimer);
@@ -2091,6 +2302,7 @@ function startConnectTimeout(side){
       els["join-error"].classList.add("show");
       els["join-retry-btn"].style.display = "block";
     }
+    showDiag(side);
   }, CONNECT_TIMEOUT_MS);
 }
 
@@ -2241,6 +2453,7 @@ const els = {};
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-start-together-btn","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error","create-retry-btn","join-retry-btn",
+ "create-diag","create-diag-text","create-diag-copy","join-diag","join-diag-text","join-diag-copy",
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
@@ -5831,9 +6044,11 @@ async function hostCreateRoomWithCode(code){
   role = "host";
   els["room-code-display"].textContent = code;
   els["create-error"].classList.remove("show");
+  els["create-diag"].classList.remove("show");
+  diagReset("host");
   try{
     const joinRoom = await loadJoinRoom();
-    room = joinRoom(ROOM_CONFIG, code);
+    room = joinRoom(ROOM_CONFIG, code, ROOM_CALLBACKS);
     setupActions();
     saveLastCode(code);
     startConnectTimeout("host");   // 20秒たっても相手が来なければ知らせる
@@ -5841,6 +6056,7 @@ async function hostCreateRoomWithCode(code){
     console.error("room create failed", e);
     els["create-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\n通信環境を確認してもう一度お試しください。";
     els["create-error"].classList.add("show");
+    showDiag("host");
   }
 }
 
@@ -5905,9 +6121,10 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   // 二度押しで部屋が2つできないように止めておく
   // （「二人で始める」と「参加する」は、押した時点でボタンごと隠れるので要らない）
   els["resume-battle-btn"].disabled = true;
+  diagReset("host");
   try{
     const joinRoom = await loadJoinRoom();
-    room = joinRoom(ROOM_CONFIG, session.code);
+    room = joinRoom(ROOM_CONFIG, session.code, ROOM_CALLBACKS);
     setupActions();
   }catch(e){
     console.error("resume failed", e);
@@ -5938,13 +6155,15 @@ async function joinRoomAsGuest(code){
   els["join-start-together-btn"].style.display = "none";
   resetStartTogether();
   els["join-error"].classList.remove("show");
+  els["join-diag"].classList.remove("show");
+  diagReset("guest");
   joinFairUnits = new Set();
   els["join-fair-units"].style.display = "none";
   showScreen("screen-join");
 
   try{
     const joinRoom = await loadJoinRoom();
-    room = joinRoom(ROOM_CONFIG, code);
+    room = joinRoom(ROOM_CONFIG, code, ROOM_CALLBACKS);
     setupActions();
     saveLastCode(code);
     startConnectTimeout("guest");   // 20秒たってもつながらなければ知らせる
@@ -5952,6 +6171,7 @@ async function joinRoomAsGuest(code){
     console.error("room join failed", e);
     els["join-error"].textContent = "接続に失敗しました： "+(e && (e.message || e)) +"\nコードを確認してもう一度お試しください。";
     els["join-error"].classList.add("show");
+    showDiag("guest");
   }
 }
 
@@ -5968,6 +6188,10 @@ els["join-btn"].addEventListener("click", ()=>{
 // ---- 「もう一度つなぐ」（2026-09-18）----
 //   つなぎ直す。部屋の番号は変えない（相手に伝えた番号のまま）。
 //   ★いまのつながりをいったん切ってから入り直す。切らないと部屋が2つできる
+// ---- くわしい状態のコピー（2026-09-20）----
+els["create-diag-copy"].addEventListener("click", ()=> diagCopy(els["create-diag-copy"], els["create-diag-text"]));
+els["join-diag-copy"].addEventListener("click", ()=> diagCopy(els["join-diag-copy"], els["join-diag-text"]));
+
 els["create-retry-btn"].addEventListener("click", ()=>{
   const code = els["room-code-display"].textContent;
   if(!/^\d{4}$/.test(code)) return;
