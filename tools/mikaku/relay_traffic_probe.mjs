@@ -98,6 +98,29 @@ page.on("websocket", (ws) => {
   ws.on("close", () => { rec.closedAt = at(); });
 });
 
+// ★ページの中でも、作った口と**閉じられ方（code / reason）**を控える。
+//   Playwright の websocket イベントは閉じた理由を教えてくれないので、こちらで拾う。
+//   2026-09-20: 「本物の relay は張り直さないのに、まねごとの relay は張り直す」という
+//   食いちがいが出た。**どんな閉じられ方をしたか**が分からないと、これ以上進めない。
+await page.addInitScript(() => {
+  const O = WebSocket;
+  window.__wsLog = [];
+  const t0 = Date.now();
+  const at = () => ((Date.now() - t0) / 1000).toFixed(1);
+  function R(u, p) {
+    const s = (p === undefined) ? new O(u) : new O(u, p);
+    const rec = { url: String(u), made: at(), open: null, close: null, code: null, reason: null, err: false };
+    window.__wsLog.push(rec);
+    s.addEventListener("open", () => { rec.open = at(); });
+    s.addEventListener("error", () => { rec.err = true; });
+    s.addEventListener("close", (e) => { rec.close = at(); rec.code = e.code; rec.reason = String(e.reason || ""); });
+    return s;
+  }
+  R.prototype = O.prototype;
+  ["CONNECTING", "OPEN", "CLOSING", "CLOSED"].forEach(k => R[k] = O[k]);
+  window.WebSocket = R;
+});
+
 await page.goto(`http://127.0.0.1:${PORT}/index.html${RELAY ? "?relay=" + RELAY : ""}`);
 await page.waitForTimeout(500);
 await page.evaluate(() => {
@@ -162,6 +185,22 @@ else {
   const last = Math.max(...allEv.map(e => Number(e.t)));
   console.log(`  ★最後に告知を出したのは ${last}秒（記録は ${SEC}秒まで）` +
               (SEC - last > 20 ? "  ← ★★告知が途中で止まっています" : ""));
+}
+
+console.log("\n── ②b ★ページの中から見た、作った口と閉じられ方 ──");
+{
+  const log = await page.evaluate(() => window.__wsLog);
+  for (const r of log) {
+    console.log(`  ${host(r.url).padEnd(26)} 作った ${r.made}秒 / 開いた ${r.open || "★開かず"}` +
+      (r.close ? ` / 閉じた ${r.close}秒 code=${r.code} reason="${r.reason}"` : " / 開いたまま") +
+      (r.err ? "  ★エラーあり" : ""));
+  }
+  const byUrl = new Map();
+  for (const r of log) byUrl.set(r.url, (byUrl.get(r.url) || 0) + 1);
+  const again = [...byUrl].filter(([, n]) => n > 1);
+  console.log(again.length
+    ? "  ★同じ先に2回以上つなぎに行った: " + again.map(([u, n]) => `${host(u)} ${n}回`).join(" / ")
+    : "  ★どの先にも1回しかつなぎに行っていない（＝切れても張り直していない）");
 }
 
 console.log("\n── ③ 購読（REQ）──");
