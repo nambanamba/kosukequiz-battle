@@ -27,7 +27,11 @@ import argparse, hashlib, io, json, os, re, shutil, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "..", "5年下", "quiz_csv_理科", "第4回_ヒトと動物の消化吸収.json")
 DATA = os.path.join(ROOT, "data.js")
-SHA = "f4220cae43718b6ef0a02f16557bcf4f3e7e600c422125c12f8a48a01ff61f1f"
+# ★納品のたびに書きかえる。宣言値と合わなければ止まる
+SHA = "1f8f0744cfc5c09cea09c5559c6b3fbc217718b70b58d2698df9b5bb4a689aee"
+# ★司令塔が「意図して img を外す」と名指しした id。
+#   実測と突き合わせて、**書き忘れと区別する**（推測では区別できない）
+DECLARED_IMG_REMOVED = "r4m15 r4m16 r4m17 r4m21 r4m22 r4m23 r4m30 r4m32 r4m33 r4m76 r4m77".split()
 
 def main():
     ap = argparse.ArgumentParser()
@@ -64,8 +68,14 @@ def main():
     print("書きかえる問: %d 件" % len(plan))
     for qid, _, _, chg in plan:
         print("  %s  %s" % (qid, " / ".join(sorted(chg))))
-    if len(plan) != 21:
-        sys.exit("✘ 21件のはずが %d 件です。止まります" % len(plan))
+
+    # ★「img が外れる」は、意図して外したのか書き忘れなのかが**実物からは区別できない**。
+    #   だから司令塔に名指しをもらい、ここで突き合わせる。
+    removed = sorted(qid for qid, _, _, chg in plan if "img" in chg and not chg["img"])
+    if removed != sorted(DECLARED_IMG_REMOVED):
+        sys.exit("✘ img が外れる id が、申告と違います。止まります\n"
+                 "  申告 %s\n  実物 %s" % (sorted(DECLARED_IMG_REMOVED), removed))
+    print("★img が外れる %d 件は、申告どおり" % len(removed))
     if not a.apply:
         print("\n（--check なので data.js は変えていません）")
         return
@@ -75,6 +85,10 @@ def main():
     for qid, (s0, s1), body, chg in reversed(plan):
         new = body
         for k, v in chg.items():
+            # ★値が無い＝その鍵ごと消す（img を外すとき）
+            if not v:
+                new = re.sub(r'\n  "%s":\s*"(?:[^"]|\\")*",' % k, "", new, count=1)
+                continue
             lit = json.dumps(v, ensure_ascii=False)
             if re.search(r'"%s":' % k, new):
                 new = re.sub(r'"%s":\s*"(?:[^"]|\\")*"' % k, lambda _m: '"%s": %s' % (k, lit), new, count=1)
