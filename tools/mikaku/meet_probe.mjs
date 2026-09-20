@@ -44,6 +44,21 @@ const server = http.createServer((req, res) => {
       const t = buf.toString("utf8").replace(", relayConfig: RELAY_CONFIG", "");
       body = Buffer.from(t, "utf8");
     }
+    // ★待ち合わせ先を**番号で選んで**配る版（重なりの検査用）。
+    //   `?relay=pick:0,1,2` で RELAY_URLS の0〜2番だけを持たせる。
+    //   ★実機（Fire/Silk）では「10本試して4本しか保てない」。
+    //     つまり2台が**一部しか同じ場所にいない**状態が起きる。それをここで作る。
+    const mPick = /relay=pick:([\d,]+)/.exec(q || "");
+    if (rel === "index.html" && mPick) {
+      const src = buf.toString("utf8");
+      const i0 = src.indexOf("const RELAY_URLS = [");
+      const i1 = src.indexOf("];", i0);
+      const all = src.slice(i0, i1).match(/"wss:\/\/[^"]+"/g) || [];
+      const picked = mPick[1].split(",").map(Number).map(i => all[i]).filter(Boolean);
+      if (i0 >= 0 && i1 >= 0 && picked.length) {
+        body = Buffer.from(src.slice(0, i0) + "const RELAY_URLS = [" + picked.join(", ") + src.slice(i1), "utf8");
+      }
+    }
     // ★でたらめな待ち合わせ先だけを見る版（③の自己確認用）。
     //   ページの中の変数は外からさわれないので、**配る中身のほうを変える**
     if (rel === "index.html" && /relay=bogus/.test(q || "")) {
@@ -69,9 +84,20 @@ const check = (label, ok, extra) => {
 };
 const browser = await chromium.launch({ channel: "chrome" });
 
-async function newPeer(ctxOpts, query) {
+// ★入る側だけ回線を絞る（実機は Fire タブレット＋LTE。PCの光回線とは条件が違う）。
+//   `--slow-guest` を付けたときだけ効く。
+const SLOW_GUEST = process.argv.includes("--slow-guest");
+async function newPeer(ctxOpts, query, slow) {
   const ctx = await browser.newContext(ctxOpts);
   const page = await ctx.newPage();
+  if (slow) {
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send("Network.enable");
+    // 遅い携帯回線くらい: 往復 400ms・上下 400kbps
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false, latency: 400,
+      downloadThroughput: 400 * 1024 / 8, uploadThroughput: 400 * 1024 / 8 });
+  }
   await page.goto(`http://127.0.0.1:${PORT}/index.html${query}`);
   await page.waitForTimeout(500);
   await page.evaluate(() => {
@@ -129,6 +155,136 @@ async function meet(query, label) {
   await guest.page.screenshot({ path: path.join(SHOTS, label.replace(/[^\w]/g, "_") + "_guest.png"), fullPage: true });
   await host.ctx.close(); await guest.ctx.close();
   return met;
+}
+
+// ---- ★★遅れて入ったときに出会えるか（2026-09-20 ユーザーの実機報告から）----
+//   ユーザー: 「二人とも数秒の時間差で同時に開くと割と繋がります。
+//              2秒とかたっちゃうともう繋がらないですねー」
+//
+//   ★これまでの ①②③④ は、**2つの画面をほぼ同時に開いていた**。
+//     つまり**うまくいく側しか試していなかった**（確認ポイント 4-1・D-17 の型）。
+//     「決めうち・既定まかせ どちらも2秒で出会える」という報告は、
+//     **失敗する条件を一度も通していない状態での ✔** だった。
+//
+//   遅らせ方: 部屋を作った側が先に作って待つ。**入る側は N 秒後にページを開く**
+//             （＝あとから来た人がアプリを開く、という実際の順番に合わせる）。
+//
+//   ★この検査が見ないもの: 回線の違い（ここは1台のPCの中の2画面）。実機の裏取りは別（B-12）。
+const MEET_TIMEOUT = Number((process.argv.find(a => a.startsWith("--wait=")) || "--wait=25").split("=")[1]) * 1000;
+
+async function meetDelayed(delaySec, query, round) {
+  const label = `遅れ ${delaySec}秒${round ? ` (${round}回目)` : ""}`;
+  const host = await newPeer({ viewport: { width: 390, height: 844 } }, query);
+  await tap(host.page, "#create-btn");
+  await host.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
+  const code = await host.page.$eval("#room-code-display", e => e.textContent);
+  // ★ここが肝。部屋ができてから N 秒、入る側は**まだアプリを開いてもいない**
+  if (delaySec > 0) await host.page.waitForTimeout(delaySec * 1000);
+  const guest = await newPeer({ viewport: { width: 390, height: 844 } }, query, SLOW_GUEST);
+  const t0 = Date.now();
+  await tap(guest.page, "#go-join");
+  await guest.page.fill("#join-code-input", code);
+  await tap(guest.page, "#join-btn");
+  let met = true, secs = "";
+  try {
+    await host.page.waitForFunction(() => {
+      const e = document.getElementById("start-together-btn");
+      return e && getComputedStyle(e).display !== "none";
+    }, null, { timeout: MEET_TIMEOUT });
+    secs = ((Date.now() - t0) / 1000).toFixed(1) + "秒";
+  } catch (e) { met = false; }
+  console.log(`  ${met ? "○" : "✘"} ${label}  部屋 ${code}  ${met ? secs + "で出会えた" : (MEET_TIMEOUT / 1000) + "秒たっても出会えない"}`);
+  if (!met) {
+    console.log("      作った側: " + (await relayLineOf(host.page)));
+    console.log("      入った側: " + (await relayLineOf(guest.page)));
+    await host.page.screenshot({ path: path.join(SHOTS, `delay${delaySec}_r${round || 1}_host.png`), fullPage: true });
+    await guest.page.screenshot({ path: path.join(SHOTS, `delay${delaySec}_r${round || 1}_guest.png`), fullPage: true });
+  }
+  await host.ctx.close(); await guest.ctx.close();
+  return met;
+}
+
+// ★2台が「一部しか同じ待ち合わせ場所にいない」ときに出会えるか。
+//   実機（Silk）は10本試して4本しか保てなかった＝**重なりが小さい状態**が実際に起きている。
+//   ここは1台のPCの中で、配る待ち合わせ先を変えて、その状態を人工的に作る。
+async function meetSplit(hostQ, guestQ, label, delaySec) {
+  const host = await newPeer({ viewport: { width: 390, height: 844 } }, hostQ);
+  await tap(host.page, "#create-btn");
+  await host.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
+  const code = await host.page.$eval("#room-code-display", e => e.textContent);
+  if (delaySec > 0) await host.page.waitForTimeout(delaySec * 1000);
+  const guest = await newPeer({ viewport: { width: 390, height: 844 } }, guestQ, SLOW_GUEST);
+  const t0 = Date.now();
+  await tap(guest.page, "#go-join");
+  await guest.page.fill("#join-code-input", code);
+  await tap(guest.page, "#join-btn");
+  let met = true, secs = "";
+  try {
+    await host.page.waitForFunction(() => {
+      const e = document.getElementById("start-together-btn");
+      return e && getComputedStyle(e).display !== "none";
+    }, null, { timeout: MEET_TIMEOUT });
+    secs = ((Date.now() - t0) / 1000).toFixed(1) + "秒";
+  } catch (e) { met = false; }
+  console.log(`  ${met ? "○" : "✘"} ${label}  ${met ? secs + "で出会えた" : (MEET_TIMEOUT / 1000) + "秒たっても出会えない"}`);
+  await host.ctx.close(); await guest.ctx.close();
+  return met;
+}
+
+const ARGV = process.argv.slice(2);
+const argOf = (name) => {
+  const eq = ARGV.find(a => a.startsWith(name + "="));
+  if (eq) return eq.slice(name.length + 1);
+  const i = ARGV.indexOf(name);
+  return i >= 0 ? ARGV[i + 1] : null;
+};
+const delayArg = argOf("--delay");
+if (delayArg) {
+  const list = delayArg.split(",").map(s => Number(s.trim()));
+  const rounds = Number(argOf("--repeat") || 1);
+  const query = argOf("--relay") ? `?relay=${argOf("--relay")}` : "";
+  console.log(`\n══ ★遅れて入ったときに出会えるか ══  遅れ ${list.join("/")}秒 × ${rounds}回${query ? "  " + query : ""}`);
+  const tally = new Map(list.map(n => [n, { ok: 0, ng: 0 }]));
+  for (let r = 1; r <= rounds; r++) {
+    for (const n of list) {
+      const met = await meetDelayed(n, query, rounds > 1 ? r : 0);
+      tally.get(n)[met ? "ok" : "ng"]++;
+    }
+  }
+  console.log("\n── まとめ ──");
+  for (const [n, t] of tally) console.log(`  遅れ ${String(n).padStart(2)}秒 … 出会えた ${t.ok} / 出会えない ${t.ng}`);
+  // ★基準の両側を見る（確認ポイント 4-3）。
+  //   0秒がだめなら、この検査そのものか、環境がおかしい。
+  //   全部の遅れで出会えるなら、**この道具ではユーザーの症状を再現できていない**と言うこと。
+  const zero = tally.get(0);
+  if (zero && zero.ok === 0) console.log("\n★0秒でも出会えていません。**検査か環境の側を疑ってください**（症状の再現になっていない）");
+  else if ([...tally.values()].every(t => t.ng === 0)) console.log("\n★どの遅れでも出会えました。**ユーザーの症状をこの道具では再現できていません。**「直った」とは言えません");
+  else console.log("\n★落ちる境目が出ました。ここから先は、この表を基準にして直しの効果を測れます");
+  await browser.close(); server.close();
+  process.exit(0);
+}
+
+if (ARGV.includes("--overlap")) {
+  const d = Number(argOf("--delay-sec") || 0);
+  console.log(`\n══ ★2台の待ち合わせ先が一部しか重ならないとき ══  遅れ ${d}秒`);
+  console.log("  （RELAY_URLS の番号で配り分ける。0〜5 の6本）");
+  const rows = [
+    ["全部おなじ（0-5 / 0-5）", "?relay=pick:0,1,2,3,4,5", "?relay=pick:0,1,2,3,4,5", "重なり6"],
+    ["半分ずつ重なる（0-2 / 1-3）", "?relay=pick:0,1,2", "?relay=pick:1,2,3", "重なり2"],
+    ["1本だけ重なる（0-2 / 2-4）", "?relay=pick:0,1,2", "?relay=pick:2,3,4", "重なり1"],
+    ["★重なり無し（0-2 / 3-5）", "?relay=pick:0,1,2", "?relay=pick:3,4,5", "重なり0"],
+  ];
+  const out = [];
+  for (const [label, hq, gq, note] of rows) out.push([label, note, await meetSplit(hq, gq, `${label}  ${note}`, d)]);
+  console.log("\n── まとめ ──");
+  for (const [label, note, met] of out) console.log(`  ${met ? "○" : "✘"} ${label.padEnd(30)} ${note}`);
+  // ★基準の両側（4-3）: 全部おなじは出会えるはず／重なり無しは出会えないはず
+  const all6 = out[0][2], none = out[3][2];
+  if (!all6) console.log("\n★「全部おなじ」で出会えていません。**検査か環境の側を疑ってください**");
+  else if (none) console.log("\n★「重なり無し」でも出会えてしまいました。**配り分けが効いていません**（検査が鳴っていない）");
+  else console.log("\n★基準の両側が出ました（全部おなじ=○ / 重なり無し=✘）。間の結果は信用できます");
+  await browser.close(); server.close();
+  process.exit(0);
 }
 
 const pinned = await meet("", "① いまの index.html（待ち合わせ先を決めうち）");
