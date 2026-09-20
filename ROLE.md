@@ -103,9 +103,22 @@
 | `verify_data.mjs` | 取り込み後の照合。図表があるのに画像が無い／★答えが記号なのにその記号が画像に無い、も見る |
 | `step20/scan.mjs` | 「20秒で解けるか」を**長さではなく手順**で測る（A-9） |
 | `mikaku/mikaku_check2.mjs` | **実機（本物のChrome・スマホ幅390px）で実際に出題して目で見る**（B-12）。科目の切りかえに対応 |
-| `smoke-test.mjs` | 主要な機能の通し確認（12件）。**配信前は自作テストと両方** |
+| `smoke-test.mjs` | 主要な機能の通し確認。**配信前は自作テストと両方** |
+| `test_battle_start.mjs` | **本物の trystero を読ませて**、部屋が作れるかを見る（スタブではない） |
+| `mikaku/meet_probe.mjs` | ★**本物の待ち合わせ場所ごしに、2つの画面が実際に出会えるか。**下の⚠️を必ず読むこと |
+| `mikaku/relay_probe.mjs` | 待ち合わせ場所（relay）の生死・設定の書き方が効くか・2台が同じ先を選ぶか |
+| `mikaku/ice_probe.mjs` | STUN/TURN が生きているか（**relay 候補が実際に取れるか**） |
+| `mikaku/diag_panel_probe.mjs` | つながらないときの「くわしい状態」が、止まり方ごとに別の答えを出すか |
 | `find_same_answer.mjs` | 答えが同じ問を探す（重複確認・A-9 手順3） |
 | `旧単元整理/` | 2026-09 の旧単元289問の削除と記録の引きつぎ。**一度きりの作業。引きつぎ表は触らない** |
+
+⚠️ **2026-09-20 まで、対戦の「待ち合わせ」は一度も検査されていませんでした。**
+`battle_buttons_probe`・`test_battle_resume`・`battle_start_timeup_probe` などの**2人ぶんの検査は、
+通信を node のスタブに差し替えています。**つまり「相手を見つける」部分は動いていません。
+`test_battle_start` は本物を読みますが、**部屋を作るところまで**で相手は来ません。
+→ **待ち合わせに関わるところ（`RELAY_URLS`・`ROOM_CONFIG`・`APP_ID`）を触ったら、
+　 必ず `node tools/mikaku/meet_probe.mjs` を通すこと。**ここだけが本物ごしに出会えるかを見ています。
+⚠️ ただし meet_probe も**1台のPCの中の2つの画面**です。**回線の違いは見ていません**（実機はB-12）。
 
 ⚠️ **`npx playwright install` がこのPCでは通りません**（ダウンロードがタイムアウトする）。
 `smoke-test.mjs`・`test_migration.mjs`・`mikaku_check2.mjs` は **PCに入っている Chrome を使う**
