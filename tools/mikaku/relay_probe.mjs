@@ -135,6 +135,113 @@ const CANDIDATES = [
               `${nowUsed.filter(r => r.r === "○").length}本`);
 }
 
+// ---- ⑤ ★★「書き込みを受け付けるか」（2026-09-20 に足した）----
+//   これまでは「つながるか」しか見ていなかった。**つながっても、告知を断られたら役に立たない。**
+//   Trystero は断られ方を見て、**その待ち合わせ先を永久に切り捨てる**（`retireRelay`）:
+//       isTerminalRejection = CLOSED || (OK=false && !rate-limited: && !duplicate:)
+//   ここでは**その同じ区切り**で分類する。
+//
+// ★なぜ必要になったか
+//   2026-09-20、`relay.damus.io` が
+//     ["OK", …, false, "banned: too many rate-limit violations, try again later"]
+//   を返していて、毎回4〜5秒で切り捨てられていた。**「つながるか」の検査は ○ を出していた。**
+//
+// ⚠️ **この結果は「このPCの回線（IP）から、いま」の話**です。
+//   ★**出入り禁止は回線ごと・時間つき**（"try again later"）。実機で同じとは限らないし、明日も同じとは限りません。
+// ⚠️ ★**告知を1本ずつ、実際に出します。**叩きすぎると、これ自体が出入り禁止の原因になります。
+//   **1本につき1回だけ**にしてあります。**繰り返し走らせないこと。**
+{
+  console.log("\n── ⑤ ★書き込み（告知）を受け付けるか ──");
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(BASE, { waitUntil: "load" });
+  const pinned = (html.match(/"wss:\/\/[^"]+"/g) || []).map(s => s.slice(1, -1));
+  // ★入れ替え候補も、同じ物差しで測る（④で「つながる」と出た先のうち、まだ使っていないもの）
+  const SPARES = ["wss://nostr.mom", "wss://relay.snort.social", "wss://purplerelay.com",
+                  "wss://nostr.data.haus", "wss://relay-rpi.edufeed.org"];
+  const urls = [...pinned, ...SPARES.filter(u => !pinned.includes(u))];
+  console.log(`  いま使っている ${pinned.length}本 ＋ 入れ替え候補 ${urls.length - pinned.length}本 に、告知を1本ずつ出します`);
+  const { out: res, selfTest } = await page.evaluate(async (urls) => {
+    // ★@noble/secp256k1 v3 は、ハッシュ関数を自分で差さないと "hashes.sha256 not set" で落ちる。
+    //   （trystero も同じ組み合わせを使っている）
+    const nob = await import("https://esm.run/@noble/secp256k1");
+    const { sha256 } = await import("https://esm.run/@noble/hashes/sha2");
+    if (nob.hashes && !nob.hashes.sha256) nob.hashes.sha256 = sha256;
+    const { schnorr } = nob;
+    const hex = b => [...b].map(x => x.toString(16).padStart(2, "0")).join("");
+    let selfTest = null;
+    const { secretKey, publicKey } = schnorr.keygen();
+    const pubkey = hex(publicKey);
+    async function sign(kind, content) {
+      const created_at = Math.floor(Date.now() / 1000), tags = [["x", "relaywriteprobe"]];
+      const ser = JSON.stringify([0, pubkey, created_at, kind, tags, content]);
+      const idBuf = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ser)));
+      const id = hex(idBuf);
+      return { id, pubkey, created_at, kind, tags, content, sig: hex(await schnorr.sign(idBuf, secretKey)) };
+    }
+    // ★出す前に、自分で作った告知が正しいかを確かめる。
+    //   （relay が無言なのが「相手のせい」か「こちらのせい」かを分けるため・4-1）
+    {
+      const ev = await sign(22222, "selftest");
+      const ser = JSON.stringify([0, ev.pubkey, ev.created_at, ev.kind, ev.tags, ev.content]);
+      const idAgain = hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ser))));
+      const unhex = s => new Uint8Array(s.match(/../g).map(x => parseInt(x, 16)));
+      const sigOk = await schnorr.verify(unhex(ev.sig), unhex(ev.id), unhex(ev.pubkey));
+      selfTest = { idOk: idAgain === ev.id, sigOk, pubkeyLen: ev.pubkey.length, sigLen: ev.sig.length };
+    }
+    async function one(url) {
+      return await new Promise(async (done) => {
+        let ws, t, ev;
+        const fin = (verdict, detail) => { clearTimeout(t); try { ws && ws.close(); } catch {} done({ url, verdict, detail: detail || "" }); };
+        const seen = [];
+        t = setTimeout(() => fin("△返事なし", "15秒まっても OK が返らない｜受けたもの: " + (seen.join(" ") || "何も来ない")), 15000);
+        try { ws = new WebSocket(url); } catch (e) { return fin("✕つなげない", String(e)); }
+        ws.onerror = () => fin("✕つなげない", "");
+        ws.onclose = (e) => fin("✕つなげない", "開く前に閉じた code=" + e.code);
+        ws.onopen = async () => {
+          ev = await sign(22222, "relay-write-probe");
+          ws.send(JSON.stringify(["EVENT", ev]));
+        };
+        ws.onmessage = (m) => {
+          seen.push(String(m.data).slice(0, 120));
+          let a; try { a = JSON.parse(m.data); } catch { return; }
+          const [type, , ok, reason] = a;
+          if (type === "CLOSED") return fin("✘切り捨て(CLOSED)", String(a[2] || ""));
+          if (type === "NOTICE") return;                       // 知らせだけ。判定には使わない
+          if (type !== "OK") return;
+          if (ok === true) return fin("○受け付けた", "");
+          const r = String(reason || "");
+          // ★Trystero と同じ区切り。rate-limited: と duplicate: だけが「切り捨てない」
+          if (r.startsWith("rate-limited:")) return fin("△速すぎ(rate-limited)", r);
+          if (r.startsWith("duplicate:")) return fin("○重複あつかい(duplicate)", r);
+          return fin("✘★切り捨てられる", r);
+        };
+      });
+    }
+    // ★1本ずつ順に。まとめて叩かない（叩きすぎが出入り禁止のもと）
+    const out = [];
+    for (const u of urls) out.push(await one(u));
+    return { out, selfTest };
+  }, urls);
+  await ctx.close();
+  console.log(`  ★自己確認（こちらの告知が正しいか）: ${JSON.stringify(selfTest)}`);
+  for (const r of res) console.log(`  ${(pinned.includes(r.url) ? "[いま使用] " : "[候補]     ") + r.verdict.padEnd(22)} ${r.url.replace(/^wss?:\/\//, "")}${r.detail ? "  ← " + r.detail : ""}`);
+  const retired = res.filter(r => r.verdict.startsWith("✘") && pinned.includes(r.url));
+  const okWrite = res.filter(r => r.verdict.startsWith("○") && pinned.includes(r.url));
+  const spareOk = res.filter(r => r.verdict.startsWith("○") && !pinned.includes(r.url));
+  console.log(`\n  ★書き込みを受け付けた: ${okWrite.length}本 / ${res.length}本`);
+  console.log(`  ★★切り捨てられる（Trystero が二度と使わない）: ${retired.length}本` +
+              (retired.length ? " … " + retired.map(r => r.url.replace(/^wss?:\/\//, "")).join(" / ") : ""));
+  check("★待ち合わせ先のうち、書き込みを受け付ける先が2本以上ある",
+        okWrite.length >= 2, `${okWrite.length}本`);
+  if (retired.length) {
+    console.log("  ⚠️ 切り捨てられる先は、**つながっていても数に入りません**。入れ替えを考えてください");
+    console.log(`  ★入れ替え候補で、書き込みも通った先: ${spareOk.length}本` +
+                (spareOk.length ? " … " + spareOk.map(r => r.url.replace(/^wss?:\/\//, "")).join(" / ") : "（なし）"));
+  }
+  console.log("  ⚠️ これは**このPCの回線から、いま**の話です。実機・明日は違いえます（\"try again later\"）");
+}
+
 await browser.close();
 server.close();
 console.log(ng === 0 ? "\n✔ すべて確認できた" : `\n✘ ${ng}件 だめだった`);
