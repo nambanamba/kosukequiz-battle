@@ -102,8 +102,11 @@ let taps = 0, savedSettings = null;
   await page.$eval('.unit-group-check[data-group-check="history"]', e => e.click()); taps++;
   const sel = await selUnits(page);
   console.log(`  ② 「歴史」のチェック:  ${await label(page)}  ← 選ばれた単元 ${sel.length}つ: ${sel.map(u => u.split(".")[0]).join("・")}`);
-  check("★「歴史」のチェック1回で、第1〜4回がまとめて選ばれる",
-        sel.length === 4 && sel.every(u => /^第[1-4]回/.test(u)), sel.join(" / "));
+  // ★2026-09-21 第5回（総合）が入って、「歴史」は第1〜5回になった（`u.startsWith("第")` で分けている）。
+  //   「第◯回」で始まる単元が**全部**入っていること、を見る
+  const allDai = await page.evaluate(() => [...new Set(QA_DATA.filter(q => q.subj === "社会" && q.u.startsWith("第")).map(q => q.u))]);
+  check("★「歴史」のチェック1回で、「第◯回」の単元がまとめて選ばれる",
+        sel.length === allDai.length && allDai.every(u => sel.includes(u)), `${sel.length}単元: ${sel.map(u => u.split(".")[0]).join("・")}`);
   await page.$eval("#mode-weak", e => e.click()); taps++;
   console.log("  ③ 「よく間違える」:    " + await label(page));
   const startText = await page.$eval("#solo-start-btn", e => e.textContent);
@@ -122,7 +125,7 @@ console.log("\n── B. ★開き直したとき、設定が残っているか 
   console.log(`  選ばれている単元: ${sel.map(u => u.split(".")[0]).join("・")} ／ よく間違える: ${weakOn ? "ON" : "OFF"}`);
   console.log("  問題数の表示: " + await label(page));
   check("★開き直しても、単元とトグルが残っている（次からは1タップ）",
-        sel.length === 4 && weakOn);
+        sel.length >= 4 && weakOn);
   await ctx.close();
 }
 

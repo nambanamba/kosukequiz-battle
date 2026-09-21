@@ -45,11 +45,13 @@ const browser = await chromium.launch({ channel: "chrome" });
 // ★実機に近づける: スマホ幅390px・画素は2倍（いまどきのAndroidはこの形）
 const page = await (await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })).newPage();
 await page.goto(BASE); await page.waitForTimeout(800);
-await page.evaluate(() => {
+// ★単元は、見る問題の id から引く（2026-09-21 第5回で使うため。もとは第4回を決め打ちしていた）
+await page.evaluate((qid) => {
+  const u = (QA_DATA.find(q => q.id === qid) || {}).u || "第4回.平安時代";
   localStorage.clear();
   localStorage.setItem("kq_battle_settings_v1", JSON.stringify({
-    subject: "社会", unitsBySubject: { "社会": ["第4回.平安時代"] }, units: ["第4回.平安時代"], count: "all" }));
-});
+    subject: "社会", unitsBySubject: { "社会": [u] }, units: [u], count: "all" }));
+}, TARGETS[0]);
 await page.reload(); await page.waitForTimeout(900);
 // ★出題順を「問題の順どおり」に固定する。
 //   既定はシャッフルなので、**先の id が自分より前に出てしまい、進んでも二度と届かない**
@@ -94,8 +96,13 @@ for (const qid of TARGETS) {
     return l ? l.children.length : -1;
   });
   const want = (MARKS[qid] || []).length;
-  check("★赤丸の数が、座標表と合っている", drawn === want && want > 0, `画面 ${drawn}個 / 表 ${want}個`);
-  check("★年表の絵が出ている", shown.出ている && /kai4_01\.jpg/.test(shown.src || ""), `${shown.src} 枠${shown.枠} 実寸${shown.実寸}`);
+  // ★2026-09-21: もとは「赤丸が1つ以上」と「kai4_01.jpg」を決め打ちしていた（第4回専用）。
+  //   第5回は**赤丸なしで先に出す**回なので、「表の数と画面の数が一致」だけを見る（0と0も合格）。
+  //   絵は**その問の img**と照らす
+  const wantImg = await page.evaluate(q => (QA_DATA.find(d => d.id === q) || {}).img || "", qid);
+  check("★赤丸の数が、座標表と合っている", drawn === want,
+        `画面 ${drawn}個 / 表 ${want}個${want === 0 ? "（赤丸なしの回）" : ""}`);
+  check("★年表の絵が出ている", shown.出ている && !!wantImg && (shown.src || "").endsWith(wantImg), `${shown.src} 枠${shown.枠} 実寸${shown.実寸}`);
   await page.screenshot({ path: path.join(SHOTS, qid + "_1_normal.png") });
 
   if (!first) { continue; }   // ★拡大の確認は先頭の1問だけ（上の理由）
@@ -108,7 +115,7 @@ for (const qid of TARGETS) {
     while (el) { if (el.classList && el.classList.contains("show")) { shown = true; break; } el = el.parentElement; }
     return { 開いた: shown, src: img && img.getAttribute("src"), 大きさ: img ? img.clientWidth + "x" + img.clientHeight : null };
   });
-  check("★押すと拡大して見られる", lb.開いた && /kai4_01\.jpg/.test(lb.src || ""), `${lb.大きさ}`);
+  check("★押すと拡大して見られる", lb.開いた && !!wantImg && (lb.src || "").endsWith(wantImg), `${lb.大きさ}`);
   await page.screenshot({ path: path.join(SHOTS, qid + "_2_lightbox.png") });
 
   // さらに2回拡大して、絵が実際に大きくなるか
