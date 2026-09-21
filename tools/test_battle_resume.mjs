@@ -334,6 +334,35 @@ async function onResult(page) {
   await host.ctx.close(); await guest.ctx.close();
 }
 
+// ============================================================ シナリオ7: 保存した対戦に、データから消えた問題が入っていた
+// ★2026-09-22: 理科 第4回の r4m90 を data.js から消した。消す前に始めた二人対戦を途中で止めていた端末は、
+//   保存に r4m90 を持ったまま「再開」する。一人の途中再開は消えた問を取りのぞくが、
+//   二人のほうは保存した questionIds をそのまま使っていて、getQById() が null を返し画面が落ちる作りだった。
+//   → ★次に出すはずの位置に、存在しない id を混ぜて再開し、飛ばして続けられるかを見る
+{
+  const host = await makePeer("host7"), guest = await makePeer("guest7");
+  try {
+    await setup(host, guest);
+    await playQuestion(host, guest, true); await next(host);          // 1問目 〇
+    const want = await host.page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("kq_battle_host_session_v1"));
+      const nextId = s.questionIds[s.currentIndex];
+      s.questionIds.splice(s.currentIndex, 0, "zz_gone_1");           // ★次に出す位置に、消えた問を入れる
+      localStorage.setItem("kq_battle_host_session_v1", JSON.stringify(s));
+      return nextId;
+    });
+    await reloadAndResume(host);
+    await visible(host.page, "#answer-reveal-btn", 5000);
+    const shown = (await host.page.textContent("#battle-q-id") || "").trim();
+    ok("[7] ★消えた問を飛ばして、次の問（" + want + "）から続く", shown.endsWith(want), shown);
+    await playQuestion(host, guest, true); await next(host);          // 2問目
+    await playQuestion(host, guest, true); await next(host);          // 3問目
+    await onResult(host.page);
+    ok("[7] 最後まで進んで結果が出る", true);
+  } catch (e) { ok("シナリオ7が最後まで動く", false, String(e.message).slice(0, 200)); }
+  await host.ctx.close(); await guest.ctx.close();
+}
+
 // ============================================================ シナリオ5: ひとり練習でも確認が出る
 {
   const solo = await makePeer("solo");
