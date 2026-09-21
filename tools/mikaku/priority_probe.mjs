@@ -4,8 +4,9 @@
 //
 // ■ 決めごと（ユーザー 2026-09-22・司令塔の読み）
 //   ふだん（未クリア／よく間違える が OFF）… ★を先頭に（選んだ単元の中で）→ そのあと問題数で切る
-//   未クリアのみ … ★を特別扱いしない（★でも正解したら外れる）
-//   苦手のみ     … ★を特別扱いしない（並びも他と同じ）
+//   未クリアのみ … ★で未クリアの問を**いちばん上**へ（★でも正解ずみは未クリアに入らない）
+//   よく間違える … いつもの3段の並び。鍵（段・最後に正解した日）が**まったく同じ**ときだけ★を上
+//                  （2026-09-22 ユーザー訂正。最初「★を特別扱いしない」と読み違えて作った）
 //   ★は自動では外れない／付けるのは問題一覧だけ／★が0件なら、いまとまったく同じ
 //
 // ■ ★「いまと同じ」を、直す前の版と並べて確かめる
@@ -52,7 +53,8 @@ const UNIT = "第3回.奈良時代";   // 113問。ここで試す
 function seedStats(ids) {
   const st = {}, now = Date.now(), day = 86400000;
   ids.forEach((id, i) => {
-    if (i % 10 === 3) st[id] = { correct: 0, wrong: 1, box: 0, lastAnswered: now - day };
+    if (i % 10 === 3) st[id] = { correct: 0, wrong: 1, box: 0, lastAnswered: now - day };           // 1段目（正解日なし＝鍵 0 で全部同点）
+    else if (i % 10 === 7) st[id] = { correct: 1, wrong: 1, box: 1, lastCorrectAt: now - i * day - i, lastAnswered: now - day }; // 2段目（鍵は全部ちがう）
     else if (i < 60) st[id] = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - (60 - i) * day, lastAnswered: now - day };
   });
   return st;
@@ -122,21 +124,41 @@ console.log("\n── ③ ふだん・シャッフル・10問 ──");
   console.log(`  最初の5問: ${r.seq.join(" ")}`);
   check("★4問が先頭（順はまぜてよい）", r.seq.slice(0, 4).sort().join() === STARS.slice().sort().join());
 }
-// ── ④ 未クリアのみ: ★を特別扱いしない ──
-console.log("\n── ④ 未クリアのみ（★を特別扱いしない）──");
+// ── ④ 未クリアのみ: ★で未クリアの問がいちばん上 ──
+console.log("\n── ④ 未クリアのみ（★で未クリアの問が、いちばん上）──");
 {
-  const a = await run(NEW, { stars: [], count: 20, unmastered: true, n: 8 });
-  const b = await run(NEW, { stars: STARS, count: 20, unmastered: true, n: 8 });
+  const a = await run(NEW, { stars: [], count: "all", unmastered: true, n: 6 });
+  const b = await run(NEW, { stars: STARS, count: "all", unmastered: true, n: 6 });
   console.log(`  ★なし: ${a.label} ${a.seq.join(" ")}\n  ★あり: ${b.label} ${b.seq.join(" ")}`);
-  check("★を付けても、並びも数も同じ", a.seq.join() === b.seq.join() && a.label === b.label);
+  check("★で未クリアの3問（" + [ids[100], ids[105], ids[110]].join(" ") + "）がいちばん上", b.seq.slice(0, 3).join() === [ids[100], ids[105], ids[110]].join());
   check("正解ずみの★（" + STARS[3] + "）は出ない", !b.seq.includes(STARS[3]));
+  // ★表示には「（★最優先 N問が先に出ます）」が付くのが狙いどおり。比べるのは問題数だけ
+  check("★を付けても、入る問の数は同じ（並びだけ変わる）", parseInt(a.label, 10) === parseInt(b.label, 10), `${a.label} / ${b.label}`);
+  check("未クリアで★が上に来るときは「★最優先 3問が先に出ます」と出る", /★最優先 3問が先に出ます/.test(b.label), b.label);
+  check("★のあとは、★なしのときの並びのまま", b.seq.slice(3).join() === a.seq.filter(x => ![ids[100], ids[105], ids[110]].includes(x)).slice(0, 3).join());
 }
-// ── ⑤ 苦手のみ: ★を特別扱いしない ──
-console.log("\n── ⑤ よく間違える のみ（★を特別扱いしない）──");
+// ── ④b 未クリア＋よく間違える（両方 ON）: 未クリアを含むので★が上 ──
+console.log("\n── ④b 未クリア＋よく間違える 両方 ON ──");
 {
-  const a = await run(NEW, { stars: [], count: 20, weak: true, n: 8 });
-  const b = await run(NEW, { stars: STARS, count: 20, weak: true, n: 8 });
-  check("★を付けても、並びも数も同じ", a.seq.join() === b.seq.join() && a.label === b.label, `${b.label} ${b.seq.slice(0, 5).join(" ")}`);
+  const b = await run(NEW, { stars: STARS, count: 20, unmastered: true, weak: true, n: 4 });
+  console.log(`  ${b.label} ${b.seq.join(" ")}`);
+  check("★で未クリアの3問がいちばん上", b.seq.slice(0, 3).join() === [ids[100], ids[105], ids[110]].join());
+}
+// ── ⑤ よく間違える のみ: いつもの並び。鍵がまったく同じときだけ★が上 ──
+console.log("\n── ⑤ よく間違える のみ（同点のときだけ★が上）──");
+{
+  const WEAK0 = ids[93];   // 1段目（正解日なし）。1段目どうしは鍵が全部 0 で同点 → ★が効くはず
+  const WEAK1 = ids[27];   // 2段目（正解日あり・ミリ秒で全部ちがう）→ 同点の相手がいないので、この記録では位置が変わらないはず（仕様は「同点なら★が先」）
+  const a = await run(NEW, { stars: [], count: "all", weak: true, n: 20 });
+  const b = await run(NEW, { stars: [WEAK0, WEAK1], count: "all", weak: true, n: 20 });
+  console.log(`  ★なし: ${a.seq.join(" ")}\n  ★あり: ${b.seq.join(" ")}`);
+  check("★1段目の★（" + WEAK0 + "）は、1段目のいちばん上に来る（同点の決め手）", b.seq[0] === WEAK0, b.seq[0]);
+  const posA = a.seq.indexOf(WEAK1), posB = b.seq.indexOf(WEAK1);
+  check("★2段目の★（" + WEAK1 + "）は、鍵がちがうので位置が変わらない（1段目が1つ前に来たぶんを除いて）",
+        posA >= 0 && posB === posA, `★なし ${posA}番目 / ★あり ${posB}番目`);
+  check("入る問の数は同じ", a.label === b.label, `${a.label} / ${b.label}`);
+  check("★の無い問どうしの順は、★なしのときと同じ",
+        b.seq.filter(x => x !== WEAK0 && x !== WEAK1).join() === a.seq.filter(x => x !== WEAK0 && x !== WEAK1).slice(0, b.seq.length - 2).join());
 }
 
 // ── ⑥ 問題一覧で付け外し・保存・記録に触らない ──

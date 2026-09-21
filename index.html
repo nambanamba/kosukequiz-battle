@@ -3686,9 +3686,18 @@ function setupInlineEdit(prefix, getCurrentId){
 //   ★記録（stats）とは別の箱に、問題の id の一覧だけを持つ。漢字プリントの kanji_app_picked_v1 と同じ形。
 //     → 記録には1文字も触らない。古い版で開いても、知らない箱は読まれないだけ。
 //   ★自動では外れない（ユーザー「星は消さなくていい」）。外すのは親が一覧で。
-//   ★効くのは「ふだんの出題」（未クリア／よく間違える のトグルが両方 OFF）のときだけ。
-//     トグルを使うときは★を特別扱いしない（ユーザー「正解したら未クリアのみからは外して」
-//     「苦手な問題のみの時の優先順位も他と一緒で」）。buildFinalPool を参照。
+//   【仕様】（2026-09-22 ユーザー。buildFinalPool / orderByTiers を参照）
+//     ふだん           … ★を出題順のいちばん頭に置く
+//     未クリアのみ     … 未クリアの問のうち、★を最初に置く（正解ずみの★は未クリアに含まれない）
+//     よく間違えるのみ … 3段の並びで並べ、並びの鍵（段・最後に正解した日）が同じ問どうしでは★を先に置く
+//                        （★は同点のときの決め手）
+//     ※未クリア＋よく間違える（両方 ON）は、未クリアを含むので「未クリアのみ」と同じく★を最初に置く
+//   【備考（結果として起きること。仕様ではない）】
+//     よく間違えるのみの2段目（一度は正解した問）は、最後に正解した日をミリ秒で持つため同点がめったに起きず、
+//     ★を付けても並びが変わらないことが多い。これは仕様どおり（ユーザー確認ずみ）。★の処理は消さないこと。
+//     1段目（まだ一度も正解していない問）は正解日が無く鍵が全部同じなので、★は必ず1段目の先頭に来る。
+//     一覧で手で直した正解日・CSV で取り込んだ正解日は日単位（その日の0時）なので、同じ日どうしは同点になる。
+//   ⚠️ 最初（4903e74）は「未クリア・よく間違えるでは★を特別扱いしない」と読み違えて作った。いまの形が正しい
 //   ⚠️ 保存は端末ごと。親のスマホで付けても、お子さんの端末には届かない（お子さんの端末で付ける前提）
 const PRIORITY_KEY = "kq_battle_priority_v1";
 let priorityIds = new Set();
@@ -4352,10 +4361,14 @@ function tierOf(i){
 }
 // 3段に分けて、各段を「最後に正解した日が古い順」に並べ、繋げて返す。
 // ★「よく間違える問題」と「復習ミックス」の両方がこれを使う（同じ並びになる）。
-function orderByTiers(indices){
+// starTie … true のとき、段も「最後に正解した日」もまったく同じ問どうしは★最優先を上にする（2026-09-22）。
+//   ★並びの鍵（段・正解日）は1つも変えない。同点のときの決め手を足すだけ。
+//   ★復習ミックス・fillFromRest は starTie なしで呼ぶ（そちらの並びは変えない）
+function orderByTiers(indices, starTie){
   const tiers = [[], [], []];
   indices.forEach(i => tiers[tierOf(i)].push(i));
-  tiers.forEach(t => t.sort((a, b) => lastCorrectOf(a) - lastCorrectOf(b)));
+  const star = i => (starTie && isPriority(QA_DATA[i].id)) ? 0 : 1;
+  tiers.forEach(t => t.sort((a, b) => (lastCorrectOf(a) - lastCorrectOf(b)) || (star(a) - star(b))));
   return tiers[0].concat(tiers[1], tiers[2]);
 }
 // ★トグル（よく間違える／未クリア）で絞った問題が足りないとき、選んだ単元の残りから
@@ -4412,11 +4425,17 @@ function buildFinalPool(){
     // ★対象が足りないときは、上の fillFromRest で選んだ単元の残りから段の順に補う（2026-09-13 ユーザー判断）。
     //   以前は補う仕組みが無く、苦手が0問になるとボタンが「問題がありません」で押せなかった
     //   （tools/mikaku/empty_probe.mjs で実測）。
-    pool = fillFromRest(orderByTiers(pool));
+    // ★最優先（2026-09-22 ユーザー訂正）:
+    //   よく間違える … いつもの3段の並びで、鍵がまったく同じ問どうしなら★を上（同点の決め手）
+    //   未クリアを含む … ★で未クリアの問を**いちばん上**へ（★でも正解ずみは、もともと未クリアに入らない）
+    //   ★どちらも「どの問が入るか」は変えない。変えるのは並びだけ
+    let ordered = orderByTiers(pool, true);
+    if(filterUnmastered) ordered = starsFirst(ordered);
+    pool = fillFromRest(ordered);
   }else{
     if(currentShuffle) pool = shuffleArray(pool);
     // ★親が付けた「最優先」を先頭へ（2026-09-22）。**ふだんの出題のときだけ**
-    //   （上のトグルの枝では★を特別扱いしない＝ユーザーの指定）。
+    //   （未クリア・よく間違える の枝の★の扱いは上の分岐。PRIORITY_KEY の【仕様】を参照）
     //   ★どうし・残りどうしの順は、いまの出し方（シャッフル／出題順どおり）のまま。
     //   問題数で切るのはこのあとなので、★は必ず入る。★が0件なら何も変わらない
     pool = starsFirst(pool);
@@ -4579,8 +4598,11 @@ function refreshCreateButton(){
   const reviewN = reviewMixCount > 0 ? Math.min(reviewMixCount, buildReviewPool().length) : 0;
   const n = mainN + reviewN;
   const label = reviewN > 0 ? n+"問（復習"+reviewN+"問こみ）" : n+"問";
-  // ★最優先が先に出るときは、その数も1行に添える（ふだんの出題のときだけ。トグル使用中は★を特別扱いしない）
-  const starN = (filterWeak || filterUnmastered) ? 0 : pool.filter(i => isPriority(QA_DATA[i].id)).length;
+  // ★最優先が先に出るときは、その数も1行に添える（★が頭に来る出し方＝ふだん・未クリアを含む のとき）
+  // ★「先に出ます」と言えるのは、★が頭に来る出し方のときだけ（ふだん・未クリアを含む）。
+  //   よく間違える だけのときは★は同点の決め手なので、数は出さない（言いすぎになる）
+  const starHead = !filterWeak || filterUnmastered;
+  const starN = starHead ? ((filterWeak || filterUnmastered) ? buildPool() : pool).filter(i => isPriority(QA_DATA[i].id)).length : 0;
   els["pool-count-label"].textContent = label + (starN ? "（★最優先 "+Math.min(starN, mainN)+"問が先に出ます）" : "");
   const disabled = n === 0;
   els["solo-start-btn"].disabled = disabled;
