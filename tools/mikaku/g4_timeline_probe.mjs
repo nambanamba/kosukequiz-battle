@@ -47,10 +47,13 @@ const page = await (await browser.newContext({ viewport: { width: 390, height: 8
 await page.goto(BASE); await page.waitForTimeout(800);
 // ★単元は、見る問題の id から引く（2026-09-21 第5回で使うため。もとは第4回を決め打ちしていた）
 await page.evaluate((qid) => {
-  const u = (QA_DATA.find(q => q.id === qid) || {}).u || "第4回.平安時代";
+  // ★教科も id から引く（2026-09-21 理科の「消化の表」で使うため。社会を決め打ちしていると
+  //   理科の単元が選べず「問題がありません」で止まる＝道具の側の失敗）
+  const d = QA_DATA.find(q => q.id === qid) || {};
+  const u = d.u || "第4回.平安時代", subj = d.subj || "社会";
   localStorage.clear();
   localStorage.setItem("kq_battle_settings_v1", JSON.stringify({
-    subject: "社会", unitsBySubject: { "社会": [u] }, units: [u], count: "all" }));
+    subject: subj, unitsBySubject: { [subj]: [u] }, units: [u], count: "all" }));
 }, TARGETS[0]);
 await page.reload(); await page.waitForTimeout(900);
 // ★出題順を「問題の順どおり」に固定する。
