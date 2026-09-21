@@ -1065,7 +1065,13 @@
     color:var(--ink-soft);
     margin-bottom:8px;
   }
-  .list-item .list-img-wrap{
+    /* ★最優先（2026-09-22）。□（いまだけ選ぶ）と見分けがつくよう、文字つきのボタンにする */
+  .q-star-btn{margin-left:auto; margin-right:8px; padding:4px 10px; border-radius:999px; border:1px solid var(--line, #d8cfbd);
+    background:transparent; color:var(--ink-soft, #7a7266); font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;}
+  .q-star-btn.on{background:#fff4d6; border-color:#e0a800; color:#a86b00;}
+  .star-bulk-row{display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin:8px 0 4px; font-size:13px;}
+  .star-bulk-row .back-link{margin:0; display:inline;}
+.list-item .list-img-wrap{
     margin-bottom:8px;
     text-align:center;
   }
@@ -1772,6 +1778,14 @@
       <div class="toggle list-filter-toggle" data-filter="unmastered">未クリアの問題</div>
       <div class="toggle list-filter-toggle" data-filter="weak">よく間違える問題</div>
       <div class="toggle list-filter-toggle" data-filter="unseen">未実施のみ</div>
+      <div class="toggle list-filter-toggle" data-filter="star">★最優先のみ</div>
+    </div>
+    <!-- ★最優先（2026-09-22）。親が付ける・保存されて残る。「ふだんの出題」で先に出る。
+         下の2つは「いま一覧に出ている問題」全部にまとめて付け外しする -->
+    <div class="star-bulk-row" id="star-bulk-row">
+      <span id="star-bulk-count">★最優先 0問</span>
+      <span class="back-link" id="star-bulk-on">表示中を全部★にする</span>
+      <span class="back-link" id="star-bulk-off">表示中の★を外す</span>
     </div>
 
     <div class="list-section-title">優先度</div>
@@ -3668,6 +3682,25 @@ function setupInlineEdit(prefix, getCurrentId){
 }
 
 // ---- last solo quiz round's missed questions (survives closing/reopening the app) ----
+// ---- ★最優先（親が問題一覧で付ける。2026-09-22 ユーザー「最優先にやりたい」「親が優先度を決めたい」）----
+//   ★記録（stats）とは別の箱に、問題の id の一覧だけを持つ。漢字プリントの kanji_app_picked_v1 と同じ形。
+//     → 記録には1文字も触らない。古い版で開いても、知らない箱は読まれないだけ。
+//   ★自動では外れない（ユーザー「星は消さなくていい」）。外すのは親が一覧で。
+//   ★効くのは「ふだんの出題」（未クリア／よく間違える のトグルが両方 OFF）のときだけ。
+//     トグルを使うときは★を特別扱いしない（ユーザー「正解したら未クリアのみからは外して」
+//     「苦手な問題のみの時の優先順位も他と一緒で」）。buildFinalPool を参照。
+//   ⚠️ 保存は端末ごと。親のスマホで付けても、お子さんの端末には届かない（お子さんの端末で付ける前提）
+const PRIORITY_KEY = "kq_battle_priority_v1";
+let priorityIds = new Set();
+try{
+  const raw = JSON.parse(window.localStorage.getItem(PRIORITY_KEY) || "[]");
+  if(Array.isArray(raw)) priorityIds = new Set(raw.filter(x => typeof x === "string"));
+}catch(e){ /* 読めなければ★なし＝いまと同じ動き */ }
+function savePriority(){
+  try{ window.localStorage.setItem(PRIORITY_KEY, JSON.stringify(Array.from(priorityIds))); }catch(e){}
+}
+function isPriority(id){ return priorityIds.has(id); }
+
 const LAST_MISS_KEY = "kq_battle_last_miss_v1";
 let lastMissIds = [];
 function loadLastMiss(){
@@ -4350,6 +4383,14 @@ function orderReviewCandidatesByWeakness(indices){
 // ---- the pool actually used to start a quiz: selected units (shuffled/
 //      trimmed to questionCount) plus, if set, a review mix pulled from
 //      everything NOT selected ----
+// ★最優先の問題を前に、それ以外を後ろに。どちらも、渡された並びの順を保つ（安定）。
+//   ★が1つも無ければ、渡された配列をそのまま返す（いまと1問も変わらない）
+function starsFirst(pool){
+  if(priorityIds.size === 0) return pool;
+  const star = [], rest = [];
+  pool.forEach(i => (isPriority(QA_DATA[i].id) ? star : rest).push(i));
+  return star.length ? star.concat(rest) : pool;
+}
 function buildFinalPool(){
   let pool = buildPool();
   if(filterWeak || filterUnmastered){
@@ -4372,8 +4413,13 @@ function buildFinalPool(){
     //   以前は補う仕組みが無く、苦手が0問になるとボタンが「問題がありません」で押せなかった
     //   （tools/mikaku/empty_probe.mjs で実測）。
     pool = fillFromRest(orderByTiers(pool));
-  }else if(currentShuffle){
-    pool = shuffleArray(pool);
+  }else{
+    if(currentShuffle) pool = shuffleArray(pool);
+    // ★親が付けた「最優先」を先頭へ（2026-09-22）。**ふだんの出題のときだけ**
+    //   （上のトグルの枝では★を特別扱いしない＝ユーザーの指定）。
+    //   ★どうし・残りどうしの順は、いまの出し方（シャッフル／出題順どおり）のまま。
+    //   問題数で切るのはこのあとなので、★は必ず入る。★が0件なら何も変わらない
+    pool = starsFirst(pool);
   }
   if(questionCount !== "all") pool = pool.slice(0, questionCount);
   if(reviewMixCount > 0){
@@ -4381,6 +4427,8 @@ function buildFinalPool(){
     let reviewPool = orderReviewCandidatesByWeakness(reviewCandidates).slice(0, reviewMixCount);
     pool = pool.concat(reviewPool);
     if(currentShuffle) pool = shuffleArray(pool);
+    // ★混ぜたあとも、ふだんの出題なら★を前に戻す（混ぜると先頭から外れるため）
+    if(!(filterWeak || filterUnmastered)) pool = starsFirst(pool);
   }
   return pool;
 }
@@ -4531,7 +4579,9 @@ function refreshCreateButton(){
   const reviewN = reviewMixCount > 0 ? Math.min(reviewMixCount, buildReviewPool().length) : 0;
   const n = mainN + reviewN;
   const label = reviewN > 0 ? n+"問（復習"+reviewN+"問こみ）" : n+"問";
-  els["pool-count-label"].textContent = label;
+  // ★最優先が先に出るときは、その数も1行に添える（ふだんの出題のときだけ。トグル使用中は★を特別扱いしない）
+  const starN = (filterWeak || filterUnmastered) ? 0 : pool.filter(i => isPriority(QA_DATA[i].id)).length;
+  els["pool-count-label"].textContent = label + (starN ? "（★最優先 "+Math.min(starN, mainN)+"問が先に出ます）" : "");
   const disabled = n === 0;
   els["solo-start-btn"].disabled = disabled;
   els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
@@ -4787,6 +4837,8 @@ let listUnit = "ALL";
 let listFilterUnmastered = false;
 let listFilterWeak = false;
 let listFilterUnseen = false;
+let listFilterStar = false;   // ★最優先のみ（2026-09-22）
+let listShownIndices = [];    // いま一覧に出ている問題（★をまとめて付け外しするときに使う）
 // 一覧の優先度・難易度の絞りこみ。"all" か、データの値そのもの（高/中/低・基礎/標準/発展）か、
 // "none"（データにその項目が無い問題）。1631問中463問が未設定なので、
 // 未設定も選べるようにしないと、絞りこんだとたんに消えて混乱する
@@ -4840,6 +4892,7 @@ function renderListScreen(){
   document.querySelectorAll(".list-filter-toggle").forEach(el=>{
     const on = el.dataset.filter === "unmastered" ? listFilterUnmastered
       : el.dataset.filter === "weak" ? listFilterWeak
+      : el.dataset.filter === "star" ? listFilterStar
       : listFilterUnseen;
     el.classList.toggle("on", on);
   });
@@ -4866,6 +4919,8 @@ function renderListItems(){
   // ★単元・状態・解いた日のどれも選んでいなければ、何も描かない（listHasCondition のコメント参照）
   if(!listHasCondition()){
     ++listRenderGen;   // 描いている途中の続きがあれば止める
+    listShownIndices = [];   // ★まとめて付け外しの対象も空にする（前の一覧に付けてしまわないように）
+    refreshStarBulkLabel();
     els["list-count"].textContent = "";
     els["list-items"].innerHTML = '<div class="empty-note">単元か絞りこみを選んでください。</div>';
     return;
@@ -4874,6 +4929,7 @@ function renderListItems(){
   if(listFilterUnmastered) indices = indices.filter(i => !isMastered(QA_DATA[i].id));
   if(listFilterWeak) indices = indices.filter(i => isWeak(QA_DATA[i].id));
   if(listFilterUnseen) indices = indices.filter(i => !stats[QA_DATA[i].id]);
+  if(listFilterStar) indices = indices.filter(i => isPriority(QA_DATA[i].id));
   if(listPriority !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "priority"), listPriority));
   if(listLevel !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "level"), listLevel));
   if(listDateFrom || listDateTo){
@@ -4887,6 +4943,8 @@ function renderListItems(){
     });
   }
   els["list-count"].textContent = indices.length+"問";
+  listShownIndices = indices;
+  refreshStarBulkLabel();
   els["list-items"].innerHTML = "";
   const gen = ++listRenderGen;   // ★前の描き直しの「続き」が残っていたら、ここで捨てる
   if(indices.length === 0){
@@ -4990,6 +5048,8 @@ function buildListRow(i){
     item.innerHTML =
       '<div class="list-item-head">'+
         '<div class="list-unit-tag">'+escapeHtml(d.u)+(isEdited ? '<span class="edited-badge">編集ずみ</span>' : '')+'</div>'+
+        // ★最優先（保存されて残る）。右の□（いまだけ選んで出題・保存されない）とは別物
+        '<button type="button" class="q-star-btn'+(isPriority(base.id) ? ' on' : '')+'" aria-pressed="'+(isPriority(base.id) ? 'true' : 'false')+'" title="最優先（親が決める・保存されます）">'+(isPriority(base.id) ? '★最優先' : '☆最優先')+'</button>'+
         '<input type="checkbox" class="q-select-checkbox" '+(selectedQuestionIds.has(base.id) ? "checked" : "")+'>'+
       '</div>'+
       metaTagsHtml(d)+
@@ -5055,6 +5115,14 @@ function setupListDelegation(){
     const qid = item.dataset.qid;
     const img = e.target.closest(".list-img-wrap img");
     if(img){ openLightbox(img.src); return; }
+    // ★最優先の付け外し（2026-09-22）。押した行だけ描き直す。記録（stats）には触らない
+    if(e.target.closest(".q-star-btn")){
+      if(priorityIds.has(qid)) priorityIds.delete(qid); else priorityIds.add(qid);
+      savePriority();
+      renderListRow(qid);
+      refreshStarBulkLabel();
+      return;
+    }
     const statusBtn = e.target.closest(".status-btn");
     // ★ここから下は、押した行だけ描き直す（renderListRow）。一覧全体は作り直さない
     if(statusBtn){ setStatus(qid, statusBtn.dataset.status); renderListRow(qid); return; }
@@ -5146,6 +5214,7 @@ els["list-btn"].addEventListener("click", ()=>{
   listFilterUnmastered = false;
   listFilterWeak = false;
   listFilterUnseen = false;
+  listFilterStar = false;
   listPriority = "all";
   listLevel = "all";
   listDateFrom = "";
@@ -5168,11 +5237,28 @@ document.querySelectorAll(".list-filter-toggle").forEach(el=>{
     let on;
     if(el.dataset.filter === "unmastered"){ listFilterUnmastered = !listFilterUnmastered; on = listFilterUnmastered; }
     else if(el.dataset.filter === "weak"){ listFilterWeak = !listFilterWeak; on = listFilterWeak; }
+    else if(el.dataset.filter === "star"){ listFilterStar = !listFilterStar; on = listFilterStar; }
     else{ listFilterUnseen = !listFilterUnseen; on = listFilterUnseen; }
     el.classList.toggle("on", on);
     renderListItems();
   });
 });
+// ---- ★最優先をまとめて付け外し（2026-09-22）----
+//   対象は「いま一覧に出ている問題」（単元・絞りこみを反映したもの）。何も選んでいないときは何もしない
+function refreshStarBulkLabel(){
+  const c = document.getElementById("star-bulk-count");
+  if(c) c.textContent = "★最優先 " + QA_DATA.filter(d => isPriority(d.id)).length + "問（この端末に保存）";
+}
+function bulkStar(on){
+  if(!listShownIndices.length) return;
+  const n = listShownIndices.length;
+  if(!confirm(on ? "いま一覧に出ている "+n+"問 を★最優先にしますか？" : "いま一覧に出ている "+n+"問 の★を外しますか？")) return;
+  listShownIndices.forEach(i => { const id = QA_DATA[i].id; if(on) priorityIds.add(id); else priorityIds.delete(id); });
+  savePriority();
+  renderListItems();
+}
+document.getElementById("star-bulk-on").addEventListener("click", () => bulkStar(true));
+document.getElementById("star-bulk-off").addEventListener("click", () => bulkStar(false));
 // 優先度・難易度は「すべて／値／未設定」からひとつ選ぶ形。
 // 出題設定側の priority/level と同じ選び方にそろえてある
 document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
@@ -5211,7 +5297,7 @@ els["list-date-clear"].addEventListener("click", ()=>{
 //      ★優先度・難易度だけでは出さない（「高」だけでも数百問になり、全件と同じくらい遅いため）。
 //      条件は画面を閉じても覚えているので、次に一覧を開くとその条件で出る ----
 function listHasCondition(){
-  return listUnit !== "ALL" || listFilterUnmastered || listFilterWeak || listFilterUnseen || !!listDateFrom || !!listDateTo;
+  return listUnit !== "ALL" || listFilterUnmastered || listFilterWeak || listFilterUnseen || listFilterStar || !!listDateFrom || !!listDateTo;
 }
 
 // ---- メイン画面の「出題タイプ・優先度・難易度」をたたむ（2026-09-13 ユーザー原文
