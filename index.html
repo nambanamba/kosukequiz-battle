@@ -205,6 +205,8 @@
     background:#fbf2e2;
     color:#7a561f;
   }
+  /* ★15問を足して6つになったので、問題数の列だけ幅を字の長さに合わせる（「自由入力」が2行に折れないように。2026-09-22） */
+  #count-row .toggle{ flex:1 1 auto; padding-left:4px; padding-right:4px; white-space:nowrap; }
   .time-choice-custom, .count-choice-custom, .calc-count-choice-custom{
     border-style:dashed;
   }
@@ -1532,6 +1534,7 @@
       <div class="stat-card"><div class="num" id="stat-total">-</div><div class="lbl">全問題数</div></div>
       <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
       <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
+      <div class="stat-card"><div class="num" id="stat-unmastered">-</div><div class="lbl">未クリア</div></div>
     </div>
 
     <div id="home-setup">
@@ -1596,6 +1599,7 @@
       <div class="section-title">問題数</div>
       <div class="toggle-row" id="count-row">
         <div class="toggle count-choice" data-count="10">10問</div>
+        <div class="toggle count-choice" data-count="15">15問</div>
         <div class="toggle count-choice" data-count="20">20問</div>
         <div class="toggle count-choice" data-count="30">30問</div>
         <div class="toggle count-choice on" data-count="all">全部</div>
@@ -2641,7 +2645,7 @@ window.addEventListener("resize", () => {
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "subject-social","subject-science",
- "stat-total","stat-mastered","stat-weak","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-mastered","stat-weak","stat-unmastered","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
  "unit-choices","mode-unmastered","mode-weak",
  "solo-marks","battle-marks","lightbox-marks",
  "type-all","type-image","type-text",
@@ -3847,6 +3851,14 @@ function refreshResumeBattleButton(){
   }
 }
 
+// ★ホームの「未クリア」（あと何問）（2026-09-22 ユーザー依頼「あと何問未クリアがあるかわかるように」）。
+//   ★「未クリアの問題」トグルだけをオンにして「全部」で出すときと**同じ問題**を数える:
+//   選んだ単元＋種別・優先度・難易度の絞りこみ（buildPool(true)）のうち、isMastered でないもの（box が 0。まちがえた問も入る）。
+//   ほかの3つの数字は単元だけで数えているので、絞りこみを付けていると「全問題数−正解済み数」とは合わないことがある。
+//   判定・並び・★最優先には触らない（数を出すだけ）
+function refreshUnmasteredCount(){
+  els["stat-unmastered"].textContent = buildPool(true).filter(i => !isMastered(QA_DATA[i].id)).length;
+}
 function refreshStatRow(){
   let total = 0, masteredCount = 0, weakCount = 0;
   QA_DATA.forEach(d=>{
@@ -3858,6 +3870,7 @@ function refreshStatRow(){
   els["stat-total"].textContent = total;
   els["stat-mastered"].textContent = masteredCount;
   els["stat-weak"].textContent = weakCount;
+  refreshUnmasteredCount();
 }
 
 els["stat-clear-link"].addEventListener("click", ()=>{
@@ -3870,6 +3883,9 @@ els["stat-clear-link"].addEventListener("click", ()=>{
 
 function renderHome(){
   refreshStatRow();
+  // ★ボタンの「◯問」も数え直す（2026-09-22）。以前はホームにもどっても前の数のままで、
+  //   解いたあとは「未クリア」の数と「未クリアの問題」オンの問題数が食いちがって見えた（出題そのものは正しい数だった）
+  refreshCreateButton();
   refreshLastMissButton();
   refreshResumeSoloButton();
   refreshResumeBattleButton();
@@ -4099,7 +4115,7 @@ function applySettingsUI(){
   els["order-toggle"].classList.toggle("on", currentShuffle === false);
   els["review-mode-toggle"].classList.toggle("on", reviewMode === true);
   els["fair-mode-toggle"].classList.toggle("on", fairMode === true);
-  const presetCounts = ["10","20","30","all"];
+  const presetCounts = ["10","15","20","30","all"];
   const isPreset = presetCounts.includes(String(questionCount));
   document.querySelectorAll(".count-choice").forEach(el=>{
     const val = el.dataset.count === "all" ? "all" : parseInt(el.dataset.count, 10);
@@ -4603,6 +4619,7 @@ function refreshCreateButton(){
   //   よく間違える だけのときは★は同点の決め手なので、数は出さない（言いすぎになる）
   const starHead = !filterWeak || filterUnmastered;
   const starN = starHead ? ((filterWeak || filterUnmastered) ? buildPool() : pool).filter(i => isPriority(QA_DATA[i].id)).length : 0;
+  refreshUnmasteredCount();
   els["pool-count-label"].textContent = label + (starN ? "（★最優先 "+Math.min(starN, mainN)+"問が先に出ます）" : "");
   const disabled = n === 0;
   els["solo-start-btn"].disabled = disabled;
