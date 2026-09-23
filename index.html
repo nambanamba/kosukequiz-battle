@@ -2128,9 +2128,13 @@ const RTC_CONFIG = {
 //     ★読み上げてもらうのではなく、**コピーして送ってもらう**（伝言で数字は必ず崩れる）。
 //   ★この記録の版。**中身を変えたら、ここも変える。**
 //     送られてきた控えが、どの版のアプリで取れたものかを言えるようにするため。
-const DIAG_VERSION = "2026-09-20b";
+const DIAG_VERSION = "2026-09-23";
 const diag = {
   role: "", startedAt: 0,
+  // ★2026-09-23 に足した3つ（2台ぶんの記録を並べても「同じ部屋にいたのか」が読めなかったため）
+  code: "",                // 部屋の番号。★これが無いと、打ち間違い・古い番号の使い回しを否定できない
+  joinedAt: 0,             // 部屋に入った（作った）時刻
+  ann: { sent: 0, echo: 0, recv: 0 },  // 名乗り: 出した / 自分のが返ってきた / ★相手のを受けた
   lib: "まだ",             // 通信ライブラリを読めたか
   ws: { tried: 0, open: 0, closed: 0, err: 0 },  // 待ち合わせ（相手を探す通信）
   handshake: 0,            // 相手を見つけて話し始めた回数
@@ -2146,6 +2150,7 @@ const diag = {
 };
 function diagReset(role){
   diag.role = role; diag.startedAt = Date.now();
+  diag.code = ""; diag.joinedAt = 0; diag.ann = { sent: 0, echo: 0, recv: 0 };
   diag.ws = { tried: 0, open: 0, closed: 0, err: 0 };
   diag.handshake = 0; diag.joinError = "";
   diag.cand = {}; diag.conns = []; diag.iceErr = []; diag.pair = "";
@@ -2169,6 +2174,8 @@ var wsSeen = [];   // {url, ws, everOpen, err} … ページを開いている�
 // ★断られて「二度と使われなくなった」待ち合わせ先。{host, reason}
 //   ★`wsSeen` と同じく **diagReset では消さない**。ページを開き直すまで消えないのが実態に合う
 var diagRetired = [];
+// ★自分が出した名乗りの pubkey。待ち合わせ先が送り返してくる自分のぶんを見分けるのに使う
+var annMine = [];
 (function(){
   try{
     if(typeof WebSocket !== "function") return;
@@ -2179,6 +2186,22 @@ var diagRetired = [];
       if(wsSeen.length < 60) wsSeen.push(rec);   // 際限なく増やさない
       diag.ws.tried++;
       ws.addEventListener("open", function(){ diag.ws.open++; rec.everOpen = true; });
+      // ★★2026-09-23: **名乗り（EVENT）を数える。**
+      //   2台ぶんの記録に「生きている5本が同じ・相手を見つけた なし」とだけ出て、
+      //   **名乗っていないのか、名乗りが届いていないのか**が読めなかった。
+      //   ⚠️ 待ち合わせ先は**自分の名乗りも送り返してくる**ので、それを相手の名乗りと数えると
+      //   「届いている」と誤って読める。→ **自分が出した pubkey を覚えて、自分のぶんは別に数える**
+      var origSend = ws.send;
+      ws.send = function(data){
+        try{
+          if(typeof data === "string" && data.lastIndexOf('["EVENT"', 0) === 0){
+            var ev = JSON.parse(data)[1];
+            if(ev && ev.pubkey){ if(annMine.indexOf(ev.pubkey) < 0 && annMine.length < 20) annMine.push(ev.pubkey); }
+            diag.ann.sent++;
+          }
+        }catch(e){ /* 数えられなくても送信は止めない */ }
+        return origSend.apply(ws, arguments);
+      };
       ws.addEventListener("error", function(){ diag.ws.err++; rec.err = true; });
       ws.addEventListener("close", function(){ diag.ws.closed++; });
       // ★★2026-09-20: **断られた待ち合わせ先は、二度と使われない**ことを画面に出す。
@@ -2195,6 +2218,14 @@ var diagRetired = [];
           var s = ev.data;
           if(typeof s !== "string") return;
           // ★安い見分け方を先に。中身のほとんどは EVENT なので、そこで帰す
+          if(s.lastIndexOf('["EVENT"', 0) === 0){
+            // ★相手の名乗りか、自分の名乗りが返ってきたのか
+            try{
+              var pk = (JSON.parse(s)[2] || {}).pubkey;
+              if(pk && annMine.indexOf(pk) >= 0) diag.ann.echo++; else diag.ann.recv++;
+            }catch(e2){}
+            return;
+          }
           if(s.lastIndexOf('["OK"', 0) !== 0 && s.lastIndexOf('["CLOSED"', 0) !== 0) return;
           var a = JSON.parse(s);
           var reason = "";
@@ -2387,7 +2418,15 @@ function diagText(){
     "どこで止まったか: " + stop,
     "――――――",
     "とき: " + new Date().toLocaleString("ja-JP") + "（" + Math.round((Date.now() - diag.startedAt)/1000) + "秒待った）",
-    "やくわり: " + (diag.role === "host" ? "部屋を作った側" : "部屋に入った側"),
+    // ★★2026-09-23: **部屋の番号**。2台ぶん並べれば「同じ部屋にいたか」が一目で分かる。
+    //   これが無いと、打ち間違い・古い番号の使い回しを、記録からは否定できなかった
+    "やくわり: " + (diag.role === "host" ? "部屋を作った側" : "部屋に入った側") +
+      " ／ ★部屋の番号: " + (diag.code || "★まだ") +
+      (diag.joinedAt ? " ／ 部屋に入ってから " + Math.round((Date.now() - diag.joinedAt)/1000) + "秒" : " ／ 部屋に入れていない"),
+    // ★名乗り。「名乗っていない」のか「名乗りが届いていない」のかを分ける
+    //   ⚠️ 自分の名乗りは待ち合わせ先から送り返されてくるので、別に数えている（混ぜると届いたと誤読する）
+    "名乗り: 出した " + diag.ann.sent + " 回 ／ 自分のが返ってきた " + diag.ann.echo +
+      " 回 ／ ★相手の名乗りを受けた " + (diag.ann.recv ? diag.ann.recv + " 回" : "なし"),
     "ブラウザ: " + br,
     // ★Silk のように「アプリは動くのに対戦だけ動かない」端末で、
     //   何が無いのかを名指しできるようにする（2026-09-20）
@@ -2963,6 +3002,11 @@ function isWeak(id){
   if(!s) return false;
   return (s.wrong||0) > 0 && (s.box||0) <= 1;
 }
+// ⚠️★**この関数は、どこからも呼ばれていません**（2026-09-23 実測。定義のこの1か所だけ）。
+//   `nextDue` は答えるたび保存されていますが、**出題の判断には使われていません。**
+//   ★実測: 次に出す日を1年先にしても、復習ミックスにふつうに出ました。＝**間隔反復は効いていません。**
+//   並びを作っているのは `lastCorrectAt`（正解した日が古い順）です。
+//   2026-09-23 のユーザー判断で**いまは直しません**が、「効いている」と誤解しないこと（確認ポイント 0-3）。
 function isDue(id){
   const s = stats[id];
   if(!s || !s.nextDue) return true; // 一度も間隔管理されていない（未回答含む）＝いつでも復習対象
@@ -6358,6 +6402,7 @@ async function hostCreateRoomWithCode(code){
   try{
     const joinRoom = await loadJoinRoom();
     room = joinRoom(ROOM_CONFIG, code, ROOM_CALLBACKS);
+    diag.code = code; diag.joinedAt = Date.now();   // ★記録に部屋の番号を残す（2026-09-23）
     setupActions();
     saveLastCode(code);
     startConnectTimeout("host");   // 20秒たっても相手が来なければ知らせる
@@ -6456,6 +6501,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   try{
     const joinRoom = await loadJoinRoom();
     room = joinRoom(ROOM_CONFIG, session.code, ROOM_CALLBACKS);
+    diag.code = session.code; diag.joinedAt = Date.now();   // ★2026-09-23
     setupActions();
   }catch(e){
     console.error("resume failed", e);
@@ -6495,6 +6541,7 @@ async function joinRoomAsGuest(code){
   try{
     const joinRoom = await loadJoinRoom();
     room = joinRoom(ROOM_CONFIG, code, ROOM_CALLBACKS);
+    diag.code = code; diag.joinedAt = Date.now();   // ★2026-09-23
     setupActions();
     saveLastCode(code);
     startConnectTimeout("guest");   // 20秒たってもつながらなければ知らせる
