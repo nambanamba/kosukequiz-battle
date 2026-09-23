@@ -205,4 +205,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # ★2026-09-23: import_rika.die() が sys.exit ではなく例外 ir.Stop を投げる形に変わった
+    #   （自己テストが「止まるべきものが止まったか」を確かめられるようにするため）。
+    #   ここで受けないと、止まったときに読みにくい traceback が出る。動きは今までと同じ。
+    try:
+        main()
+    except ir.Stop as e:
+        print("✖ " + str(e))
+        sys.exit(1)

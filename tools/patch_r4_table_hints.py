@@ -5,6 +5,8 @@
 ほかの欄・ほかの問には触らない。止まる条件: sha256 不一致／対応が10件でない／a か img が食いちがう。
     python tools/patch_r4_table_hints.py --apply
 """
+# ★一度きりの道具。id は実在する値の直書き（`IDS`）で no を使わないため、2026-09-23 の id 方針変更の影響を受けない。
+#   （元データは sha256 で固定してある。司令塔確認、止め木は不要）
 import hashlib, io, json, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "..", "5年下", "quiz_csv_理科", "第4回_ヒトと動物の消化吸収.json")
