@@ -45,7 +45,7 @@ const server = http.createServer((req,res)=>{
     : (res.writeHead(200,{"content-type":MIME[path.extname(file).toLowerCase()]||"application/octet-stream"}), res.end(b)));
 });
 await new Promise(r=>server.listen(0,"127.0.0.1",r));
-const BASE = "http://127.0.0.1:"+server.address().port+"/index.html";
+const BASE = process.env.PROBE_BASE || ("http://127.0.0.1:"+server.address().port+"/index.html");
 
 const browser = await chromium.launch({ channel: "chrome" });
 const ctx = await browser.newContext({ viewport:{width:390,height:844}, deviceScaleFactor:2 });
@@ -109,7 +109,8 @@ async function walk(tag, overridePath) {
   const homeTotal = (await page.textContent("#stat-total").catch(()=>"?") || "").trim();
   const homeUnmastered = (await page.textContent("#stat-unmastered").catch(()=>"?") || "").trim();
   // data.js からの期待（その版に入っている、その回の問）
-  const expect = await page.evaluate(p => QA_DATA.filter(q => q.id.startsWith(p)).map(q => ({id:q.id, q:q.q})), PREFIX);
+  const expect = await page.evaluate(p => QA_DATA.filter(q => q.id.startsWith(p)).map(q => ({id:q.id, q:q.q, img:q.img||""})), PREFIX);
+  const expectImg = new Map(expect.map(r => [r.id, r.img]));
 
   await page.click("#solo-start-btn"); await page.waitForTimeout(900);
 
@@ -123,8 +124,27 @@ async function walk(tag, overridePath) {
     const id = (raw.match(/[A-Za-z][A-Za-z0-9_]*$/) || [""])[0];
     if (!id) break;
     const q = (await page.evaluate(()=>document.querySelector("#solo-q")?.innerText || "")).trim();
-    const hasImg = await page.evaluate(()=>!!document.querySelector("#solo-img-wrap")?.offsetParent);
-    shown.push({ id, q, hasImg });
+    // ★画像は「出ているか」だけでは足りない。**その問の画像か**を src で見る。
+    //   ★しかも、入れかわった直後は**前の問の画像がまだ画面に残っている**。
+    //   ローカルだと瞬時なので気づかないが、公開URLでは実際に写真に写った（2026-09-23）。
+    //   → **その問の img が読み終わるまで待つ**。待てなければそのことを記録する
+    const wantImg = expectImg.get(id) || "";
+    if (wantImg) {
+      try {
+        await page.waitForFunction(f => {
+          const im = document.querySelector("#solo-img");
+          return im && im.getAttribute("src")?.endsWith(f) && im.complete && im.naturalWidth > 0;
+        }, wantImg, { timeout: 15000 });
+      } catch { /* 下の imgSrc に残るので、ここでは止めない */ }
+    }
+    const shot = await page.evaluate(()=>{
+      const w = document.querySelector("#solo-img-wrap");
+      const im = document.querySelector("#solo-img");
+      return { hasImg: !!w?.offsetParent,
+               imgSrc: (w?.offsetParent && im) ? (im.getAttribute("src")||"").split("/").pop().split("?")[0] : "",
+               loaded: !!(im && im.complete && im.naturalWidth > 0) };
+    });
+    shown.push({ id, q, hasImg: shot.hasImg, imgSrc: shot.imgSrc, loaded: shot.loaded });
     if (shown.length <= 2 || GONE.includes(id) || SHOOT.includes(id)) {
       await page.screenshot({ path: path.join(SHOTS, tag + "_" + String(shown.length).padStart(3,"0") + "_" + id + ".png"), fullPage: true });
     }
@@ -163,7 +183,12 @@ console.log("★消した問が画面に出たか    : " + (leaked.length ? "★
 console.log("出題されなかった問         : " + (missing.length ? "★" + missing.join(",") : "0件"));
 console.log("data.js に無いのに出た問   : " + (extra.length ? "★" + extra.join(",") : "0件"));
 console.log("★問題文が data.js と合うか : " + (textBad.length ? "★ちがう " + textBad.length + "件 " + textBad.slice(0,5).map(r=>r.id).join(",") : "全問一致"));
+const imgWant = new Map(after.expect.map(r => [r.id, r.img]));
+const imgBad = after.shown.filter(r => (imgWant.get(r.id) || "") !== (r.imgSrc || ""));
+const imgNotLoaded = after.shown.filter(r => r.hasImg && !r.loaded);
 console.log("画像が出ている問           : " + after.shown.filter(r=>r.hasImg).length + "問");
+console.log("★画像がその問のものか     : " + (imgBad.length ? "★ちがう " + imgBad.length + "件 " + imgBad.slice(0,5).map(r=>r.id+"(出="+(r.imgSrc||"なし")+"/期待="+(imgWant.get(r.id)||"なし")+")").join(" ") : "全問一致") );
+console.log("画像が読み終わっていない : " + (imgNotLoaded.length ? "★" + imgNotLoaded.map(r=>r.id).join(",") : "0件"));
 console.log("ホームの数字               : 全問題数 " + after.homeTotal + " / 未クリア " + after.homeUnmastered);
 
 let orderOk = true;
@@ -189,7 +214,7 @@ if (before) {
 console.log("JSエラー                  : " + (errs.length ? errs.join(" | ") : "0件"));
 console.log("画面の写真                : " + SHOTS);
 
-const ng = leaked.length || dup.length || missing.length || extra.length || textBad.length || !orderOk || errs.length;
+const ng = leaked.length || dup.length || missing.length || extra.length || textBad.length || imgBad.length || imgNotLoaded.length || !orderOk || errs.length;
 console.log("\n" + (ng ? "★NG" : "✔ 問題なし"));
 await browser.close(); server.close();
 process.exit(ng ? 1 : 0);
