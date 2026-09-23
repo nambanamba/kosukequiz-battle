@@ -6570,22 +6570,49 @@ els["join-btn"].addEventListener("click", ()=>{
 els["create-diag-copy"].addEventListener("click", ()=> diagCopy(els["create-diag-copy"], els["create-diag-text"]));
 els["join-diag-copy"].addEventListener("click", ()=> diagCopy(els["join-diag-copy"], els["join-diag-text"]));
 
+// ★★2026-09-23: **「もう一度つなぐ」は、押すと逆に名乗りが止まっていた。**
+//   ライブラリ（@trystero-p2p/core 0.25.4）の作り:
+//     joinRoom の先頭 … 同じ appId・同じ部屋番号なら、**既にある部屋をそのまま返す**（作り直さない）
+//     leave()        … 送って → 99ミリ秒待って → 片づける（**非同期**）
+//   → `leave()` を待たずに `joinRoom` を呼ぶと、**古い部屋を受け取り、その直後に片づけられる**。
+//   ★実測（tools/mikaku/retry_button_probe.mjs・まねごとの待ち合わせ先）:
+//     直す前 … 押したあと8秒の告知 **0件**（作る側も入る側も）＝相手から見つけられない
+//   ⚠️ **固定の待ち時間（150ミリ秒など）で代用しないこと。**ライブラリの実装が変われば壊れる。
+//     待つのは `leave()` の完了まで
+async function leaveRoomAndWait(){
+  const r = room;
+  room = null;             // 待っているあいだに、古い部屋を誰にも触らせない
+  if(!r) return;
+  try{ await r.leave(); }catch(e){}
+}
+// ★連打止め。入り直しの途中にもう一度押されると、部屋が二重にできる／待ち合わせ先に嫌われる
+let retryBusy = false;
+async function retryRejoin(btnKey, code, rejoin){
+  if(retryBusy) return;
+  retryBusy = true;
+  const btn = els[btnKey];
+  if(btn) btn.disabled = true;
+  try{
+    clearConnectTrouble();
+    await leaveRoomAndWait();
+    await rejoin(code);
+  }catch(e){
+    console.error("rejoin failed", e);
+  }finally{
+    retryBusy = false;
+    if(btn) btn.disabled = false;
+  }
+}
 els["create-retry-btn"].addEventListener("click", ()=>{
   const code = els["room-code-display"].textContent;
   if(!/^\d{4}$/.test(code)) return;
-  clearConnectTrouble();
-  if(room){ try{ room.leave(); }catch(e){} }
-  room = null;
   els["home-waiting-note"].innerHTML = '<span class="spinner"></span>つなぎ直しています…';
-  hostCreateRoomWithCode(code);
+  retryRejoin("create-retry-btn", code, hostCreateRoomWithCode);
 });
 els["join-retry-btn"].addEventListener("click", ()=>{
   const code = (els["join-code-input"].value || loadLastCode() || "").trim();
   if(!/^\d{4}$/.test(code)) return;
-  clearConnectTrouble();
-  if(room){ try{ room.leave(); }catch(e){} }
-  room = null;
-  joinRoomAsGuest(code);
+  retryRejoin("join-retry-btn", code, joinRoomAsGuest);   // ★上の注を参照（leave を待ってから入り直す）
 });
 
 
