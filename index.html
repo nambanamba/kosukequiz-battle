@@ -896,6 +896,50 @@
   }
   .next-btn.show{display:block;}
 
+  /* ---- ★ゲストだけに出る「一個前の判定を直す」（2026-09-25 ユーザー依頼）----
+     ユーザー原文「ゲストがホストを直すだけでいいんですが、一個前の正誤を直せるようにしたいです。
+     いつまでも子供が答えなくて、時間切れで正解になっちゃうのを直したいです」
+     ★判定ボタン（judge-row）から**いちばん遠い画面の下**に置く。近くに置くと押しまちがえる
+     （2026-09-16 に「わかった！」の真下の判定ボタンを押しまちがえた前例があるため） */
+  .judge-fix-row{
+    margin-top:26px;
+    padding-top:14px;
+    border-top:1px dashed #d6cfc2;
+  }
+  .judge-fix-note{
+    font-size:11.5px;
+    color:var(--ink-soft);
+    text-align:center;
+    margin-bottom:8px;
+    word-break:break-word;
+  }
+  .judge-fix-btn{
+    width:100%;
+    padding:12px 8px;
+    border-radius:10px;
+    font-size:13.5px;
+    font-weight:700;
+    cursor:pointer;
+    background:#fff;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .judge-fix-btn.ng{ border:1.5px solid var(--ng); color:var(--ng); }
+  .judge-fix-btn.ok{ border:1.5px solid var(--ok); color:var(--ok); }
+  .judge-fix-btn:active{transform:translateY(1px);}
+  .judge-fix-btn:disabled{background:#f2f4f5; border-color:#c2c9cc; color:#6b7478; cursor:default; transform:none;}
+  .judge-fix-status{
+    margin-top:8px;
+    font-size:12px;
+    font-weight:700;
+    text-align:center;
+    padding:8px;
+    border-radius:8px;
+    word-break:break-word;
+  }
+  .judge-fix-status.win{background:var(--ok-bg); color:var(--ok);}
+  .judge-fix-status.lose{background:var(--ng-bg); color:var(--ng);}
+  .judge-fix-status.info{background:#eef4f2; color:var(--navy-deep);}
+
   /* ---- result screen ---- */
   .result-hero{
     text-align:center;
@@ -1999,6 +2043,13 @@
     <div class="status-banner" id="my-result" style="display:none;"></div>
     <div class="big-verdict" id="big-verdict"><div class="big-verdict-mark"></div></div>
     <button class="next-btn fill-btn" id="next-btn" data-label="つぎの問題へ"><span class="fill-label">つぎの問題へ</span></button>
+    <!-- ★ゲストの端末にだけ出る「一個前の判定を直す」（2026-09-25）。ホスト側には出さない。
+         いちばん下に置いてあるのは、判定ボタンと押しまちがえないようにするため -->
+    <div class="judge-fix-row" id="judge-fix-row" style="display:none;">
+      <div class="judge-fix-note" id="judge-fix-note"></div>
+      <button class="judge-fix-btn" id="judge-fix-btn"></button>
+      <div class="judge-fix-status" id="judge-fix-status" style="display:none;"></div>
+    </div>
   </section>
 
   <!-- RESULT SCREEN -->
@@ -2711,7 +2762,7 @@ const els = {};
  "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
- "next-btn",
+ "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
  "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -5869,11 +5920,22 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
 // ---- networking state ----
 let role = null; // 'host' | 'guest'
 let room = null;
-let startAction, judgeAction, nextAction, endAction, statusAction, unitsAction, revealAction, readyAction;
+let startAction, judgeAction, judgefixAction, nextAction, endAction, statusAction, unitsAction, revealAction, readyAction;
 let questionIds = [];
 let currentIndex = -1;
 let scores = {host:0, guest:0};
 let myVerdictOfOpponent = null; // true/false: what I decided about my opponent's answer
+// ---- ★「一個前の判定を直す」（2026-09-25 ユーザー依頼）で使う覚え書き ----
+//   ★覚えるのは**最新の1件だけ**。新しい判定を下した時点で前のは対象から外れるので、
+//     「一個前より前の記録が動く」は構造的に起きない
+//   ゲスト側 lastJudge     … 自分が最後にホストへ下した判定
+//   ホスト側 lastHostRecord … 最後に自分の記録へ入れた1件と、**入れる前の stats を丸ごと控えたもの**
+//   ★控えを丸ごと持つ理由: adjustStat の引き算では打ち消しきれないため。
+//     `adjustStat(qid,"correct",-1)` は box しか戻さず、累計の correct は +1 のまま残る
+//     （一人練習の「もどる」にある既知の目こぼし）。戻して入れ直せば1回しか動かない
+let lastJudge = null;       // ゲスト: {qid, idx, correct}
+let lastHostRecord = null;  // ホスト: {qid, idx, rawCorrect, forcedWrong, statBefore}
+let judgeFixBusy = false;   // 返事待ちのあいだ二度押しさせない
 let opponentVerdictOfMe = null; // true/false: what my opponent decided about my answer
 let scored = false;
 let hostSkippedIds = new Set(); // host-only: question ids the host has skipped this game
@@ -6206,6 +6268,7 @@ function leaveRoom(){
   myMissesThisRound = [];
   hostRecordedIdx = -1;
   hostScoredIdx = -1;
+  clearJudgeFix();
   missesUnknown = false;
   gameStarted = false;
   joinFairUnits = new Set();
@@ -6215,6 +6278,7 @@ function leaveRoom(){
 function setupActions(){
   startAction = room.makeAction("start");
   judgeAction = room.makeAction("judge");
+  judgefixAction = room.makeAction("judgefix");   // ★一個前の判定の直し（依頼と、その返事）
   nextAction = room.makeAction("next");
   endAction = room.makeAction("end");
   statusAction = room.makeAction("status");
@@ -6305,6 +6369,7 @@ function setupActions(){
       // （resync は再接続の追いつきなので鳴らさない）
       playAdvanceCue();
       scores = {host:0, guest:0};
+      clearJudgeFix();   // ★新しいラウンド。前のラウンドの判定は直せない（つなぎ直しの resync では消さない）
       showQuestion(0);
     }
   };
@@ -6329,12 +6394,32 @@ function setupActions(){
     // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
     //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
     if(!(role === "host" && hostRecordedIdx === currentIndex)){
+      // ★あとでゲストから「一個前を直す」が来たときのために、**記録する前の stats を丸ごと控える**。
+      //   直すときは、この控えに戻してから入れ直す（＝correct/wrong/box が2回動かない）。
+      //   ★ホストだけが控える。ゲストの記録（ホストが下した判定）は、この導線では直せない
+      //     （ユーザー「ゲストがホストを直すだけでいい」）
+      if(role === "host"){
+        lastHostRecord = {
+          qid: qid, idx: currentIndex,
+          rawCorrect: data.correct,      // ★得点と「まちがいリスト」は、生の判定で決まる
+          forcedWrong: forcedWrong,      // スキップ後・やり直しラウンドは、正解でも記録は誤答
+          statBefore: stats[qid] ? JSON.stringify(stats[qid]) : null
+        };
+      }
       recordResult(qid, finalCorrect);
       if(!data.correct) myMissesThisRound.push(qid);
       if(role === "host"){ hostRecordedIdx = currentIndex; saveBattleSession(); }
     }
     updateMyResultUI(forcedWrong);
     maybeFinishQuestion();
+  };
+
+  // ★一個前の判定の直し。同じ合図を「依頼」と「返事」の両方に使う（ack の有無で分ける）
+  judgefixAction.onMessage = (data)=>{
+    if(!data) return;
+    if(data.ack){ if(role === "guest") onJudgeFixAck(data); return; }
+    if(role !== "host") return;   // 直されるのはホストの記録だけ
+    applyJudgeFixOnHost(data);
   };
 
   nextAction.onMessage = (data)=>{
@@ -6666,6 +6751,10 @@ function showQuestion(idx, hostPrivate){
   els["my-result"].style.display = "none";
   els["my-result"].classList.remove("show","win","lose","info");
   els["next-btn"].classList.remove("show");
+  // ★「一個前を直す」は、問題が変わっても**消さない**（一個前を直すための導線なので）。
+  //   消すのはラウンドが変わるとき（clearJudgeFix）だけ
+  hideJudgeFixStatus();
+  updateJudgeFixUI();
   // 「こたえを見る」の二人そろい待ちを、問題ごとに数えなおす。
   // ここは両方の端末が問題ごとに必ず通る。1問目はラウンドの始まりなので全部消す
   // （このタイミングではまだ、この問題に対する合図はどちらからも出ていない）
@@ -6860,15 +6949,167 @@ function judgeOpponent(correct){
   stopJudgeCountdown();
   myVerdictOfOpponent = correct;
   judgeAction.send({idx: currentIndex, correct: correct});
+  // ★ゲストだけ、いま下した判定を1件だけ覚える（時間切れの自動「せいかい」もここを通る）。
+  //   ★上書きなので、覚えているのは常に最新の1件だけ＝それより前は直せない
+  if(role === "guest"){
+    lastJudge = {qid: questionIds[currentIndex], idx: currentIndex, correct: correct};
+    judgeFixBusy = false;
+    hideJudgeFixStatus();
+  }
   els["judge-row"].style.display = "none";
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "相手を「"+(correct ? "せいかい" : "まちがい")+"」と判定しました。";
   updateMyResultUI();
+  updateJudgeFixUI();
   maybeFinishQuestion();
 }
 els["judge-ok"].addEventListener("click", ()=>judgeOpponent(true));
 els["judge-ng"].addEventListener("click", ()=>judgeOpponent(false));
+
+// ==== ★「一個前の判定を直す」（2026-09-25 ユーザー依頼）====================
+//  ユーザー原文「ゲストがホストを直すだけでいいんですが、一個前の正誤を直せるようにしたいです。
+//               いつまでも子供が答えなくて、時間切れで正解になっちゃうのを直したいです」
+//  ★時間切れの自動「せいかい」そのものは**触っていない**（ユーザー判断
+//    「今のまま正解でいいです。時間切れで間違いになると子供が怒るので」）。
+//    直せるようにしたのは、そのあとの**親の直し**のほう。
+//  ★一時停止は作らない（ユーザー「多用されそうで」）。
+//
+//  流れ:
+//    ゲストが押す → judgefixAction.send({qid, idx, correct})
+//      → ホストが **記録を戻して入れ直す**（stats・まちがいリスト・得点）
+//      → ホストが返事（{ack:true, ok, correct, scoreDelta}）
+//      → ★返事を受けてから、はじめてゲストの画面と得点が動く
+//  ★この順番に意味がある。先にゲストの画面を変えると、
+//    「直したのにホストの記録は変わっていない」（依頼書の失敗1）が見えなくなる。
+function clearJudgeFix(){
+  lastJudge = null;
+  lastHostRecord = null;
+  judgeFixBusy = false;
+  hideJudgeFixStatus();
+  updateJudgeFixUI();
+}
+function hideJudgeFixStatus(){
+  if(!els["judge-fix-status"]) return;
+  els["judge-fix-status"].style.display = "none";
+  els["judge-fix-status"].textContent = "";
+}
+function showJudgeFixStatus(text, kind){
+  const el = els["judge-fix-status"];
+  if(!el) return;
+  el.className = "judge-fix-status " + kind;
+  el.textContent = text;
+  el.style.display = "block";
+}
+function updateJudgeFixUI(){
+  const row = els["judge-fix-row"];
+  if(!row) return;
+  // ★ホスト側には出さない。両方に付けると押しまちがいが増える（ユーザー判断）
+  if(role !== "guest" || !lastJudge){
+    row.style.display = "none";
+    return;
+  }
+  const d = getQById(lastJudge.qid);
+  const q = d ? d.q : "";
+  const qtext = q ? (q.length > 18 ? q.slice(0, 18) + "…" : q) : lastJudge.qid;
+  els["judge-fix-note"].textContent =
+    "一個前「" + qtext + "」は、いま " + (lastJudge.correct ? "〇 せいかい" : "✕ まちがい") + " で記録されています";
+  els["judge-fix-btn"].textContent =
+    lastJudge.correct ? "やっぱり ✕ まちがい に直す" : "やっぱり 〇 せいかい に直す";
+  els["judge-fix-btn"].className = "judge-fix-btn " + (lastJudge.correct ? "ng" : "ok");
+  els["judge-fix-btn"].disabled = judgeFixBusy;
+  row.style.display = "block";
+}
+els["judge-fix-btn"].addEventListener("click", ()=>{
+  if(role !== "guest" || !lastJudge || judgeFixBusy) return;
+  const next = !lastJudge.correct;
+  judgeFixBusy = true;
+  updateJudgeFixUI();
+  showJudgeFixStatus("相手の端末に送っています…", "info");
+  try{
+    judgefixAction.send({qid: lastJudge.qid, idx: lastJudge.idx, correct: next});
+  }catch(e){
+    judgeFixBusy = false;
+    updateJudgeFixUI();
+    showJudgeFixStatus("★直せませんでした（つながっていません）", "lose");
+  }
+});
+
+// ---- ホスト側: 直しを当てる ----
+function applyJudgeFixOnHost(data){
+  const reply = (ok, extra)=>{
+    const msg = {ack: true, qid: (data && data.qid) || "", ok: ok};
+    if(extra) for(const k in extra) msg[k] = extra[k];
+    try{ judgefixAction.send(msg); }catch(e){}
+  };
+  if(!data || typeof data.correct !== "boolean" || typeof data.qid !== "string"){
+    reply(false, {reason: "こわれた合図"}); return;
+  }
+  const r = lastHostRecord;
+  // ★照合は **id（qid）**で行う。添字（配列の並び）では照合しない。
+  //   時間切れ・スキップで問題が末尾に回ると添字はずれるが、id はずれない（確認ポイント 3-1）
+  if(!r || r.qid !== data.qid){
+    // ★「読み込み直したあと」がいちばん多い。壊れたと思われないよう、理由と次の一手まで言う
+    reply(false, {reason: "相手が読み込み直したあとは直せません。つぎの問題から直せます"}); return;
+  }
+  if(r.rawCorrect === data.correct){          // すでにその向き。何も動かさない
+    reply(true, {correct: data.correct, scoreDelta: 0}); return;
+  }
+
+  // ① 記録する前の状態に、まるごと戻す（打ち消し）
+  if(r.statBefore === null) delete stats[r.qid];
+  else stats[r.qid] = JSON.parse(r.statBefore);
+  // ② そのうえで入れ直す。＝ correct / wrong / box は、この問について1回しか動かない
+  const finalCorrect = r.forcedWrong ? false : data.correct;
+  recordResult(r.qid, finalCorrect);          // saveStats() はこの中で呼ばれる
+
+  // ③ 「まちがえた問題だけもう一勝負」のリスト。**生の判定**で決めるのは記録のときと同じ規則
+  const at = myMissesThisRound.indexOf(r.qid);
+  if(!data.correct && at < 0) myMissesThisRound.push(r.qid);
+  if(data.correct && at >= 0) myMissesThisRound.splice(at, 1);
+
+  // ④ 得点。★まだ採点していない問なら、ここでは動かさない。
+  //    ⑤で opponentVerdictOfMe を直しておけば、maybeFinishQuestion が正しい側で数える
+  let scoreDelta = 0;
+  if(r.idx !== currentIndex || scored){
+    if(data.correct) scoreDelta = 1;
+    else if(scores.host > 0) scoreDelta = -1;
+    scores.host += scoreDelta;
+    updateScoreUI();
+  }
+  // ⑤ いま出ている問を直したときは、画面の結果も直す（一個前なら、画面はもう次の問なので触らない）
+  if(r.idx === currentIndex){
+    opponentVerdictOfMe = data.correct;
+    updateMyResultUI(r.forcedWrong);
+  }
+  r.rawCorrect = data.correct;
+  saveBattleSession();   // まちがいリストと得点が変わったので保存し直す
+  reply(true, {correct: data.correct, scoreDelta: scoreDelta});
+}
+
+// ---- ゲスト側: ホストからの返事を受けて、はじめて自分の画面を動かす ----
+function onJudgeFixAck(data){
+  judgeFixBusy = false;
+  if(!lastJudge || lastJudge.qid !== data.qid){ updateJudgeFixUI(); return; }
+  if(!data.ok){
+    showJudgeFixStatus("★直せませんでした。" + (data.reason || "相手の端末が受け取れませんでした"), "lose");
+    updateJudgeFixUI();
+    return;
+  }
+  lastJudge.correct = data.correct;
+  // ★得点の増減は**ホストが決めた値をそのまま当てる**。2つの端末が別々に数えると食いちがう
+  if(typeof data.scoreDelta === "number" && data.scoreDelta !== 0){
+    scores.host = Math.max(0, scores.host + data.scoreDelta);
+    updateScoreUI();
+  }
+  if(lastJudge.idx === currentIndex){
+    myVerdictOfOpponent = data.correct;
+    els["status-banner"].textContent = "相手を「" + (data.correct ? "せいかい" : "まちがい") + "」と判定しました。";
+  }
+  showJudgeFixStatus("相手の記録を「" + (data.correct ? "〇 せいかい" : "✕ まちがい") + "」に直しました。", "win");
+  updateJudgeFixUI();
+}
+// ==== ここまで「一個前の判定を直す」 =====================================
 
 function updateMyResultUI(forcedWrong){
   els["my-result"].style.display = "block";
@@ -6971,6 +7212,7 @@ const RETRY_COUNTDOWN_SEC = 3;
 
 function endGame(){
   clearBattleSession();
+  clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
   const my = role === "host" ? scores.host : scores.guest;
   const opp = role === "host" ? scores.guest : scores.host;
   els["result-score"].textContent = "あなた："+my+"問正解";
@@ -7007,6 +7249,7 @@ function startMissRetryRound(){
   missesUnknown = false;
   hostRecordedIdx = -1;
   hostScoredIdx = -1;
+  clearJudgeFix();   // ★ラウンドが変わったら、前のラウンドの判定は直せない
   resetAvatars();
   setupAvatarLabels();
   showScreen("screen-battle");
@@ -7078,6 +7321,7 @@ function startBattleNow(){
   missesUnknown = false;
   hostRecordedIdx = -1;
   hostScoredIdx = -1;
+  clearJudgeFix();
   resetAvatars();
   setupAvatarLabels();
   showScreen("screen-battle");

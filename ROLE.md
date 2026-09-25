@@ -112,6 +112,7 @@
 | `mikaku/mikaku_check2.mjs` | **実機（本物のChrome・スマホ幅390px）で実際に出題して目で見る**（B-12）。科目の切りかえに対応 |
 | `smoke-test.mjs` | 主要な機能の通し確認。**配信前は自作テストと両方** |
 | `test_battle_start.mjs` | **本物の trystero を読ませて**、部屋が作れるかを見る（スタブではない） |
+| `mikaku/judge_fix_probe.mjs` | ★**ゲストが「一個前の判定」を直したら、ホストの記録が本当に変わるか。**本物の Chrome 2枚＋まねごとの待ち合わせ先（スタブではない） |
 | `mikaku/meet_probe.mjs` | ★**本物の待ち合わせ場所ごしに、2つの画面が実際に出会えるか。**下の⚠️を必ず読むこと |
 | `mikaku/relay_probe.mjs` | 待ち合わせ場所（relay）の生死・設定の書き方が効くか・2台が同じ先を選ぶか |
 | `mikaku/ice_probe.mjs` | STUN/TURN が生きているか（**relay 候補が実際に取れるか**） |
