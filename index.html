@@ -2988,6 +2988,11 @@ function showScreen(name){
   ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
+  // ★対戦画面を出すときは、点数の表示を必ず `scores` に合わせる（2026-09-26）。
+  //   これまでは showQuestion() の中だけで書いていたため、
+  //   「対戦画面を出したのに、このラウンドの1問目をまだ描いていない」道で
+  //   前回の点数が残っていました。★ここに置くと、新しい道が増えても同じ穴が開きません。
+  if(name === "screen-battle") updateScoreUI();
   window.scrollTo(0,0);
   if(GUARDED_SCREENS.includes(name)) armBackGuard();
   else if(wasGuarded) disarmBackGuard();
@@ -6344,7 +6349,24 @@ function setupActions(){
     // answer. this can arrive before the first startAction (e.g. while the
     // host is still deciding on question 1), so make sure the guest is
     // actually on screen-battle to see it instead of sitting on 接続待ち
-    if(currentScreenName !== "screen-battle") showScreen("screen-battle");
+    if(currentScreenName !== "screen-battle"){
+      // ★ここに来るのは「このラウンドの1問目がまだ届いていない」ときだけ。
+      //   番号と得点の表示を書き換えているのは showQuestion() の中だけなので、
+      //   何もしないと**前回の対戦の「◯ / ◯」と点数がそのまま見えます**
+      //   （2026-09-26 ユーザー「開始すると前回の対戦の時の問題数や、正解数がそのままのこっています」）。
+      //   battle-counter と .score-row は battle-view の外にあるので、
+      //   showGuestWaitStatus() が battle-view を隠しても古い数字は見えたままです。
+      // ⚠★再接続（resync）はこの道を通りません。あちらは startAction の resync 枝が
+      //   ホストの送ってきた点数を入れて showQuestion() します。**そこで 0 に戻してはいけません**。
+      scores = {host:0, guest:0};
+      // 「◯ / ◯」はホストが送ってきた位置と総数をそのまま使う。
+      // ★自分の questionIds はまだ前のラウンドのままなので、そこから作ってはいけない。
+      //   位置が付いていない合図で入ってきたときは、古い数字を残すより空にする。
+      els["battle-counter"].textContent =
+        (data && typeof data.position === "number" && typeof data.total === "number")
+          ? data.position+" / "+data.total : "";
+      showScreen("screen-battle");
+    }
     showGuestWaitStatus(data);
     if(data.type === "thinking") startCountdown(data.seconds);
     else stopCountdown();
