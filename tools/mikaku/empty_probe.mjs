@@ -36,12 +36,19 @@ await p.evaluate(()=>{const w=document.getElementById("mode-weak"); if(!w.classL
 await p.waitForTimeout(400);
 const label=await p.evaluate(()=>{const e=document.getElementById("pool-count-label"); return e?e.textContent:"(なし)";});
 const screenBefore=await p.evaluate(()=>{const e=[...document.querySelectorAll(".screen")].find(x=>getComputedStyle(x).display!=="none");return e?e.id:"?";});
-await p.click("#solo-start-btn"); await p.waitForTimeout(900);
+// ★★ 2026-09-26: ユーザー判断で、メインも0問・復習も0問の日は
+//   「問題がありません」で**押せなくてよい**ことになりました。
+//   （2026-09-13 の「押せるように」を、この道に限って上書き）
+// ⚠★押せないボタンを click すると 30秒待って落ちるので、先に見てから押す。
+//   ★この道具は「どうなるかを見る」報告専用で、合否は出しません。
+//   ★合否を見るのは tools/mikaku/total_fill_probe.mjs です
+const canStart = await p.$eval("#solo-start-btn", e => !e.disabled);
+if (canStart) { await p.click("#solo-start-btn"); await p.waitForTimeout(900); }
 const screenAfter=await p.evaluate(()=>{const e=[...document.querySelectorAll(".screen")].find(x=>getComputedStyle(x).display!=="none");return e?e.id:"?";});
 console.log(JSON.stringify({
  "単元":unit, "問数":ids.length,
  "★画面に出ている問題数の表示":label,
- "押す前の画面":screenBefore, "★押した後の画面":screenAfter,
+ "押す前の画面":screenBefore, "★ボタンが押せるか":canStart, "★押した後の画面":screenAfter,
  "★始まったか":screenAfter==="screen-solo"
 },null,1));
 await br.close(); s.close();

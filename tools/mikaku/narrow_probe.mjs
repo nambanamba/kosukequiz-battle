@@ -141,7 +141,15 @@ for (const [kind, name] of [["normal", "① ふつう（まちがえた30問）"
   const btn = await page.$eval("#solo-start-btn", e => ({ text: e.textContent, disabled: e.disabled }));
   console.log(`  ${name}\n      まちがえた問題 ${w}問 → 表示「${lab}」 ／ ボタン「${btn.text}」${btn.disabled ? " ★押せない" : ""}`);
   if (kind === "normal") check("まちがえた問題だけに絞れている（437問より大きく減る）", parseInt(lab) === w, `${lab}`);
-  else check("★0件でも「問題がありません」で止まらない", !btn.disabled, btn.text);
+  // ★★ 2026-09-26 にユーザーが、2026-09-13 の判断をこの道に限って上書きしました。
+  //   09-13: 「苦手が0問になってもボタンは押せるように」
+  //   09-26: ★「（未クリアも復習も0問の日は）「問題がありません」でいい」
+  //   ★選んだ単元の残りから黙って埋めるのをやめたためです（fillFromRest 廃止）。
+  //   ⚠★「昔の判断に反している」と思って戻さないこと。
+  //   ★ここは「全部」＋最低出題数 0 なので、復習も入りません。
+  //   ★復習で埋まる側の枝は、下の C2 と total_fill_probe.mjs で見ています
+  else check("★メインも0問・復習も0問なら「問題がありません」で止まる",
+    btn.disabled && btn.text.includes("問題がありません"), btn.text);
   await page.screenshot({ path: path.join(SHOTS, `C_${kind}.png`), fullPage: true });
   await ctx.close();
 }

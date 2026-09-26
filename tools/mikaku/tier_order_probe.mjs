@@ -128,16 +128,26 @@ const other = await page.evaluate(() => {
 });
 await page.click(`#unit-choices .choice[data-unit="${other}"]`); await page.waitForTimeout(200);
 await page.evaluate(() => {
-  const b = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
+  // ★★ 2026-09-26: 出題の組み立てが変わりました。問題数は**合計**になり、
+  //   復習ミックスは**合計に足りない分を埋める**形になった。
+  //   「問題数10 ＋ 復琡82」では **復習が1問も入らない**（メインだけで10問埋まるため）。
+  // ⚠★そのままだと rows2 が空になり、**「段が昇順」を中身ゼロで通してしまっていた**
+  //   （確認ポイント 4-6g: 一部が満たされた瞬間に黙る検査）。
+  // → ★合計を「メイン＋復習が全部入る大きな数」にして、復習を実際に入れる。
+  //   ★期待値を緩めたのではなく、測りたいものが並ぶ状態を作り直した（4-1b）
+  const b = document.querySelector(".count-choice-custom");
   if (b && !b.classList.contains("on")) b.click();
 });
+await page.fill("#count-custom-input", "999");
+await page.dispatchEvent("#count-custom-input", "change"); await page.waitForTimeout(300);
 await page.click("#review-unit-clear-link"); await page.waitForTimeout(200);
 const rh = await page.$('#review-unit-choices .unit-group-header[data-review-group="geo"]');
 if (rh && !(await rh.evaluate(e => e.classList.contains("open")))) await rh.click();
 await page.waitForTimeout(250);
 await page.click(`#review-unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(200);
-await page.fill("#review-mix-input", "82");
-await page.dispatchEvent("#review-mix-input", "change"); await page.waitForTimeout(400);
+// ★ review-mix-input は「問題数＝全部」のときの**最低出題数**に役割が変わった。
+//   ここは数字（999）を選んでいるので、この欄は使わない（2026-09-26）
+await page.waitForTimeout(300);
 await page.click("#solo-start-btn"); await page.waitForTimeout(1500);
 await page.screenshot({ path: path.join(HERE, "tier_order_3_復習ミックス.png") });
 const rows2 = (await page.evaluate(() => {
@@ -148,9 +158,19 @@ const rows2 = (await page.evaluate(() => {
     const r = st[id];
     return { id, tier: !r ? "1 未実施" : ((r.wrong||0) > 0 && (r.box||0) <= 1 ? "2 苦手" : "3 それ以外") };
   });
-})).slice(10);
-console.log("\n【経路2】復習ミックス: メイン " + other + " 10問 ＋ " + UNIT + " 82問");
-report("経路2", rows2);
+}));
+// ★メインの問数は実測して切る（数を決め打ちしない・4-6b / C-8b）
+const mainN2 = await page.evaluate(u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").length, other);
+const rows2b = rows2.slice(mainN2);
+console.log();
+console.log("【経路2】復習ミックス: メイン " + other + " " + mainN2 + "問 ＋ " + UNIT + " の復習 " + rows2b.length + "問（合計 " + rows2.length + "問）");
+// ★★中身ゼロで通さない。復習が1問も入っていなければ、それ自体が不具合（4-6g）
+if (rows2b.length === 0) {
+  console.log("  ❌ 経路2: ★復習が1問も入っていません。中身ゼロで通してしまうので止めます");
+  process.exitCode = 1;
+} else {
+  report("経路2", rows2b);
+}
 
 console.log(errs.length ? "\n  ❌ JSエラー: " + errs.join(" / ") : "\n  ✅ JSエラーなし");
 console.log("画面: tools/mikaku/tier_order_1_設定.png ／ _2_1問目.png ／ _3_復習ミックス.png");

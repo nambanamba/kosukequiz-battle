@@ -409,8 +409,16 @@ await test("復習ミックスの優先順位", async t => {
     });
   }, target.unit);
   await t.page.waitForTimeout(400);
-  await t.page.fill("#review-mix-input", "4");
-  await t.page.dispatchEvent("#review-mix-input", "change"); await t.page.waitForTimeout(400);
+  // ★★ 2026-09-26: 問題数が「合計」になったので、復習4問を入れるには
+  //   合計を「メインの問数 ＋ 4」にする（欄の数字ではなく）
+  const mainN1 = await t.page.evaluate(
+    u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").length, history);
+  await t.page.evaluate(() => {
+    const b = document.querySelector(".count-choice-custom");
+    if (b && !b.classList.contains("on")) b.click();
+  });
+  await t.page.fill("#count-custom-input", String(mainN1 + 4));
+  await t.page.dispatchEvent("#count-custom-input", "change"); await t.page.waitForTimeout(400);
   await t.page.click("#solo-start-btn"); await t.page.waitForTimeout(600);
   const picked = await t.page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("kq_battle_solo_session_v1"));
@@ -639,10 +647,41 @@ const setOrdered = t => t.page.evaluate(() => {     // ランダム順ではな�
   const o = document.getElementById("order-toggle");
   if (!o.classList.contains("on")) o.click();
 });
-const setCount = (t, c) => t.page.evaluate(c => {
-  const b = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === c);
-  if (b && !b.classList.contains("on")) b.click();
-}, c);
+// ★★ 2026-09-26: プリセット以外の数（26 など）も渡せるようにしました。
+//   ⚠★以前は `.count-choice[data-count=c]` を探すだけで、見つからないと
+//   **何もせずに默って通っていました**（確認ポイント 0-3: エラーが出ない壊れ方）。
+//   ★押したあと、実際にその値になったかを読み返して確かめます（0-3c）。
+//   ★変わらなければ例外で止める。黙って進むと、前の設定のまま測ってしまいます
+const setCount = async (t, c) => {
+  await t.page.evaluate(c => {
+    const preset = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === c);
+    if (preset) { if (!preset.classList.contains("on")) preset.click(); return; }
+    const custom = document.querySelector(".count-choice-custom");
+    if (!custom) throw new Error("自由入力のボタンが見つかりません");
+    if (!custom.classList.contains("on")) custom.click();
+  }, c);
+  if (![..."10 15 20 30 all".split(" ")].includes(c)) {
+    await t.page.fill("#count-custom-input", c);
+    await t.page.dispatchEvent("#count-custom-input", "change");
+  }
+  await t.page.waitForTimeout(250);
+  // ★実際にその数で出題される状態になったかを、画面の表示で確かめる
+  const shown = await t.page.$eval("#count-row .count-choice.on, #count-row .count-choice-custom.on",
+    e => e.dataset.count).catch(() => null);
+  const okState = (c === "all") ? shown === "all"
+    : (shown === c || (shown === "custom" &&
+        (await t.page.$eval("#count-custom-input", e => e.value)) === c));
+  if (!okState) throw new Error("問題数を " + c + " にしたつもりが、変わっていません（画面は " + shown + "）");
+};
+// ★★ 2026-09-26 に出題の組み立てが変わりました（ユーザー判断）。
+//   依頼書: 司令塔/回答/対戦_合計を決めて足りない分を復習で埋める_依頼_2026-09-26.md
+//   旧: 問題数10 ＋ 復習ミックス16 ＝ 26問（足し算）
+//   新: ★問題数が**合計**。メインが足りない分だけを復習から埋める
+//   → ★合計を「メインの問数 ＋ 復習で入れたい数」にして、測りたい場面を作り直した。
+//   ★期待値（並び）は1つも変えていません（確認ポイント 4-1b）
+// ★単元の問数は実測する（数を決め打ちしない・4-6b / C-8b）
+const unitSize = (t, unit) => t.page.evaluate(
+  u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").length, unit);
 const setReviewMix = async (t, n, unit) => {
   await t.page.click("#review-unit-clear-link");    // 復習の対象単元をいったん空に
   // ★復習側のアコーディオンは data-review-group。メイン側の data-group とは別属性
@@ -671,10 +710,11 @@ await test("出題順の3段（復習ミックス経路・全3段が順に出る
   await onlyUnit(t, TIER_MAIN);
   await setModes(t, false, false);
   await setOrdered(t);
-  await setCount(t, "10");
-  await setReviewMix(t, g.all.length, TIER_UNIT);   // 16問ぜんぶ
+  const mainN2 = await unitSize(t, TIER_MAIN);
+  await setCount(t, String(mainN2 + g.all.length));   // ★合計＝メイン全部 ＋ 復琡16問
+  await setReviewMix(t, 0, TIER_UNIT);                // ★数字は使わない。単元を選ぶだけ
   const picked = await startAndPick(t);
-  const rev = picked.slice(10);                     // 後ろが復習ミックスの分
+  const rev = picked.slice(mainN2);                   // 後ろが復習ミックスの分
   t.is("復習ミックスが16問つく", rev.length, g.all.length);
   // 1段目は lastCorrectAt が全員 0（記録なし）で同点。並べ替えは安定なので元の並びが残る
   t.is("★1段目（未実施）が先頭のかたまり", rev.slice(0, 4), g.unseen);
@@ -687,8 +727,8 @@ await test("出題順の3段（復習ミックス経路・全3段が順に出る
 
   // ★尽きたら次の段へ行く: 7問だけ求めると 1段目5問 → 2段目の古い2問
   await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
-  await setReviewMix(t, 6, TIER_UNIT);
-  const p2 = (await startAndPick(t)).slice(10);
+  await setCount(t, String(mainN2 + 6));   // ★合計を 6問分だけ大きくする
+  const p2 = (await startAndPick(t)).slice(mainN2);
   t.is("★1段目が尽きたら2段目へ行く（4問+2問）", p2, g.unseen.concat(g.weakExp.slice(0, 2)));
 });
 
@@ -712,9 +752,10 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
   await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
   await onlyUnit(t, TIER_MAIN);
   await setModes(t, false, false);
-  await setCount(t, "10");
-  await setReviewMix(t, g.all.length, TIER_UNIT);
-  const viaReview = (await startAndPick(t)).slice(10);
+  const mainN3 = await unitSize(t, TIER_MAIN);
+  await setCount(t, String(mainN3 + g.all.length));   // ★合計＝メイン全部 ＋ 復琡16問
+  await setReviewMix(t, 0, TIER_UNIT);                // ★数字は使わない。単元を選ぶだけ
+  const viaReview = (await startAndPick(t)).slice(mainN3);
 
   t.is("★同じ集合なら、両経路で並びが完全に一致する", viaReview, viaMain);
 });
@@ -770,8 +811,8 @@ await test("★1段目は「まだ一度も正解していない」（未実施�
   t.is("★10問は一覧の並びの先頭10問", ten, tier1.slice(0, 10));
 });
 
-await test("補う: トグルの問題が足りないとき、残りから段の順で補う", async t => {
-  // 2026-09-13 ユーザー判断。★トグルの問題が必ず先、補う分は後ろ（未実施→苦手→それ以外・各段は古い順）
+await test("補う: トグルの問題が足りないとき、★復習ミックスから補う（2026-09-26）", async t => {
+  // ★出どころは 2026-09-26 に「選んだ単元の残り」→「復習ミックス」へ。並びの規則（3段・古い順）はそのまま
   await t.open();
   const g = await seedTiers(t, true);              // 1段目4・2段目4・3段目8
   await onlyUnit(t, TIER_UNIT);
@@ -780,8 +821,15 @@ await test("補う: トグルの問題が足りないとき、残りから段の
   await setReviewMix(t, 0, TIER_MAIN);
   await setCount(t, "10");
   const p = await startAndPick(t);
-  t.is("★10問: 苦手4問（古い順）→ 未実施4問 → それ以外の古い2問",
-    p, g.weakExp.concat(g.unseen, g.restExp.slice(0, 2)));
+  // ★★ 2026-09-26: 補う出どころが変わりました。
+  //   旧: 選んだ単元の残り（fillFromRest）から段の順で補う
+  //   新: ★**復習ミックスだけ**から補う（ユーザー「復習ミックスからで」）
+  //   ⚠★選んだ単元の残りから黙って埋めるのは、依頼書の失敗条件4・12 です
+  //   ★復習単元（TIER_MAIN）の問は記録が無いので全部1段目。並びは data.js 順
+  const fillIds = await t.page.evaluate(
+    u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").slice(0, 6).map(q => q.id), TIER_MAIN);
+  t.is("★★10問: 苦手4問（古い順）→ ★足りない6問は復習ミックスから",
+    p, g.weakExp.concat(fillIds));
 
   // 「全部」のとき: トグルの問題があれば、それだけ
   await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
@@ -806,9 +854,22 @@ await test("補う: 苦手が0問でも「全部」で始められる", async t 
   await setCount(t, "all");
   await t.page.waitForTimeout(200);
   const btn = await t.page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent }));
-  t.ok("★ボタンが押せる（「問題がありません」にならない）", !btn.disabled && btn.text.includes("16問"), btn);
-  t.is("★未実施4問 → それ以外12問（古い順）",
-    await startAndPick(t), g.unseen.concat(g.restExp, g.weakExp));
+  // ★★ 2026-09-26 にユーザーが、2026-09-13 の判断をこの道に限って上書きしました。
+  //   09-13: 「苦手が0問になってもボタンは押せるようにしてほしい」
+  //   09-26: ★「埋めない。12問で出して、足りないと画面に出す」
+  //          ★「（未クリアも復習も0問の日は）「問題がありません」でいい」
+  //   ★司令塔が 09-13 の記録を示したうえで聞き、ユーザーが答えています。
+  //   ⚠★「昔の判断に反している」と思って戻さないこと（依頼書の失敗条件12）。
+  t.ok("★苦手も0問、復習の候補も0問なら「問題がありません」で押せない",
+    btn.disabled && btn.text.includes("問題がありません"), btn);
+
+  // ★もう片方の枝（4-6e）: 「最低◯問」を決めれば、そこまで復習で埋まる
+  await t.page.fill("#review-mix-input", "5");
+  await t.page.dispatchEvent("#review-mix-input", "change"); await t.page.waitForTimeout(300);
+  const btn2 = await t.page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent }));
+  t.ok("★「最低5問」にすれば、復習から 5問入って押せる",
+    !btn2.disabled && btn2.text.includes("5問"), btn2);
+  t.is("★その5問が実際に出る", (await startAndPick(t)).length, 5);
 });
 
 await test("一覧: 押した行だけ描き直す／開いたあと全行そろう／途中の描き直しで混ざらない", async t => {
