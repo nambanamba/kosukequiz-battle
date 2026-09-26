@@ -6229,6 +6229,18 @@ function showGuestWaitStatus(data){
   el.classList.add("show","info");
   els["battle-view"].style.display = "none";
   els["battle-img-wrap"].style.display = "none";
+  // ★★ 2026-09-26: 単元名・No.・出典も一緒に引っこめる。
+  //   この3つは battle-view の**外**にあるので、battle-view を隠しても残り、
+  //   「つぎの問題の準備中…」のあいだ **1つ前の問題のものが見えていた**。
+  //   （同じ型の残りかすを、1番目の依頼で点数と「◯ / ◯」について直している）
+  // ★空文字にするだけではだめ。unit-tag は背景と余白を持つので、
+  //   中身が空でも小さな灰色の丸みが残る。display ごと消す。
+  // ★戻すときは showQuestion() が display を空文字に戻す（スタイルシートの値に戻る）。
+  //   inline-block / block を書き戻さないこと（タグごとに違うため）
+  ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
+    els[k].textContent = "";
+    els[k].style.display = "none";
+  });
   els["judge-row"].style.display = "none";
   els["my-result"].style.display = "none";
   els["my-result"].classList.remove("show");
@@ -6432,6 +6444,13 @@ function setupActions(){
       // ⚠★再接続（resync）はこの道を通りません。あちらは startAction の resync 枝が
       //   ホストの送ってきた点数を入れて showQuestion() します。**そこで 0 に戻してはいけません**。
       scores = {host:0, guest:0};
+      // ★★ 2026-09-26: アバターの進化も戻す。
+      //   ★依頼書に名指しされた3つ（単元名・No.・出典）**以外**の残りかすです。
+      //   resetAvatars() は startBattleNow / startMissRetryRound / startAction / 再開 でしか呼ばれておらず、
+      //   ゲストがこの道で対戦画面に入ると、**前のラウンドで育った絵と Lv. が残っていました**。
+      //   （「まちがえた問題だけもう一勝負」で目に見えます）
+      // ⚠★再接続（resync）はこの道を通らないので、途中の進化を消しません。
+      resetAvatars();
       // 「◯ / ◯」はホストが送ってきた位置と総数をそのまま使う。
       // ★自分の questionIds はまだ前のラウンドのままなので、そこから作ってはいけない。
       //   位置が付いていない合図で入ってきたときは、古い数字を残すより空にする。
@@ -6815,6 +6834,12 @@ function showQuestion(idx, hostPrivate){
   els["battle-unit-tag"].textContent = d.u;
   els["battle-q-id"].textContent = "No."+d.id;
   els["battle-source-tag"].textContent = d.note ? "出典："+d.note : "";
+  // ★ showGuestWaitStatus() で消しているので、問題を出すときは必ず戻す（2026-09-26）。
+  //   ★空文字に戻すと、スタイルシートの display（inline-block / block）に戻る。
+  //   ★再接続（resync）もここを通るので、正しい単元名・No.・出典が戻ります
+  ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
+    els[k].style.display = "";
+  });
   els["battle-q"].textContent = d.q;
   els["battle-a"].textContent = d.a;
   els["battle-sol"].textContent = d.sol || "";
