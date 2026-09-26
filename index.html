@@ -198,6 +198,10 @@
     font-weight:600;
   }
   .pool-count-bar b{font-size:16px;}
+  /* ★問題数の選択をこの中に入れた（2026-09-26）。
+     ★#count-row .toggle の幅の指定（上にあります）はそのまま使えます */
+  .pool-count-bar #count-row{margin-top:10px;}
+  .pool-count-bar #count-custom-row{margin-top:8px;}
   /* ★合計に足りない日は、一目で分かる色にする（2026-09-26）。
      足りないことを文字だけで書くと、長い行のなかに埋もれて見過ごされます */
   .pool-count-bar.short{
@@ -1642,7 +1646,21 @@
       <button class="btn-secondary" id="resume-battle-btn" style="display:none; margin-top:10px;">前回の対戦を再開する（ホストとして）</button>
       <button class="btn-secondary" id="retry-last-miss-btn" style="margin-top:10px; display:none;">前回まちがえた問題だけやり直す</button>
 
-      <div class="pool-count-bar" id="pool-count-bar">現在の選択で出題される問題数：<b id="pool-count-label">0問</b></div>
+      <!-- ★問題数は、数を見ているその場で選べる（2026-09-26 ユーザー
+           「現在の選択で出題される問題数：30問　ここで問題数を選べるようにしてほしい」）。
+           ★下にあった「問題数」の節はなくした。**2か所に置かない** -->
+      <div class="pool-count-bar" id="pool-count-bar">
+        <div>現在の選択で出題される問題数：<b id="pool-count-label">0問</b></div>
+        <div class="toggle-row" id="count-row">
+          <div class="toggle count-choice" data-count="10">10問</div>
+          <div class="toggle count-choice" data-count="15">15問</div>
+          <div class="toggle count-choice" data-count="20">20問</div>
+          <div class="toggle count-choice" data-count="30">30問</div>
+          <div class="toggle count-choice on" data-count="all">全部</div>
+          <div class="toggle count-choice-custom" data-count="custom">自由入力</div>
+        </div>
+        <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
+      </div>
 
       <button class="start-btn" id="create-btn" style="margin-top:14px;">二人で始める</button>
       <div class="toggle-row">
@@ -1695,19 +1713,6 @@
       </div>
       </div><!-- /setup-filter-panel -->
 
-      <div class="section-title">問題数（★ここの数字は「合計」です）</div>
-      <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">メインがこの数に足りないときは、下の「復習ミックス」から自動で補います。<br>復習の候補も足りない日は、★<b>足りないまま出して、何問足りないかを上の行に出します</b>。</div>
-      <div class="toggle-row" id="count-row">
-        <div class="toggle count-choice" data-count="10">10問</div>
-        <div class="toggle count-choice" data-count="15">15問</div>
-        <div class="toggle count-choice" data-count="20">20問</div>
-        <div class="toggle count-choice" data-count="30">30問</div>
-        <div class="toggle count-choice on" data-count="all">全部</div>
-        <div class="toggle count-choice-custom" data-count="custom">自由入力</div>
-      </div>
-      <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
-
-      <hr class="home-divider">
 
       <div class="section-title">復習ミックス（★合計に足りない分を、ここから補います）</div>
       <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">選んだ復習単元から、★<b>正解した日が古い問題を優先して</b>持ってきます。<br>候補になるのは、下で選んだ単元すべてです（★メインで選んでいても構いません）。<br>★同じ問題が2回出ることはありません。</div>
@@ -1746,9 +1751,6 @@
       </div>
       </div><!-- /review-filter-panel -->
 
-      <div class="section-title">問題数を「全部」にしたときの、最低出題数</div>
-      <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">「全部」のときは、メインに当てはまる問題を全部出します。<br>それがこの数に足りなければ、復習ミックスからここまで埋めます。<br>★<b>メインに当てはまる問題が0問の日は、この数がぜんぶ復習になります。</b><br>0 のままにすると、埋めません（メインが0問なら「問題がありません」になります）。<br>⚠数字を選んでいるときは、<b>その数字そのものが合計</b>なのでここは使いません。</div>
-      <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
 
       <hr class="home-divider">
 
@@ -2805,7 +2807,7 @@ const els = {};
  "type-all","type-image","type-text",
  "priority-all","priority-high","priority-mid","priority-low",
  "level-all","level-basic","level-standard","level-advanced",
- "count-row","count-custom-row","count-custom-input","review-mix-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","pool-count-label","pool-count-bar","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","pool-count-label","pool-count-bar","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-start-together-btn","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error","create-retry-btn","join-retry-btn",
@@ -4138,13 +4140,11 @@ let currentSubject = "社会";
 // ---- unit selection (create screen) ----
 let selectedUnits = new Set(getUnits()); // every unit selected by default, like a checked "select all"
 let questionCount = "all";
-let minTotalCount = 0;   // ★「全部」のときの「最低◯問」。足りない分は復習ミックスから埋める（buildPlan）
-// ⚠★**2026-09-26 に役割が変わりました。**もとは `reviewMixCount` という名で、
-//   「合計とは別に足し算する復習の問題数」（合計20問＋復琡10問＝30問）でした。
-//   今は「問題数＝全部」のときの**最低出題数**です。数字を選んでいるときは、
-//   **その数字そのものが合計**なので、こちらは使いません（targetTotal）。
-//   ★保存は `minTotalCount` で書きますが、**旧名 `reviewMixCount` も読みます**
-//   （既存の保存と、`reviewMixCount` を仕込んできた検査道具を壊さないため）。
+// ★★ 2026-09-26: 「最低出題数」（minTotalCount / 旧名 reviewMixCount）は**概念ごと廃止**しました。
+//   ユーザー「なんか複雑なのでやめて欲しいです」。司令塔が作った余計な概念だった。
+//   ★保存に古い数が残っていても、**読みません**（黙って効き続けないため）。
+//   残った形: 数字を選ぶ → その数字が合計（足りない分は復習ミックスから）
+//             「全部」   → メインに当てはまる問題を全部。★埋めない
 let currentShuffle = true;
 // ★★出題モード＝「どの段を出すか」（2026-09-26）。★既定は3つとも出す。
 //   依頼書: 司令塔/回答/対戦_言葉と数字とフィルタを3段に揃える_依頼_2026-09-26.md
@@ -4251,7 +4251,6 @@ function collectSubjectSettings(){
     priority: currentPriority,
     level: currentLevel,
     shuffle: currentShuffle,
-    minTotalCount: minTotalCount,
     reviewMode: reviewMode,
     // 復習ミックス側の絞り込みも、メイン側の type/priority/level と同じ性質の設定なので
     // 科目別にそろえる（片方だけ共通だと、どちらの扱いか分からなくなる）
@@ -4272,8 +4271,6 @@ function restoreSubjectSettings(subject){
   if(s.priority) currentPriority = s.priority;
   if(s.level) currentLevel = s.level;
   if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
-  if(typeof s.minTotalCount === "number") minTotalCount = s.minTotalCount;
-  else if(typeof s.reviewMixCount === "number") minTotalCount = s.reviewMixCount;   // ★旧名（2026-09-26 に改名）
   if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
   if(s.reviewPriority) reviewPriority = s.reviewPriority;
   if(s.reviewLevel) reviewLevel = s.reviewLevel;
@@ -4301,8 +4298,6 @@ function loadSettings(){
     if(s.level) currentLevel = s.level;
     if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
     if(s.count !== undefined) questionCount = s.count;
-    if(typeof s.minTotalCount === "number") minTotalCount = s.minTotalCount;
-    else if(typeof s.reviewMixCount === "number") minTotalCount = s.reviewMixCount;   // ★旧名（2026-09-26 に改名）
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
     if(typeof s.fairMode === "boolean") fairMode = s.fairMode;
     if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
@@ -4376,7 +4371,6 @@ function saveSettings(){
       level: currentLevel,
       shuffle: currentShuffle,
       count: questionCount,
-      minTotalCount: minTotalCount,
       reviewMode: reviewMode,
       fairMode: fairMode,
       headStartSec: headStartSec,
@@ -4430,7 +4424,6 @@ function applySettingsUI(){
     els["count-custom-row"].style.display = "flex";
     els["count-custom-input"].value = questionCount;
   }
-  els["review-mix-input"].value = minTotalCount;
   document.querySelectorAll("#review-type-row .toggle").forEach(el=>{
     el.classList.toggle("on", el.dataset.reviewType === reviewType);
   });
@@ -4727,7 +4720,7 @@ function starsFirst(pool){
 //   ★「（未クリアも復習も0問の日は）「問題がありません」でいい」
 //
 // ■ 決まりごと
-//   合計 = 問題数に数字を選んでいれば その数字 ／「全部」なら minTotalCount（最低◯問）
+//   合計 = 問題数に数字を選んでいれば その数字 ／★「全部」なら埋めない
 //   ① メインから先に取る（単元・トグル・絞りこみ）。「全部」ならメインは切らない
 //   ② 合計に足りない分を ★復習ミックスの候補からだけ 埋める
 //   ③ ★それでも足りなければ、足りないまま出す。何問足りないかを画面に出す
@@ -4740,9 +4733,6 @@ function starsFirst(pool){
 //   （以前は refreshCreateButton が同じ計算を自分でもう一度書いていました＝写し・4-6d）
 // ★同じ問題が2回入らないこと（失敗2）は、復習側を Set で除いて担保しています。
 //   復習の候補は「選んでいない単元」なので本来ぶつかりませんが、当てにしません
-function targetTotal(){
-  return questionCount === "all" ? minTotalCount : questionCount;
-}
 function buildPlan(){
   // ★「段を絞っているか」。3つとも選んでいれば「ふだんの出題」（旧の「両方OFF」と同じ意味）
   const narrowing = selectedTiers.size < 3;
@@ -4772,7 +4762,9 @@ function buildPlan(){
   }
   // ★「全部」のときはメインを切らない（メインに当てはまる問題は全部出す）
   if(questionCount !== "all") main = main.slice(0, questionCount);
-  const target = targetTotal();
+  // ★「全部」は埋めない（メインに当てはまる問題をそのまま）。
+  //   数字を選んでいれば、その数字が合計（2026-09-26 「最低出題数」廃止）
+  const target = questionCount === "all" ? main.length : questionCount;
   // ★足りない分を、復習ミックスの候補からだけ埋める。並びは「いまの3段」のまま（依頼書4）
   const want = Math.max(0, target - main.length);
   let review = [];
@@ -5066,14 +5058,6 @@ els["count-custom-input"].addEventListener("change", ()=>{
   if(isNaN(v) || v < 1) v = 1;
   questionCount = v;
   els["count-custom-input"].value = v;
-  refreshCreateButton();
-  saveSettings();
-});
-els["review-mix-input"].addEventListener("change", ()=>{
-  let v = parseInt(els["review-mix-input"].value, 10);
-  if(isNaN(v) || v < 0) v = 0;
-  minTotalCount = v;
-  els["review-mix-input"].value = v;
   refreshCreateButton();
   saveSettings();
 });
@@ -5946,7 +5930,7 @@ els["import-file"].addEventListener("change", (e)=>{
           const status = statusIdx !== -1 ? row[statusIdx] : "";
           // ★ 2026-09-26 に状態の語を3段に揃えた。
           //   ★旧い語（苦手／正解ずみ）のファイルも読めるように残してある。
-          //   （minTotalCount の旧名を読むのと同じ考え方）
+          //   （新しい形で書きながら、古い形も読めるように残す、という考え方）
           if(status === TIER_NAMES[1] || status === "苦手") next.box = 0;
           else if(status === TIER_NAMES[2] || status === "正解ずみ") next.box = 1;
           else if(status === TIER_NAMES[0]) next.box = 0;
