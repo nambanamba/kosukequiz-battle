@@ -1,11 +1,18 @@
-// ★公開URLで、配信したものが本当に直っているかを見る（2026-09-26 の3件ぶん）。
+// ★公開URLで、配信したものが本当に直っているかを見る（2026-09-26 の4件ぶん）。
 //   ① 対戦の開始時に、前回の点数と「◯ / ◯」が残る
 //   ② 問題数が「合計」になり、足りない分を復習ミックスから埋める／足りないと画面に出る
 //   B 待ち画面に、1つ前の問題の単元名・No.・出典・アバターが残る
+//   ③ 言葉・数字・フィルタが出題の3段に揃っている／★移行の知らせが出る
 //
 // 使い方: node tools/mikaku/public_release_check.mjs
 //
-// ★もとは round_reset_public_check.mjs（①だけ）。②とBを配信するときに広げて改名した。
+// ★もとは round_reset_public_check.mjs（①だけ）。②とBを配信するときに広げて改名し、
+//   ③を配信したあとに③の枠を足した（2026-09-26）。
+//
+// ⚠️★**②と③は待ち合わせ先を使いません。①とBだけが使います。**
+//   ③だけを見たいときも、この道具を丸ごと回すと**本物の relay に告知を出します**。
+//   ★そこだけ見たいなら、②③の枠は上のほうにあるので、
+//   　`process.exit(ng ? 1 : 0)` を一時的に前に置くなどして、relay の枠に入る前に止めること。
 //
 // ■ ★これは「関門（guard）」ではありません。配信のたびに1回だけ回す確認です。
 //   ふだんの関門は `tools/mikaku/round_reset_probe.mjs`（まねごとの待ち合わせ先・自己テスト付き）。
@@ -165,6 +172,69 @@ console.log("■ ② 問題数が「合計」になり、足りない分が復�
   check("★② 足りない日は、その行が目立つ色になる", b.short === true, "short=" + b.short);
   check("★② それでも始められる（12問で出す）", !b.btn.disabled && b.btn.text.includes("12問"), JSON.stringify(b.btn));
   check("② 画面のエラーが 0", errs.length === 0, errs.join(" | "));
+  await ctx.close();
+}
+
+// ==================== ③ 言葉・数字・フィルタが3段に揃っているか ====================
+// ★ここも待ち合わせ先を使いません（ホームと一覧だけ）。
+// ★★いちばん大事なのは「移行の知らせ」です。
+//   これは**これまで使っていた親が、次に開いたときにだけ見える画面**なので、
+//   ★その状態（tiers も reviewAllUnits も無い、旧い保存）を自分で作って見にいきます。
+//   ⚠️ふつうに開くと出ないので、「出ませんでした」で見落としやすいところです。
+console.log("■ ③ 言葉・数字・フィルタが3段に揃っているか（公開URL・1つの窓）");
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  const errs = []; page.on("pageerror", e => errs.push(String(e)));
+  await page.goto(PUBLIC_URL); await page.waitForTimeout(1200);
+  // 1つの単元に3段が混ざる仕込み＋★旧い保存（これまで使っていた親の状態）
+  await page.evaluate(() => {
+    const by = {};
+    QA_DATA.forEach(q => { if (q.subj === "社会" && q.kind !== "calc") (by[q.u] = by[q.u] || []).push(q.id); });
+    const main = Object.keys(by).sort((a, b) => by[b].length - by[a].length)[0], ids = by[main];
+    const st = {}, now = Date.now(), d = 86400000;
+    ids.forEach((id, i) => {
+      if (i < 10) return;                                                                                    // 1段目 10問
+      if (i < 25) st[id] = { correct: 2, wrong: 1, box: 0, lastCorrectAt: now - d, lastAnswered: now - d };   // 2段目 15問
+      else        st[id] = { correct: 3, wrong: 0, box: 3, lastCorrectAt: now - d, lastAnswered: now - d };   // 3段目
+    });
+    localStorage.clear();
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
+    // ★tiers も reviewAllUnits も入れない＝移行が走る状態
+    localStorage.setItem("kq_battle_settings_v1", JSON.stringify({
+      subject: "社会", unitsBySubject: { "社会": [main] }, units: [main],
+      count: "all", shuffle: false, filterUnmastered: true, filterWeak: false, reviewMixCount: 0
+    }));
+  });
+  await page.reload(); await page.waitForTimeout(1600);
+  const r = await page.evaluate(() => ({
+    note: getComputedStyle(document.getElementById("migration-note")).display !== "none",
+    noteText: (document.getElementById("migration-note-body").innerText || "").replace(/\s+/g, " "),
+    h: { t: +document.getElementById("stat-total").textContent,
+         s1: +document.getElementById("stat-stage1").textContent,
+         s2: +document.getElementById("stat-stage2").textContent,
+         s3: +document.getElementById("stat-stage3").textContent },
+    modes: Array.from(document.querySelectorAll(".mode-filter"))
+      .map(e => e.textContent.trim() + (e.classList.contains("on") ? "(ON)" : "(off)")),
+    over: document.body.scrollWidth > 390
+  }));
+  await page.screenshot({ path: path.join(SHOTS, "public_3_note390.png"), fullPage: false }).catch(() => {});
+  check("★★③ 移行の知らせが出る（これまで使っていた親が次に開いたときの画面）", r.note);
+  check("★③ 知らせが「出る問題が少し増えます」を名指ししている", /出る問題が少し増えます/.test(r.noteText), r.noteText.slice(0, 60));
+  check("★③ 旧「未クリアの問題」が 1段目+2段目 に移っている",
+    r.modes.join(" ") === "まだ正解していない(ON) 苦手な問題(ON) 定着した(off)", r.modes.join(" "));
+  check("★③ 3つを足すと「全問題数」になる", r.h.s1 + r.h.s2 + r.h.s3 === r.h.t, JSON.stringify(r.h));
+  check("★③ 390px で横にあふれていない", !r.over);
+  await page.click("#migration-note-ok"); await page.waitForTimeout(300);
+  await page.click("#list-btn"); await page.waitForTimeout(900);
+  const c = await page.evaluate(() => ({
+    tier: Array.from(document.querySelectorAll("#list-status-filters .toggle")).map(e => e.textContent.trim()),
+    star: Array.from(document.querySelectorAll("#list-star-filter .toggle")).map(e => e.textContent.trim())
+  }));
+  await page.screenshot({ path: path.join(SHOTS, "public_3_list390.png"), fullPage: false }).catch(() => {});
+  check("★③ 一覧のチップは段3つ＋別の行に★最優先", c.tier.length === 3 && c.star.length === 1, JSON.stringify(c));
+  check("③ 画面のエラーが 0", errs.length === 0, errs.join(" | "));
   await ctx.close();
 }
 
