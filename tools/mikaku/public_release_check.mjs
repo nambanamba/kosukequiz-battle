@@ -1,6 +1,11 @@
-// ★公開URLの2つの窓で、①（対戦の開始時に前回の点数と「◯ / ◯」が残る）が本当に直ったかを見る。
+// ★公開URLで、配信したものが本当に直っているかを見る（2026-09-26 の3件ぶん）。
+//   ① 対戦の開始時に、前回の点数と「◯ / ◯」が残る
+//   ② 問題数が「合計」になり、足りない分を復習ミックスから埋める／足りないと画面に出る
+//   B 待ち画面に、1つ前の問題の単元名・No.・出典・アバターが残る
 //
-// 使い方: node tools/mikaku/round_reset_public_check.mjs
+// 使い方: node tools/mikaku/public_release_check.mjs
+//
+// ★もとは round_reset_public_check.mjs（①だけ）。②とBを配信するときに広げて改名した。
 //
 // ■ ★これは「関門（guard）」ではありません。配信のたびに1回だけ回す確認です。
 //   ふだんの関門は `tools/mikaku/round_reset_probe.mjs`（まねごとの待ち合わせ先・自己テスト付き）。
@@ -89,6 +94,77 @@ const waitBattle = (pg, ms) => pg.waitForFunction(
 const header = async pg => ({
   counter: await txt(pg, "#battle-counter"), me: await txt(pg, "#score-me"), opp: await txt(pg, "#score-opp")
 });
+// ★B: 「文字が入っているか」ではなく「★画面に見えているか」で測る（4-3c）
+const tags = pg => pg.evaluate(() => {
+  const read = id => {
+    const e = document.getElementById(id);
+    return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null);
+  };
+  return {
+    unit: read("battle-unit-tag"), qid: read("battle-q-id"), src: read("battle-source-tag"),
+    hostAvatar: (document.getElementById("host-avatar").textContent || "").trim(),
+    guestAvatar: (document.getElementById("guest-avatar").textContent || "").trim()
+  };
+});
+
+// ==================== ② 問題数は「合計」・足りない分は復習から ====================
+// ★ここは待ち合わせ先を使いません（一人練習の設定画面だけ）。何回回しても relay に負担はかかりません
+console.log("■ ② 問題数が「合計」になり、足りない分が復習から入るか（公開URL・1つの窓）");
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  const errs = []; page.on("pageerror", e => errs.push(String(e)));
+  await page.goto(PUBLIC_URL); await page.waitForTimeout(1200);
+  // 仕込み: 社会を全部クリアずみにしてから、メインの単元の先頭12問だけ「未クリア」に戻す
+  const info = await page.evaluate(() => {
+    const by = {};
+    QA_DATA.forEach(q => { if (q.subj === "社会" && q.kind !== "calc") (by[q.u] = by[q.u] || []).push(q.id); });
+    const units = Object.keys(by).sort((a, b) => by[b].length - by[a].length);
+    const main = units[0], review = units.slice(1, 3);
+    const st = {}, now = Date.now(), day = 86400000;
+    QA_DATA.forEach(q => {
+      if (q.subj === "社会" && q.kind !== "calc") st[q.id] = { correct: 3, wrong: 0, box: 3, lastCorrectAt: now - day, lastAnswered: now - day };
+    });
+    by[main].forEach((id, i) => { if (i < 12) st[id] = { correct: 0, wrong: 1, box: 0, lastAnswered: now - day }; });
+    localStorage.clear();
+    localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
+    localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
+    return { main: main, review: review, allUnits: units };
+  });
+  const setup = async (mainUnits, reviewUnits) => {
+    await page.evaluate((a) => {
+      const s = JSON.parse(localStorage.getItem("kq_battle_settings_v1") || "{}");
+      Object.assign(s, {
+        subject: "社会", unitsBySubject: { "社会": a.mainUnits }, units: a.mainUnits,
+        count: 20, shuffle: false, filterUnmastered: true, filterWeak: false,
+        minTotalCount: 0, reviewSelectedUnits: a.reviewUnits, reviewUnitsKnown: a.allUnits,
+        reviewPriority: "all", reviewLevel: "all", reviewType: "all",
+        type: "all", priority: "all", level: "all"
+      });
+      localStorage.setItem("kq_battle_settings_v1", JSON.stringify(s));
+    }, { mainUnits, reviewUnits, allUnits: info.allUnits });
+    await page.reload(); await page.waitForTimeout(1200);
+    return {
+      label: await txt(page, "#pool-count-label"),
+      short: await page.$eval("#pool-count-bar", e => e.classList.contains("short")),
+      btn: await page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent.trim() }))
+    };
+  };
+  // (1) 復習の候補がある日: 未クリア12 ＋ 復習8 ＝ 合計20
+  const a = await setup([info.main], info.review);
+  await page.screenshot({ path: path.join(SHOTS, "public_2_fill.png"), fullPage: true }).catch(() => {});
+  check("★② 未クリア12・合計20 → 「20問（復習8問こみ）」になる",
+    a.label.indexOf("20問（復習8問こみ）") === 0 && !a.short, a.label);
+  // (2) 復習の候補が0問の日（単元を全部メインに選ぶ）: 12問で出し、足りないと画面に出す
+  const b = await setup(info.allUnits, []);
+  await page.screenshot({ path: path.join(SHOTS, "public_2_short.png"), fullPage: true }).catch(() => {});
+  check("★★② 復習の候補が0問 → ★12問で出し、8問足りないと画面に出る",
+    b.label.indexOf("12問") === 0 && /8問足りません/.test(b.label), b.label);
+  check("★② 足りない日は、その行が目立つ色になる", b.short === true, "short=" + b.short);
+  check("★② それでも始められる（12問で出す）", !b.btn.disabled && b.btn.text.includes("12問"), JSON.stringify(b.btn));
+  check("② 画面のエラーが 0", errs.length === 0, errs.join(" | "));
+  await ctx.close();
+}
 
 const host = await mk(), guest = await mk();
 try {
@@ -113,9 +189,11 @@ try {
   await waitVisible(guest.page, "#guest-wait-status", 30000);
   check("★S1 いま見ているのは「1問目がまだ画面に無い」場面", !(await visible(guest.page, "#battle-view")));
   const s1 = await header(guest.page);
+  const g1 = await tags(guest.page);
   await guest.page.screenshot({ path: path.join(SHOTS, "public_S1_guest.png"), fullPage: true }).catch(() => {});
   check("★S1 ゲストの「◯ / ◯」がこの対戦のもの（1 / " + Q_COUNT + "）", s1.counter === "1 / " + Q_COUNT, JSON.stringify(s1));
   check("★S1 ゲストの点数が 0 / 0", s1.me === "0" && s1.opp === "0", JSON.stringify(s1));
+  check("★B S1 単元名・No.・出典が出ていない", !g1.unit && !g1.qid && !g1.src, JSON.stringify(g1));
 
   // ---- 4問を通す。2問目だけ おたがい ✕（もう一勝負を出すため）----
   const judge = async (hostOk, guestOk) => {
@@ -129,22 +207,49 @@ try {
     await waitVisible(host.page, "#advance-btn", 60000);
     await tap(host.page, "#advance-btn");
     await judge(i !== 2, i !== 2);
+    if (i === 1) {
+      // ★B: 問題が出ているときは3つとも出ていること（消しすぎていないこと）
+      const shown = await tags(guest.page);
+      check("★B 問題が出ているときは、単元名・No.・出典が出ている（消しすぎていない）",
+        shown.unit && shown.qid && shown.src, JSON.stringify(shown));
+    }
     await tap(host.page, "#next-btn");
+    if (i === 1) {
+      // ★B: つぎの問題の準備中に、1つ前のものが残っていないこと
+      await waitVisible(guest.page, "#guest-wait-status", 40000);
+      await guest.page.waitForFunction(
+        () => getComputedStyle(document.getElementById("battle-view")).display === "none", null, { timeout: 30000 });
+      const waiting = await tags(guest.page);
+      await guest.page.screenshot({ path: path.join(SHOTS, "public_B_waiting.png"), fullPage: true }).catch(() => {});
+      check("★★B つぎの問題の準備中に、1つ前の単元名・No.・出典が残っていない",
+        !waiting.unit && !waiting.qid && !waiting.src, JSON.stringify(waiting));
+    }
   }
 
   // ---- S2: ★「まちがえた問題だけもう一勝負」。ここが依頼書の失敗3 ----
   await guest.page.waitForFunction(
     () => document.getElementById("screen-result").classList.contains("active"), null, { timeout: 60000 });
   const stale = await header(guest.page);
+  const staleTags = await tags(guest.page);
   check("【下じき】結果画面では、ゲストの画面に前のラウンドの数字が残っている",
     stale.me !== "0" && stale.counter === Q_COUNT + " / " + Q_COUNT, JSON.stringify(stale));
+  check("【下じき】前のラウンドで、アバターが育っている（これが次で戻るべきもの）",
+    staleTags.hostAvatar !== "🙂" || staleTags.guestAvatar !== "🙂",
+    "host=" + staleTags.hostAvatar + " guest=" + staleTags.guestAvatar);
   await waitVisible(host.page, "#result-retry-battle-btn", 40000);
   await tap(host.page, "#result-retry-battle-btn").catch(() => {});
   await waitBattle(guest.page, 60000);
   await waitVisible(guest.page, "#guest-wait-status", 40000);
   check("★S2 いま見ているのは「もう一勝負の1問目がまだ画面に無い」場面", !(await visible(guest.page, "#battle-view")));
   const s2 = await header(guest.page);
+  const g2 = await tags(guest.page);
   const hostCounter = await txt(host.page, "#battle-counter");
+  check("★★B もう一勝負の1問目の前に、1つ前の単元名・No.・出典が残っていない",
+    !g2.unit && !g2.qid && !g2.src, JSON.stringify(g2));
+  check("★★B もう一勝負の1問目の前に、アバターが前のラウンドのまま残っていない",
+    g2.hostAvatar === "🙂" && g2.guestAvatar === "🙂",
+    "host=" + g2.hostAvatar + " guest=" + g2.guestAvatar
+      + " ／ 前のラウンドは host=" + staleTags.hostAvatar + " guest=" + staleTags.guestAvatar);
   await guest.page.screenshot({ path: path.join(SHOTS, "public_S2_guest.png"), fullPage: true }).catch(() => {});
   await host.page.screenshot({ path: path.join(SHOTS, "public_S2_host.png"), fullPage: true }).catch(() => {});
   check("★★S2 もう一勝負で、ゲストの点数が 0 / 0 に戻っている",
