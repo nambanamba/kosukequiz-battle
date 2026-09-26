@@ -122,6 +122,19 @@
   }
   .choice .name{font-size:15px; font-weight:600;}
   .choice .count{font-size:12px; color:var(--ink-soft); flex-shrink:0; margin-left:10px;}
+  /* ★単元ごとの3つの数字（2026-09-26）。
+     ★依頼書の見本どおり、**2行目に全幅で**出す。
+     ★右側に縦に積むと、長い単元名（「第1回.旧石器時代・縄文時代・弥生時代」）が
+     390px で 3行に折れて窄くなる（実機幅で見て決めた・依頼書の失敗 18） */
+  .choice{flex-wrap:wrap;}
+  .choice .unit-tiers{
+    width:100%;
+    margin-top:4px;
+    padding-left:28px;      /* チェックの分だけ下げて、単元名の真下にそろえる */
+    font-size:11px;
+    color:var(--ink-soft);
+    font-variant-numeric:tabular-nums;
+  }
 
   .unit-group-header{
     display:flex;
@@ -307,6 +320,28 @@
     padding:12px 10px;
     text-align:center;
     box-shadow:var(--card-shadow);
+  }
+  /* ★「3つを足すと全問題数」を、数字のすぐ下に1行で言う（2026-09-26） */
+  /* ★設定を移したときの知らせ（2026-09-26）。一度出したら消える */
+  .migration-note{
+    background:#fff4e5;
+    border:1.5px solid #d98324;
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+    font-size:12px;
+    line-height:1.7;
+    color:#8a4b00;
+  }
+  .migration-note b{color:#6d3a00;}
+  .migration-note ul{margin:6px 0 10px; padding-left:18px;}
+  .migration-note li{margin-bottom:4px;}
+  .migration-note button{margin-top:4px;}
+  .stat-note{
+    font-size:11px;
+    color:var(--ink-soft);
+    line-height:1.5;
+    margin:-2px 0 6px;
   }
   .stat-card .num{
     font-family:"Hiragino Mincho ProN", serif;
@@ -1583,9 +1618,16 @@
 
     <div class="stat-row">
       <div class="stat-card"><div class="num" id="stat-total">-</div><div class="lbl">全問題数</div></div>
-      <div class="stat-card"><div class="num" id="stat-mastered">-</div><div class="lbl">正解済み数</div></div>
-      <div class="stat-card"><div class="num" id="stat-weak">-</div><div class="lbl">苦手な問題</div></div>
-      <div class="stat-card"><div class="num" id="stat-unmastered">-</div><div class="lbl">未クリア</div></div>
+      <div class="stat-card"><div class="num" id="stat-stage1">-</div><div class="lbl">まだ正解<br>していない</div></div>
+      <div class="stat-card"><div class="num" id="stat-stage2">-</div><div class="lbl">苦手な<br>問題</div></div>
+      <div class="stat-card"><div class="num" id="stat-stage3">-</div><div class="lbl">定着した</div></div>
+    </div>
+    <div class="stat-note">★右の3つを足すと、必ず「全問題数」になります（どれも、いまの絞りこみをかけた数です）。</div>
+    <!-- ★設定を移したときに一度だけ出す知らせ（2026-09-26）。
+         ★黙って出る問題が変わってはいけない、が依頼書の失敗条件（4・13） -->
+    <div class="migration-note" id="migration-note" style="display:none;">
+      <div id="migration-note-body"></div>
+      <button type="button" class="btn-secondary" id="migration-note-ok">わかりました</button>
     </div>
 
     <div id="home-setup">
@@ -1614,8 +1656,9 @@
 
       <div class="section-title">出題モード（組み合わせOK）</div>
       <div class="toggle-row">
-        <div class="toggle mode-filter" id="mode-unmastered" data-mode="unmastered">未クリアの問題</div>
-        <div class="toggle mode-filter" id="mode-weak" data-mode="weak">よく間違える問題</div>
+        <div class="toggle mode-filter on" id="mode-stage1" data-tier="0">まだ正解していない</div>
+        <div class="toggle mode-filter on" id="mode-stage2" data-tier="1">苦手な問題</div>
+        <div class="toggle mode-filter on" id="mode-stage3" data-tier="2">定着した</div>
       </div>
 
       <!-- ★「出題タイプ・優先度・難易度」はたたんでおく（2026-09-13 ユーザー原文「メインの画面の難易度などのフィルタをパネルで隠してほしい」）。
@@ -1662,7 +1705,7 @@
       <hr class="home-divider">
 
       <div class="section-title">復習ミックス（★合計に足りない分を、ここから補います）</div>
-      <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">選んだ復習単元から、★<b>正解した日が古い問題を優先して</b>持ってきます。<br>⚠★<b>候補になるのは「メインで選んでいない単元」だけ</b>です。単元を全部選んでいる日は、候補が0問で補えません。</div>
+      <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">選んだ復習単元から、★<b>正解した日が古い問題を優先して</b>持ってきます。<br>候補になるのは、下で選んだ単元すべてです（★メインで選んでいても構いません）。<br>★同じ問題が2回出ることはありません。</div>
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
         <span style="font-size:13px; font-weight:normal;">復習する単元（青色＝選択中。タップで切りかえ）</span>
         <div style="font-size:12px; font-weight:normal;">
@@ -1699,7 +1742,7 @@
       </div><!-- /review-filter-panel -->
 
       <div class="section-title">問題数を「全部」にしたときの、最低出題数</div>
-      <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">「全部」のときは、メインに当てはまる問題を全部出します。<br>それがこの数に足りなければ、復習ミックスからここまで埋めます。<br>★<b>未クリアが0問の日は、この数がぜんぶ復習になります。</b><br>0 のままにすると、埋めません（メインが0問なら「問題がありません」になります）。<br>⚠数字を選んでいるときは、<b>その数字そのものが合計</b>なのでここは使いません。</div>
+      <div class="setup-filter-summary" style="display:block; margin-bottom:6px;">「全部」のときは、メインに当てはまる問題を全部出します。<br>それがこの数に足りなければ、復習ミックスからここまで埋めます。<br>★<b>メインに当てはまる問題が0問の日は、この数がぜんぶ復習になります。</b><br>0 のままにすると、埋めません（メインが0問なら「問題がありません」になります）。<br>⚠数字を選んでいるときは、<b>その数字そのものが合計</b>なのでここは使いません。</div>
       <div class="time-custom-row" style="display:flex;"><input type="number" class="time-custom-input" id="review-mix-input" min="0" max="200" value="0" /><span>問</span></div>
 
       <hr class="home-divider">
@@ -1832,10 +1875,16 @@
          ★いちど「絞りこみ ▾」でたたむ形にしたが、たたむのはメイン画面のほうだった（取り違え）。元の形に戻した -->
     <select id="list-unit-select" class="list-select" style="width:100%;"></select>
 
+    <!-- ★段のチップは3つだけ（2026-09-26）。ユーザー「4ついりますか?」
+         ★「未実施のみ」は消しました（記録が1件も無い問だけで、1段目とは別の切り口だった） -->
     <div class="toggle-row" id="list-status-filters">
-      <div class="toggle list-filter-toggle" data-filter="unmastered">未クリアの問題</div>
-      <div class="toggle list-filter-toggle" data-filter="weak">よく間違える問題</div>
-      <div class="toggle list-filter-toggle" data-filter="unseen">未実施のみ</div>
+      <div class="toggle list-filter-toggle" data-tier="0">まだ正解していない</div>
+      <div class="toggle list-filter-toggle" data-tier="1">苦手な問題</div>
+      <div class="toggle list-filter-toggle" data-tier="2">定着した</div>
+    </div>
+    <!-- ★最優先は「段」とは別の軸なので、行を分ける。
+         ★同じ行に並べると4つ目の段に見えて、直したはずの混乱が戻る -->
+    <div class="toggle-row" id="list-star-filter">
       <div class="toggle list-filter-toggle" data-filter="star">★最優先のみ</div>
     </div>
     <!-- ★最優先（2026-09-22）。親が付ける・保存されて残る。「ふだんの出題」で先に出る。
@@ -2745,8 +2794,8 @@ window.addEventListener("resize", () => {
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "subject-social","subject-science",
- "stat-total","stat-mastered","stat-weak","stat-unmastered","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
- "unit-choices","mode-unmastered","mode-weak",
+ "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "unit-choices","mode-stage1","mode-stage2","mode-stage3",
  "solo-marks","battle-marks","lightbox-marks",
  "type-all","type-image","type-text",
  "priority-all","priority-high","priority-mid","priority-low",
@@ -3095,15 +3144,13 @@ function recordResult(id, correct){
   stats[id] = s;
   saveStats();
 }
+// ★ 2026-09-26: 「苦手な問題」にする枝は無くなりました。
+//   実際には無かった「正解」の記録を書かないため（依頼書の失敗 14）。
 function setStatus(id, status){
-  if(status === "unseen") delete stats[id];
-  else if(status === "mastered"){
+  if(status === "unseen") delete stats[id];        // ★記録ごと消す＝1段目に戻る
+  else if(status === "mastered"){                   // ★まちがえずに正解＝3段目
     const s = {correct:1, wrong:0, lastAnswered: Date.now(), lastCorrectAt: Date.now()};
     scheduleNext(s, true);
-    stats[id] = s;
-  }else if(status === "weak"){
-    const s = {correct:0, wrong:1, lastAnswered: Date.now()};
-    scheduleNext(s, false);
     stats[id] = s;
   }
   saveStats();
@@ -3961,26 +4008,71 @@ function refreshResumeBattleButton(){
   }
 }
 
-// ★ホームの「未クリア」（あと何問）（2026-09-22 ユーザー依頼「あと何問未クリアがあるかわかるように」）。
-//   ★「未クリアの問題」トグルだけをオンにして「全部」で出すときと**同じ問題**を数える:
-//   選んだ単元＋種別・優先度・難易度の絞りこみ（buildPool(true)）のうち、isMastered でないもの（box が 0。まちがえた問も入る）。
-//   ほかの3つの数字は単元だけで数えているので、絞りこみを付けていると「全問題数−正解済み数」とは合わないことがある。
-//   判定・並び・★最優先には触らない（数を出すだけ）
-function refreshUnmasteredCount(){
-  els["stat-unmastered"].textContent = buildPool(true).filter(i => !isMastered(QA_DATA[i].id)).length;
+// ============================================================
+// ★★ 3段の数え方は、ここ 1か所だけ（2026-09-26）
+// ============================================================
+// 依頼書: 司令塔/回答/対戦_言葉と数字とフィルタを3段に揃える_依頼_2026-09-26.md
+// ユーザー原文「言葉をフィルターと出す数字を合わせませんか？」
+//             「4ついりますか? いまステージが3つ? …その数を出しませんか？」
+//
+// ★数えるもとは「選んだ単元＋絞りこみ（出題タイプ・優先度・難易度）」＝buildPool(true)。
+//   ★段の選択（出題モード）はかけない——かけると「その段を選ぶと数字が変わる」ことになる。
+// ★ホームの数字も、単元ごとの数字も、必ずこれを通す（依頼書の失敗 17「数え方がちがう」）。
+// ⚠★ tierOf の1段目は lastCorrectAt と correct の両方を見ている。
+//   「数が合わない」と言われたときは、backfillLastCorrectAt の効き方も見ること。
+function countByTier(indices){
+  const n = [0, 0, 0];
+  indices.forEach(i => n[tierOf(i)]++);
+  return n;
+}
+// ★単元ごとの3段。★単元の数だけ走査しないよう、1回の走査でまとめて数える。
+//   ★選んでいない単元も数える（「単元をえらぶ」の全行に出すため）。
+function countByUnitAndTier(){
+  const all = [];
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && d.kind !== "calc") all.push(i); });
+  const out = {};
+  applyPoolFilters(all, true).forEach(i=>{
+    const u = QA_DATA[i].u;
+    (out[u] || (out[u] = [0,0,0]))[tierOf(i)]++;
+  });
+  return out;
+}
+// ★単元ごとの3つの数字を、行の中に入れる（2026-09-26 ユーザー
+//   「まだ正解していない／苦手な問題／定着した　単元ごとのこの数字が知りたいです」）。
+// ★行を作り直さず、数字のところだけ書き換える
+//   （作り直すと、アコーディオンの開閉と選択が飛ぶ）。
+// ★行の「◯問」も 3つの合計にする——絞りこみをかけた数だから、
+//   そうしないと足しても合わない（依頼書の失敗 16）。
+function refreshUnitTierCounts(){
+  const byUnit = countByUnitAndTier();
+  const all = [0, 0, 0];
+  Object.keys(byUnit).forEach(u => { for(let k=0;k<3;k++) all[k] += byUnit[u][k]; });
+  document.querySelectorAll("#unit-choices .choice, #review-unit-choices .choice").forEach(el=>{
+    const n = el.dataset.unit === "ALL" ? all : (byUnit[el.dataset.unit] || [0,0,0]);
+    const c = el.querySelector(".count"), t = el.querySelector(".unit-tiers");
+    if(c) c.textContent = (n[0]+n[1]+n[2]) + "問";
+    if(t) t.textContent = "まだ " + n[0] + " ／ 苦手 " + n[1] + " ／ 定着 " + n[2];
+  });
+  // 地理／公民／歴史 の見出しの数も、同じ数え方にそろえる
+  document.querySelectorAll(".unit-group-header[data-group]").forEach(h=>{
+    const body = document.querySelector('.unit-group-body[data-group="'+h.dataset.group+'"]');
+    if(!body) return;
+    let sum = 0;
+    body.querySelectorAll(".choice").forEach(el=>{
+      const n = byUnit[el.dataset.unit] || [0,0,0];
+      sum += n[0]+n[1]+n[2];
+    });
+    const c = h.querySelector(".unit-group-count");
+    if(c) c.textContent = sum + "問";
+  });
 }
 function refreshStatRow(){
-  let total = 0, masteredCount = 0, weakCount = 0;
-  QA_DATA.forEach(d=>{
-    if(d.subj !== currentSubject || !selectedUnits.has(d.u) || d.kind === "calc") return;
-    total++;
-    if(isMastered(d.id)) masteredCount++;
-    if(isWeak(d.id)) weakCount++;
-  });
-  els["stat-total"].textContent = total;
-  els["stat-mastered"].textContent = masteredCount;
-  els["stat-weak"].textContent = weakCount;
-  refreshUnmasteredCount();
+  const n = countByTier(buildPool(true));
+  els["stat-total"].textContent = n[0] + n[1] + n[2];
+  els["stat-stage1"].textContent = n[0];
+  els["stat-stage2"].textContent = n[1];
+  els["stat-stage3"].textContent = n[2];
+  refreshUnitTierCounts();
 }
 
 els["stat-clear-link"].addEventListener("click", ()=>{
@@ -3989,6 +4081,36 @@ els["stat-clear-link"].addEventListener("click", ()=>{
   saveStats();
   refreshStatRow();
   refreshCreateButton();
+});
+
+// ★設定を移したときに一度だけ出す知らせ（2026-09-26）。
+//   ★出したその場で saveSettings() するので、次に開いたときはもう出ません
+//   （保存に tiers と reviewAllUnits が入るため、移行そのものが走らなくなります）。
+function showMigrationNoteOnce(){
+  if(pendingMigrationNotes.length === 0) return;
+  const li = [];
+  if(pendingMigrationNotes.indexOf("unmastered") >= 0 || pendingMigrationNotes.indexOf("both") >= 0){
+    li.push("以前の<b>「未クリアの問題」</b>は、<b>「まだ正解していない」＋「苦手な問題」</b>に移しました。"
+      + "1回だけ正解した問題も入るので、<b>出る問題が少し増えます</b>。");
+  }
+  if(pendingMigrationNotes.indexOf("weak") >= 0){
+    li.push("以前の<b>「よく間違える問題」</b>は、<b>「苦手な問題」</b>に移しました。"
+      + "★<b>✕がついてまだ正解していない問題は「まだ正解していない」に移っています。"
+      + "必要ならそちらもONにしてください</b>。");
+  }
+  if(pendingMigrationNotes.indexOf("review-all-units") >= 0){
+    li.push("復習ミックスの候補が、「メインで選んでいない単元だけ」から<b>「全部の単元」</b>になりました。");
+  }
+  els["migration-note-body"].innerHTML =
+    "<b>出題モードを 3つにしました</b><br>"
+    + "「まだ正解していない」「苦手な問題」「定着した」の3つになり、画面の数字とも揃いました。"
+    + "いまの設定は自動で移してあります。<ul><li>" + li.join("</li><li>") + "</li></ul>";
+  els["migration-note"].style.display = "block";
+  pendingMigrationNotes.length = 0;
+  saveSettings();   // ★ここで保存してしまう。次に開いたときは移行済みになる
+}
+els["migration-note-ok"].addEventListener("click", ()=>{
+  els["migration-note"].style.display = "none";
 });
 
 function renderHome(){
@@ -4019,8 +4141,44 @@ let minTotalCount = 0;   // ★「全部」のときの「最低◯問」。足�
 //   ★保存は `minTotalCount` で書きますが、**旧名 `reviewMixCount` も読みます**
 //   （既存の保存と、`reviewMixCount` を仕込んできた検査道具を壊さないため）。
 let currentShuffle = true;
-let filterUnmastered = false;
-let filterWeak = false;
+// ★★出題モード＝「どの段を出すか」（2026-09-26）。★既定は3つとも出す。
+//   依頼書: 司令塔/回答/対戦_言葉と数字とフィルタを3段に揃える_依頼_2026-09-26.md
+//   ★旧 filterUnmastered / filterWeak は、loadSettings で**一度だけ**段に移します。
+//   ★**それ以降、本体のどこも旧の名前を読みません**（ユーザー「極力シンプルな思想、実装で」）。
+//   ★段の定義は tierOf だけ。切り口を増やさないこと（確認ポイント 4-6i）。
+let selectedTiers = new Set([0, 1, 2]);
+const TIER_NAMES = ["まだ正解していない", "苦手な問題", "定着した"];
+
+// ============================================================
+// ★★ 旧「未クリア／よく間違える」→ 段の選択 への、一度だけの移行（2026-09-26）
+// ============================================================
+// ★**旧の名前を知っているのはここだけ**です。一度保存されれば tiers が入るので、
+//   その端末は二度とここを通りません（ユーザー「極力シンプルな思想、実装で」）。
+// ★本体のどこにも旧の条件を残さないこと。
+//
+// 実測（A〜G の対応表は 作業メモ.md）:
+//   旧「未クリア」   = {A B C}　／ 1段目 {A B}　… ★どの段の組み合わせでも表せない
+//   旧「よく間違える」 = {B C D}　／ 2段目 {C D}　… ★同じく表せない
+//   両方ON = {A B C D} = 1段目+2段目　／ 両方OFF = 全部　… ★こちらは完全一致
+// ユーザー判断（2026-09-26）: ★**広いほうへ寄せる**。
+//   減らす向きの取りこぼしは、出題数で切られて二度と回ってこない（2026-09-16 と同じ型）。
+const TIER_MIGRATION_ID = "tiers-from-modes";
+const pendingMigrationNotes = [];   // ★移行が起きたときだけ入る。知らせを1回出したら消す
+function tiersFromSaved(s){
+  if(Array.isArray(s.tiers)) return new Set(s.tiers);
+  const un = s.filterUnmastered === true, wk = s.filterWeak === true;
+  if(un){
+    // 旧「未クリア」（単独でも両方でも）→ 1段目+2段目
+    pendingMigrationNotes.push(un && wk ? "both" : "unmastered");
+    return new Set([0, 1]);
+  }
+  if(wk){
+    // 旧「よく間違える」だけ → 2段目。★B（✕がついて未正解）が落ちるので、知らせで名指しする
+    pendingMigrationNotes.push("weak");
+    return new Set([1]);
+  }
+  return new Set([0, 1, 2]);   // 両方OFF （既定）→ 全部。★意味が変わらないので知らせない
+}
 let currentType = "all"; // all | image | text
 let currentPriority = "all"; // all | 高 | 中 | 低
 let currentLevel = "all"; // all | 基礎 | 標準 | 発展
@@ -4083,8 +4241,7 @@ let settingsBySubject = {};
 function collectSubjectSettings(){
   return {
     count: questionCount,
-    filterUnmastered: filterUnmastered,
-    filterWeak: filterWeak,
+    tiers: Array.from(selectedTiers),
     type: currentType,
     priority: currentPriority,
     level: currentLevel,
@@ -4105,8 +4262,7 @@ function restoreSubjectSettings(subject){
   const s = settingsBySubject[subject];
   if(!s) return; // まだ一度も使っていない科目。いまの値をそのまま引きつぐ
   if(s.count !== undefined) questionCount = s.count;
-  if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
-  if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
+  selectedTiers = tiersFromSaved(s);
   if(s.type) currentType = s.type;
   if(s.priority) currentPriority = s.priority;
   if(s.level) currentLevel = s.level;
@@ -4134,8 +4290,7 @@ function loadSettings(){
     // unitsは保存時の科目の選択、socialUnitsは当時の社会のスナップショット
     if(!unitSelectionBySubject[currentSubject] && Array.isArray(s.units)) unitSelectionBySubject[currentSubject] = new Set(s.units);
     if(!unitSelectionBySubject["社会"] && Array.isArray(s.socialUnits) && s.socialUnits.length) unitSelectionBySubject["社会"] = new Set(s.socialUnits);
-    if(typeof s.filterUnmastered === "boolean") filterUnmastered = s.filterUnmastered;
-    if(typeof s.filterWeak === "boolean") filterWeak = s.filterWeak;
+    selectedTiers = tiersFromSaved(s);
     if(s.type) currentType = s.type;
     if(s.priority) currentPriority = s.priority;
     if(s.level) currentLevel = s.level;
@@ -4151,6 +4306,7 @@ function loadSettings(){
     if(typeof s.nextTimeSec === "number") nextTimeSec = s.nextTimeSec;
     if(typeof s.skipNextTimeSec === "number") skipNextTimeSec = s.skipNextTimeSec;
     if(Array.isArray(s.reviewSelectedUnits)) reviewSelectedUnits = new Set(s.reviewSelectedUnits);
+    if(s.reviewAllUnits) reviewAllUnitsDone = true;   // ★移行済み。二度と走らせない
     if(Array.isArray(s.reviewUnitsKnown)) reviewUnitsKnown = new Set(s.reviewUnitsKnown);
     if(s.reviewPriority) reviewPriority = s.reviewPriority;
     if(s.reviewLevel) reviewLevel = s.reviewLevel;
@@ -4172,6 +4328,28 @@ function loadSettings(){
   // selectedUnitsは宣言時に「社会の全単元」で初期化されているので、
   // 復元したcurrentSubjectに対応する選択で必ず作り直す
   selectedUnits = restoreUnitSelection(currentSubject);
+  if(!reviewAllUnitsDone) migrateReviewUnitsToAll();
+}
+// ★★ 復習単元の、一度だけの移行（2026-09-26）。
+// ⚠★**候補の計算を変えるだけでは足りません。**
+//   旧い syncReviewUnits は、メインで選ばれている単元を
+//   `reviewSelectedUnits` から**実際に削除**して保存していました。
+//   つまり「除外」は保存そのものに焼き付いています。
+//   ★ここで入れ直さないと、直しても**親の画面では何も変わりません**（0-3）。
+// ⚠★**2回目に走ってはいけません**（確認ポイント 3-6b）。
+//   2回目が走ると、**親が自分で外した復習単元を、開くたび勝手に戻します**。
+//   ★だから保存に印（reviewAllUnits）を置いて、一度きりにします。
+//   （最初に書いたときはメモリ上の印だけで、まさにこの事故になっていました）
+let reviewAllUnitsDone = false;
+function migrateReviewUnitsToAll(){
+  if(reviewAllUnitsDone) return;
+  reviewAllUnitsDone = true;
+  let added = 0;
+  QA_DATA.forEach(d=>{
+    if(!reviewSelectedUnits.has(d.u)) { reviewSelectedUnits.add(d.u); added++; }
+    reviewUnitsKnown.add(d.u);
+  });
+  if(added) pendingMigrationNotes.push("review-all-units");
 }
 function saveSettings(){
   rememberUnitSelection();
@@ -4187,8 +4365,7 @@ function saveSettings(){
       units: Array.from(selectedUnits),
       // 以下の出題設定も、旧バージョン用に「いまの科目のぶん」をフラットにも書いておく。
       // 読むのは settingsBySubject が優先
-      filterUnmastered: filterUnmastered,
-      filterWeak: filterWeak,
+      tiers: Array.from(selectedTiers),
       type: currentType,
       priority: currentPriority,
       level: currentLevel,
@@ -4204,6 +4381,7 @@ function saveSettings(){
       skipNextTimeSec: skipNextTimeSec,
       socialUnits: Array.from(unitSelectionBySubject["社会"] || []),
       reviewSelectedUnits: Array.from(reviewSelectedUnits),
+      reviewAllUnits: 1,   // ★復習単元の移行は済んだ（2026-09-26）
       reviewUnitsKnown: Array.from(reviewUnitsKnown),
       reviewPriority: reviewPriority,
       reviewLevel: reviewLevel,
@@ -4216,8 +4394,9 @@ function saveSettings(){
 function applySettingsUI(){
   els["subject-social"].classList.toggle("on", currentSubject === "社会");
   els["subject-science"].classList.toggle("on", currentSubject === "理科");
-  els["mode-unmastered"].classList.toggle("on", filterUnmastered);
-  els["mode-weak"].classList.toggle("on", filterWeak);
+  document.querySelectorAll(".mode-filter").forEach(el=>{
+    el.classList.toggle("on", selectedTiers.has(+el.dataset.tier));
+  });
   els["type-all"].classList.toggle("on", currentType === "all");
   els["type-image"].classList.toggle("on", currentType === "image");
   els["type-text"].classList.toggle("on", currentType === "text");
@@ -4347,18 +4526,11 @@ function unitIndices(unit){
   return arr;
 }
 function applyPoolFiltersExceptPriority(pool, skipModes){
-  if(skipModes){
-    // 補う側の候補を作るとき（fillFromRest）は、トグル（未クリア／よく間違える）の絞りこみだけをかけない
-  }else if(filterUnmastered && filterWeak){
-    // 両方ONの場合は「一度も正解していない」か「苦手」のどちらかに当てはまれば対象（OR）。
-    // 順にfilterするとANDになり、正解済みだが直近間違えている「苦手」問題が両方チェック時に
-    // 消えてしまうため、ここだけ一括でOR判定する。
-    pool = pool.filter(i => !isMastered(QA_DATA[i].id) || isWeak(QA_DATA[i].id));
-  }else if(filterUnmastered){
-    pool = pool.filter(i => !isMastered(QA_DATA[i].id));
-  }else if(filterWeak){
-    pool = pool.filter(i => isWeak(QA_DATA[i].id));
-  }
+  // ★選んだ段だけを残す（2026-09-26）。★条件分岐はこの1行だけ。
+  //   （以前は未クリア／よく間違えるの OR を手で書いていた——段なら重ならないので不要）
+  // ★skipModes は「数を数えるとき」と「復習の候補を作るとき」に使う。
+  //   そこで段を絞ると、「その段を選ぶと数字が変わる」ことになる
+  if(!skipModes) pool = pool.filter(i => selectedTiers.has(tierOf(i)));
   if(currentType === "image"){
     pool = pool.filter(i => !!QA_DATA[i].img);
   }else if(currentType === "text"){
@@ -4386,25 +4558,27 @@ function buildPool(skipModes){
 }
 // ---- 復習ミックス: 選んでいない単元のうち、復習単元として選ばれているものから
 //      追加する分の候補プール（単元・優先度は復習ミックス専用の設定を使う）----
+// ★★ 2026-09-26: 復習の候補は、その科目の**全単元**。
+//   ユーザー「全部を選んだときは復習も全部でいいです。極力シンプルな実装にしてください」
+// ★以前は「メインで選んでいない単元だけ」だったため、単元を全部選ぶと候補が0問になった。
+// ★「全部選んだときだけ」の場合分けは作らない。いつでも全単元にすれば、分岐が1つも要らない。
+// ⚠★これにより、「選んだ単元の、選んでいない段」も候補に入ります（旧 fillFromRest と実質同じ）。
+//   依頼書の失敗条件12は、追記3で上書きされています。**バグだと思って戻さないこと。**
 function availableReviewUnits(){
-  return getUnits().filter(u => !selectedUnits.has(u));
+  return getUnits();
 }
 // 選べる単元が変わるたびに呼ぶ: 選択できなくなった単元を除外し、新しく復習候補に
 // なった単元（reviewUnitsKnownに未登録のもの）を自動でonにする。メイン単元を
 // 1つずつ外していく操作でも、外すたびにその単元がちゃんとonになる ----
 function syncReviewUnits(){
   const avail = availableReviewUnits();
-  const availSet = new Set(avail);
-  // 整理の対象は「今の科目の単元」だけ。別の科目の選択まで消すと、科目を
-  // 切りかえて戻ってきたときに復元できない（reviewUnitsKnownには残るので
-  // 自動でONにもならず、選び直しになってしまう）。
-  // どの科目にも存在しなくなった単元（データから消えた単元）だけは取りのぞく
-  const currentSubjectUnits = new Set(getUnits());
+  // ★別の科目の選択まで消さないこと（科目を切りかえて戻ってきたときに復元できなくなる）。
   const allUnits = new Set();
   QA_DATA.forEach(d => allUnits.add(d.u));
-  Array.from(reviewSelectedUnits).forEach(u => {
-    if(!allUnits.has(u) || (currentSubjectUnits.has(u) && !availSet.has(u))) reviewSelectedUnits.delete(u);
-  });
+  // ★ 2026-09-26: 「メインで選ばれたら復習から消す」をやめました。
+  //   ★この追従こそが、メインと復習を結びつけていた線です。切ったので、両方が独立に読めます。
+  //   残すのは「データから消えた単元を取りのぞく」だけ。
+  Array.from(reviewSelectedUnits).forEach(u => { if(!allUnits.has(u)) reviewSelectedUnits.delete(u); });
   avail.forEach(u=>{
     if(!reviewUnitsKnown.has(u)){
       reviewUnitsKnown.add(u);
@@ -4565,28 +4739,24 @@ function targetTotal(){
   return questionCount === "all" ? minTotalCount : questionCount;
 }
 function buildPlan(){
-  const usingToggles = filterWeak || filterUnmastered;
+  // ★「段を絞っているか」。3つとも選んでいれば「ふだんの出題」（旧の「両方OFF」と同じ意味）
+  const narrowing = selectedTiers.size < 3;
   let main = buildPool();
-  if(usingToggles){
+  if(narrowing){
     // ★上の orderByTiers（3段）で並べる。ランダムにはしない（ユーザー指定）。
     //
-    // ★トグルは「どれを対象にするか（絞りこみ）」、3段は「対象の中の並び順」で
-    //   役割が違うので、両方が共存する。
-    //
-    // ⚠️ **ここで3段すべてが出るわけではありません。**トグルが先に絞りこむため:
-    //     「苦手」だけON   → applyPoolFilters が isWeak だけ残す → **1段目の一部と2段目**
-    //     「未クリア」だけON → box 0 だけ残す                    → **1段目と2段目**
-    //     両方ON（OR）                                        → **1段目と2段目**
-    //   ※2026-09-16 に1段目を「まだ一度も正解していない」に広げたので、
-    //     「苦手」だけONでも1段目（✕ありで未正解の問題）が残るようになった
-    //   → ★**3段すべてが実際に並ぶのは復習ミックス側**（buildReviewPool は
-    //     苦手／未クリアで絞りこまないため）。
-    // ★最優先（2026-09-22 ユーザー訂正）:
-    //   よく間違える … いつもの3段の並びで、鍵がまったく同じ問どうしなら★を上（同点の決め手）
-    //   未クリアを含む … ★で未クリアの問を**いちばん上**へ（★でも正解ずみは、もともと未クリアに入らない）
+    // ★ 2026-09-26 から、絞りこみも並びも**同じ tierOf の3段**です。
+    //   選んだ段だけが残り、その中を orderByTiers が並べます。
+    //   （以前は「未クリア／よく間違える」という**別の切り口**で絞っていたので、
+    //   「苦手だけONなのに1段目が残る」といったことが起きていました。もう起きません）
+    // ★最優先（2026-09-22 ユーザー訂正 → 2026-09-26 に段で言い直し）:
+    //   「まだ正解していない」を選んでいる … ★を**いちばん上**へ
+    //   それ以外 … いつもの3段の並びで、鍵がまったく同じ問どうしなら★を上（同点の決め手）
     //   ★どちらも「どの問が入るか」は変えない。変えるのは並びだけ
     main = orderByTiers(main, true);
-    if(filterUnmastered) main = starsFirst(main);
+    // ★「未クリアを含むときは★をいちばん上へ」（2026-09-22 ユーザー）を、
+    // ★「「まだ正解していない」（1段目）を選んでいるとき」と言い直した（2026-09-26 ユーザー確認ずみ）
+    if(selectedTiers.has(0)) main = starsFirst(main);
   }else{
     if(currentShuffle) main = shuffleArray(main);
     // ★親が付けた「最優先」を先頭へ（2026-09-22）。**ふだんの出題のときだけ**
@@ -4610,7 +4780,7 @@ function buildPlan(){
   //   混ぜると3段の並び（正解した日が古い順）が消えてしまい、依頼書の失敗7になります。
   //   ★2026-09-26 に変えたところです。廃止前の reviewMixCount の道は、
   //     トグルONでもシャッフルしていました（3段の並びが壊れていました）。
-  if(!usingToggles && review.length > 0 && currentShuffle){
+  if(!narrowing && review.length > 0 && currentShuffle){
     pool = shuffleArray(pool);
     // ★混ぜたあとも、ふだんの出題なら★を前に戻す（混ぜると先頭から外れるため）
     pool = starsFirst(pool);
@@ -4631,7 +4801,9 @@ function makeUnitChoice(key, label, count){
   const div = document.createElement("div");
   div.className = "choice";
   div.dataset.unit = key;
-  div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"></span><span class="name">'+escapeHtml(label)+'</span></span><span class="count">'+count+'問</span>';
+  // ★数字は refreshUnitTierCounts() が入れる（行を作り直さずに書き換えるため）
+  div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"></span><span class="name">'+escapeHtml(label)+'</span></span>'
+    + '<span class="count"></span><span class="unit-tiers"></span>';
   div.addEventListener("click", ()=>{
     if(key === "ALL"){
       // acts like a normal "select all" checkbox: if everything is already
@@ -4684,7 +4856,8 @@ function makeReviewUnitChoice(u, count){
   const div = document.createElement("div");
   div.className = "choice" + (selected ? " selected" : "");
   div.dataset.unit = u;
-  div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"'+(selected ? " checked" : "")+'></span><span class="name">'+escapeHtml(u)+'</span></span><span class="count">'+count+'問</span>';
+  div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"'+(selected ? " checked" : "")+'></span><span class="name">'+escapeHtml(u)+'</span></span>'
+    + '<span class="count"></span><span class="unit-tiers"></span>';
   div.addEventListener("click", ()=>{
     if(reviewSelectedUnits.has(u)) reviewSelectedUnits.delete(u);
     else reviewSelectedUnits.add(u);
@@ -4722,7 +4895,8 @@ function renderReviewUnitChoices(){
   const avail = availableReviewUnits();
   els["review-unit-choices"].innerHTML = "";
   if(avail.length === 0){
-    els["review-unit-choices"].innerHTML = '<div class="empty-note">復習に回せる単元がありません（すべての単元がメインで選ばれています）</div>';
+    // ★ 2026-09-26: 候補は全単元なので、ここに来るのは「その科目に単元が無い」ときだけ
+    els["review-unit-choices"].innerHTML = '<div class="empty-note">単元がありません</div>';
     return;
   }
   if(currentSubject === "理科"){
@@ -4772,23 +4946,24 @@ function refreshCreateButton(){
   //   以前はここで同じ計算をもう一度書いていたので、片方だけ直すとずれた（写し・確認ポイント 4-6d）。
   //   ★いまは「予告の数」と「実際に出る数」が同じ関数から出ます（依頼書の失敗9）。
   const plan = buildPlan();
+  const narrowing2 = selectedTiers.size < 3;
   const n = plan.pool.length;
   let label = n+"問";
   if(plan.reviewCount > 0) label += "（復習"+plan.reviewCount+"問こみ）";
   // ★最優先が先に出るときは、その数も1行に添える（★が頭に来る出し方＝ふだん・未クリアを含む のとき）
   // ★「先に出ます」と言えるのは、★が頭に来る出し方のときだけ（ふだん・未クリアを含む）。
   //   よく間違える だけのときは★は同点の決め手なので、数は出さない（言いすぎになる）
-  const starHead = !filterWeak || filterUnmastered;
-  const starN = starHead ? ((filterWeak || filterUnmastered) ? buildPool() : plan.pool).filter(i => isPriority(QA_DATA[i].id)).length : 0;
-  refreshUnmasteredCount();
+  const starHead = selectedTiers.has(0);
+  const starN = starHead ? (narrowing2 ? buildPool() : plan.pool).filter(i => isPriority(QA_DATA[i].id)).length : 0;
+  refreshStatRow();   // ★ホームの4つと単元ごとの数字も、同じ数え方で数え直す
   // ★★足りないときは、足りないことを画面に出す（2026-09-26 ユーザー「足りないと画面に出す」）。
   //   ★ここを黙らせると、依頼書の失敗4「埋まっていないのに埋まったように見える」になります。
-  //   復習ミックスの候補は「メインで選んでいない単元」からしか来ないので、
-  //   単元を全部選んでいる日は候補が0問＝埋めようがありません。その事実を親に見せます。
+  //   ★ 2026-09-26: 候補が全単元になったので、ここはめったに出ません。
+  //   ★それでも残します（安全網）。科目全体でも合計に届かない日はあり得ます。
   let note = "";
   if(plan.shortfall > 0){
     note = "／★合計"+plan.target+"問には"+plan.shortfall+"問足りません（復習ミックスの候補が"
-         + buildReviewPool().length + "問しかありません。復習する単元を選ぶか、メインの単元を減らしてください）";
+         + buildReviewPool().length + "問しかありません。復習する単元を増やすか、絞りこみを緩めてください）";
   }
   els["pool-count-label"].textContent = label
     + (starN ? "（★最優先 "+Math.min(starN, plan.mainCount)+"問が先に出ます）" : "")
@@ -4950,9 +5125,9 @@ els["order-toggle"].addEventListener("click", ()=>{
 });
 document.querySelectorAll(".mode-filter").forEach(el=>{
   el.addEventListener("click", ()=>{
-    if(el.dataset.mode === "unmastered") filterUnmastered = !filterUnmastered;
-    else filterWeak = !filterWeak;
-    el.classList.toggle("on", el.dataset.mode === "unmastered" ? filterUnmastered : filterWeak);
+    const t = +el.dataset.tier;
+    if(selectedTiers.has(t)) selectedTiers.delete(t); else selectedTiers.add(t);
+    el.classList.toggle("on", selectedTiers.has(t));
     refreshCreateButton();
     saveSettings();
   });
@@ -5046,9 +5221,9 @@ els["result-home-btn"].addEventListener("click", ()=>{
 
 // ---- list screen: browse every question and flip its status by hand ----
 let listUnit = "ALL";
-let listFilterUnmastered = false;
-let listFilterWeak = false;
-let listFilterUnseen = false;
+// ★一覧の段の絞りこみ（2026-09-26）。★空＝絞らない（全部出す）。
+//   ★ホームの出題モードとは別の設定。こちらは保存しない（前からそう）
+let listTiers = new Set();
 let listFilterStar = false;   // ★最優先のみ（2026-09-22）
 let listShownIndices = [];    // いま一覧に出ている問題（★をまとめて付け外しするときに使う）
 // 一覧の優先度・難易度の絞りこみ。"all" か、データの値そのもの（高/中/低・基礎/標準/発展）か、
@@ -5093,19 +5268,17 @@ function populateListUnitSelect(){
   els["list-unit-select"].value = listUnit;
 }
 
-function questionStatus(id){
-  if(isWeak(id)) return "weak";
-  if(isMastered(id)) return "mastered";
-  return "unseen";
+// ★一覧の1問ごとの状態も、出題の3段そのものにした（2026-09-26）。
+//   ★以前は isWeak → isMastered の順に見ており、**5つ目の切り口**になっていた。
+function questionTier(id){
+  const i = QA_DATA.findIndex(d => d.id === id);
+  return i < 0 ? 0 : tierOf(i);
 }
 
 function renderListScreen(){
   populateListUnitSelect();
   document.querySelectorAll(".list-filter-toggle").forEach(el=>{
-    const on = el.dataset.filter === "unmastered" ? listFilterUnmastered
-      : el.dataset.filter === "weak" ? listFilterWeak
-      : el.dataset.filter === "star" ? listFilterStar
-      : listFilterUnseen;
+    const on = el.dataset.filter === "star" ? listFilterStar : listTiers.has(+el.dataset.tier);
     el.classList.toggle("on", on);
   });
   document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
@@ -5138,9 +5311,8 @@ function renderListItems(){
     return;
   }
   let indices = unitIndices(listUnit);
-  if(listFilterUnmastered) indices = indices.filter(i => !isMastered(QA_DATA[i].id));
-  if(listFilterWeak) indices = indices.filter(i => isWeak(QA_DATA[i].id));
-  if(listFilterUnseen) indices = indices.filter(i => !stats[QA_DATA[i].id]);
+  // ★選んだ段だけ残す。何も選んでいなければ全部（2026-09-26）
+  if(listTiers.size > 0) indices = indices.filter(i => listTiers.has(tierOf(i)));
   if(listFilterStar) indices = indices.filter(i => isPriority(QA_DATA[i].id));
   if(listPriority !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "priority"), listPriority));
   if(listLevel !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "level"), listLevel));
@@ -5203,7 +5375,7 @@ function buildListRow(i){
     const base = QA_DATA[i];
     const d = getQ(i);
     const isEdited = !!edits[base.id];
-    const status = questionStatus(base.id);
+    const tier = questionTier(base.id);
     const item = document.createElement("div");
     item.className = "list-item";
 
@@ -5277,9 +5449,15 @@ function buildListRow(i){
           '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
       '</div>'+
       '<div class="status-toggle">'+
-        '<div class="status-btn unseen'+(status==="unseen"?" active":"")+'" data-status="unseen">未</div>'+
-        '<div class="status-btn ok'+(status==="mastered"?" active":"")+'" data-status="mastered">〇 正解</div>'+
-        '<div class="status-btn ng'+(status==="weak"?" active":"")+'" data-status="weak">✕ 不正解</div>'+
+        // ★★ 2026-09-26: ボタンは2つだけ。「苦手な問題」のボタンは置かない。
+        //   ★理由: 2段目の定義は「一度は正解した ∧ まちがえたことがある」なので、
+        //   手でそこに入れるには**実際には無かった「正解」の記録を書く**ことになる。
+        //   ★書きません（確認ポイント 0-1・1-6「推測で埋めない」・依頼書の失敗 14）。
+        //   苦手にしたいときは、下の「正解数＋1・誤答数＋1」で作ってもらう（2手かかる）。
+        // ⚠★以前の「✕ 不正解」は {correct:0, wrong:1} を書いており、
+        //   できる問題は**1段目に落ちていた**（ボタンの名前と並びが食いちがっていた）。
+        '<div class="status-btn unseen'+(tier===0?" active":"")+'" data-status="unseen">'+TIER_NAMES[0]+'</div>'+
+        '<div class="status-btn ok'+(tier===2?" active":"")+'" data-status="mastered">'+TIER_NAMES[2]+'</div>'+
       '</div>'+
       // ★行の上でそのまま直す（2026-09-13 ユーザー原文「一覧画面で、正答数、誤答数の修正、正答日、実施日の修正がしたいです」）。
       //   いちど「記録を直す」の画面にしたが、意図と違ったので元の＋−と日付の欄に戻した。
@@ -5423,9 +5601,7 @@ els["selection-battle-btn"].addEventListener("click", ()=>{
 
 els["list-btn"].addEventListener("click", ()=>{
   listUnit = "ALL";
-  listFilterUnmastered = false;
-  listFilterWeak = false;
-  listFilterUnseen = false;
+  listTiers.clear();
   listFilterStar = false;
   listPriority = "all";
   listLevel = "all";
@@ -5447,10 +5623,12 @@ els["list-unit-select"].addEventListener("change", ()=>{
 document.querySelectorAll(".list-filter-toggle").forEach(el=>{
   el.addEventListener("click", ()=>{
     let on;
-    if(el.dataset.filter === "unmastered"){ listFilterUnmastered = !listFilterUnmastered; on = listFilterUnmastered; }
-    else if(el.dataset.filter === "weak"){ listFilterWeak = !listFilterWeak; on = listFilterWeak; }
-    else if(el.dataset.filter === "star"){ listFilterStar = !listFilterStar; on = listFilterStar; }
-    else{ listFilterUnseen = !listFilterUnseen; on = listFilterUnseen; }
+    if(el.dataset.filter === "star"){ listFilterStar = !listFilterStar; on = listFilterStar; }
+    else{
+      const t = +el.dataset.tier;
+      if(listTiers.has(t)) listTiers.delete(t); else listTiers.add(t);
+      on = listTiers.has(t);
+    }
     el.classList.toggle("on", on);
     renderListItems();
   });
@@ -5509,7 +5687,7 @@ els["list-date-clear"].addEventListener("click", ()=>{
 //      ★優先度・難易度だけでは出さない（「高」だけでも数百問になり、全件と同じくらい遅いため）。
 //      条件は画面を閉じても覚えているので、次に一覧を開くとその条件で出る ----
 function listHasCondition(){
-  return listUnit !== "ALL" || listFilterUnmastered || listFilterWeak || listFilterUnseen || listFilterStar || !!listDateFrom || !!listDateTo;
+  return listUnit !== "ALL" || listTiers.size > 0 || listFilterStar || !!listDateFrom || !!listDateTo;
 }
 
 // ---- メイン画面の「出題タイプ・優先度・難易度」をたたむ（2026-09-13 ユーザー原文
@@ -5637,9 +5815,8 @@ els["export-link"].addEventListener("click", ()=>{
     const correct = s.correct||0;
     const streak = stats[d.id] ? (s.box||0) : "";
     const wrong = s.wrong||0;
-    let status = "未回答";
-    if(isWeak(d.id)) status = "苦手";
-    else if(isMastered(d.id)) status = "正解ずみ";
+    // ★ 2026-09-26: 状態も出題の3段に揃えた（旧「未回答／苦手／正解ずみ」）
+    const status = TIER_NAMES[questionTier(d.id)];
     const lastCorrect = s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "";
     const lastAnswered = s.lastAnswered ? dateToYMD(s.lastAnswered) : "";
     rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect, lastAnswered, streak]);
@@ -5762,8 +5939,12 @@ els["import-file"].addEventListener("change", (e)=>{
         }
         if(next.box === undefined){
           const status = statusIdx !== -1 ? row[statusIdx] : "";
-          if(status === "苦手") next.box = 0;
-          else if(status === "正解ずみ") next.box = 1;
+          // ★ 2026-09-26 に状態の語を3段に揃えた。
+          //   ★旧い語（苦手／正解ずみ）のファイルも読めるように残してある。
+          //   （minTotalCount の旧名を読むのと同じ考え方）
+          if(status === TIER_NAMES[1] || status === "苦手") next.box = 0;
+          else if(status === TIER_NAMES[2] || status === "正解ずみ") next.box = 1;
+          else if(status === TIER_NAMES[0]) next.box = 0;
           else next.box = (mergedCorrect > 0 && mergedWrong === 0) ? 1 : 0;
         }
         const changed = mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0)
@@ -7607,6 +7788,8 @@ runStatsMigrations(); // 単元の選択も書きかえるので、loadSettings�
 renderHome();
 renderUnitChoices();
 applySettingsUI();
+// ★設定を移したときの知らせは、画面が揃ってから一度だけ（2026-09-26）
+showMigrationNoteOnce();
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
 </body>
