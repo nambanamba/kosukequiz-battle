@@ -107,7 +107,8 @@ async function walk(tag, overridePath) {
 
   // ホームの数字（消した問の記録が数に混ざらないかを見るため）
   const homeTotal = (await page.textContent("#stat-total").catch(()=>"?") || "").trim();
-  const homeUnmastered = (await page.textContent("#stat-unmastered").catch(()=>"?") || "").trim();
+  // ★ 2026-09-26: ホームの数字が出題の3段に揃った（旧 stat-unmastered）
+  const homeUnmastered = (await page.textContent("#stat-stage1").catch(()=>"?") || "").trim();
   // data.js からの期待（その版に入っている、その回の問）
   const expect = await page.evaluate(p => QA_DATA.filter(q => q.id.startsWith(p)).map(q => ({id:q.id, q:q.q, img:q.img||""})), PREFIX);
   const expectImg = new Map(expect.map(r => [r.id, r.img]));

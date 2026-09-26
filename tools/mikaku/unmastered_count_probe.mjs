@@ -3,7 +3,9 @@
 // 使い方: node tools/mikaku/unmastered_count_probe.mjs
 //
 // ■ 決めごと
-//   「未クリア あと」＝「未クリアの問題」トグルだけオン＋「全部」で出てくる問題と**同じ数**（box 0。まちがえた問も入る）
+//   ★ 2026-09-26: 語と切り口が出題の3段に揃いました。
+//   「まだ正解していない」の数字 ＝ そのトグルだけ ON ＋「全部」で出てくる問題と**同じ数**
+//   （旧は「未クリア」＝box 0。★切り口が違うので数自体は変わりますが、★見ていることは同じです）
 //   単元を変えたら数も変わる／全部正解ずみなら 0 と出る
 //   「15問」が選べて、開き直しても残る
 // ■ 見ていないもの: お子さんの端末の実際の記録
@@ -50,26 +52,37 @@ async function open({ units, allMastered = false, count = "all" }) {
     localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
     localStorage.setItem("kq_battle_settings_v1", JSON.stringify({ subject: "社会", unitsBySubject: { "社会": units }, units,
-      count, shuffle: false, filterUnmastered: false, filterWeak: false, reviewMixCount: 0 }));
-    // ★記録から独立に数える（box が 0 か、記録なし）
+      count, shuffle: false, tiers: [0, 1, 2], reviewAllUnits: 1, reviewMixCount: 0 }));
+    // ★記録から独立に数える。
+    //   ★ 2026-09-26: 「まだ正解していない」（1段目）を数える。
+    //   この仕込みで 1段目になるのは**記録が1件も無い問**だけ。
+    //   （%10===3 の問は correct>0 なので 2段目、i<60 は 3段目）
+    //   ★アプリの判定を写さず、仕込みそのものから数えています（4-6d）
     return QA_DATA.filter(q => q.subj === "社会" && units.includes(q.u) && q.kind !== "calc")
-      .filter(q => !(st[q.id] && st[q.id].box > 0)).length;
+      .filter(q => !st[q.id]).length;
   }, { units, allMastered, count, seedSrc: seed.toString(), U1 });
   await page.reload(); await page.waitForTimeout(900);
   return { ctx, page, errs, expect };
 }
+// ★ 2026-09-26: 出題モードが「段の選択」になったので、欲しい段だけ ON にする形にする。
+//   ⚠★既定は「3つともON」なので、昇せるつもりで click すると**逆に消えます**。
+const setTiers = (page, tiers) => page.evaluate(ts => {
+  document.querySelectorAll(".mode-filter").forEach(e => {
+    if (e.classList.contains("on") !== ts.includes(+e.dataset.tier)) e.click();
+  });
+}, tiers);
 const num = s => parseInt(String(s).replace(/[^0-9]/g, ""), 10);
-const shown = page => page.$eval("#stat-unmastered", e => e.textContent);
+const shown = page => page.$eval("#stat-stage1", e => e.textContent);
 const label = page => page.$eval("#pool-count-label", e => e.textContent);
 
 console.log("■ 1. 単元1つ（" + U1 + "）");
 {
   const { ctx, page, errs, expect } = await open({ units: [U1] });
   const n = num(await shown(page));
-  check("未クリア あと = 記録から独立に数えた数", n === expect, `表示 ${n} / 記録 ${expect}`);
-  await page.click("#mode-unmastered"); await page.waitForTimeout(300);
+  check("「まだ正解していない」= 記録から独立に数えた数", n === expect, `表示 ${n} / 記録 ${expect}`);
+  await setTiers(page, [0]); await page.waitForTimeout(300);
   const t = num(await label(page));
-  check("★トグルをオン＋全部で出る数と一致", n === t, `表示 ${n} / トグル ${t}（${await label(page)}）`);
+  check("★その段だけON＋全部で出る数と一致", n === t, `表示 ${n} / トグル ${t}（${await label(page)}）`);
   // 実際に始めて、出る問題数を数える
   await page.click("#solo-start-btn"); await page.waitForTimeout(800);
   const c = await page.$eval("#solo-counter", e => e.textContent);
@@ -86,7 +99,7 @@ console.log("■ 2. 単元を変えると数も変わる");
   const after = num(await shown(page));
   const exp2 = await page.evaluate(u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").length, U2);
   check("単元を足すと、足した単元の未実施ぶん増える", after === before + exp2, `${before} → ${after}（+${exp2}）`);
-  await page.click("#mode-unmastered"); await page.waitForTimeout(300);
+  await setTiers(page, [0]); await page.waitForTimeout(300);
   check("★2単元でもトグルの数と一致", num(await label(page)) === after, await label(page));
   await page.screenshot({ path: path.join(ROOT, "tools/mikaku/shots/unmastered_home.png"), fullPage: false });
   check("エラー 0", errs.length === 0, errs.join(" | "));
@@ -120,7 +133,7 @@ console.log("■ 5. 解いてホームにもどると数が変わる（〇で減
   const { ctx, page, errs } = await open({ units: [U1] });
   page.on("dialog", d => d.accept());
   const before = num(await shown(page));
-  await page.click("#mode-unmastered"); await page.waitForTimeout(300);
+  await setTiers(page, [0]); await page.waitForTimeout(300);
   await page.click("#solo-start-btn"); await page.waitForTimeout(800);
   for (let k = 0; k < 2; k++) {
     await page.click("#solo-reveal-btn"); await page.waitForTimeout(200);
@@ -128,7 +141,7 @@ console.log("■ 5. 解いてホームにもどると数が変わる（〇で減
   }
   await page.click("#solo-back"); await page.waitForTimeout(800);
   const after = num(await shown(page));
-  check("未クリアを2問〇にすると 2 減る", after === before - 2, `${before} → ${after}`);
+  check("★「まだ正解していない」を2問〇にすると 2 減る", after === before - 2, `${before} → ${after}`);
   check("トグルの数とも一致", num(await label(page)) === after, await label(page));
   check("エラー 0", errs.length === 0, errs.join(" | "));
   await ctx.close();

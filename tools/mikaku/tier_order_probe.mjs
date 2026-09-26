@@ -63,11 +63,12 @@ const gh = await page.$('#unit-choices .unit-group-header[data-group="geo"]');
 if (gh && !(await gh.evaluate(e => e.classList.contains("open")))) await gh.click();
 await page.waitForTimeout(250);
 await page.click(`#unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(200);
+// ★ 2026-09-26: 出題モードが段の選択になった。
+//   経路1は「メイン側で 1段目と2段目を見る」ので、その2つだけ ON
 await page.evaluate(() => {
-  for (const id of ["mode-weak", "mode-unmastered"]) {
-    const e = document.getElementById(id);
-    if (!e.classList.contains("on")) e.click();
-  }
+  document.querySelectorAll(".mode-filter").forEach(e => {
+    if (e.classList.contains("on") !== (e.dataset.tier !== "2")) e.click();
+  });
   const b = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "all");
   if (b && !b.classList.contains("on")) b.click();
 });
@@ -111,10 +112,10 @@ console.log("  → ★3段目が0問なのは正しい。トグルが先に絞�
 // ---- 経路2: 復習ミックス（★全3段が実際に並ぶのはこちら）----
 await page.click("#solo-back"); await page.waitForTimeout(500);
 await page.evaluate(() => {
-  for (const id of ["mode-weak", "mode-unmastered"]) {       // トグルは切る
-    const e = document.getElementById(id);
-    if (e.classList.contains("on")) e.click();
-  }
+  // ★経路2 は「ふだんの出題」なので、3段とも ON（旧「トグルを切る」と同じ意味）
+  document.querySelectorAll(".mode-filter").forEach(e => {
+    if (!e.classList.contains("on")) e.click();
+  });
   const o = document.getElementById("order-toggle");         // ランダム順ではなく出題順どおり
   if (!o.classList.contains("on")) o.click();
 });

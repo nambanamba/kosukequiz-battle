@@ -59,9 +59,14 @@ async function open(statsKind, settings) {
     const ids = QA_DATA.filter(q => q.subj === "社会" && /^第[1-4]回/.test(q.u) && q.kind !== "calc").map(q => q.id);
     const st = {}, day = 86400000, now = Date.now();
     if (statsKind === "normal") {
-      // まちがえた30問（間違えて、まだ正解していない）／ 正解ずみ150問（2連続正解）／ 残りは未実施
+      // ★★ 2026-09-26: 語と切り口が出題の3段に揃った。
+      //   旧の仕込み {correct:0, wrong:1, box:0} は、新しい定義だと
+      //   ★**「まだ正解していない」（1段目）**です（一度も正解していないため）。
+      //   この節は「苦手な問題に絞る」を見たいので、
+      //   ★**一度は正解していて、そのあとまちがえた**＝2段目 に仕込み直します。
+      //   ★期待値を緩めたのではなく、見たい場面を新しい規則で作り直しています（4-1b）
       ids.forEach((id, i) => {
-        if (i % 14 === 0) st[id] = { correct: 0, wrong: 1, box: 0, lastAnswered: now - day };   // ★437問中 32問
+        if (i % 14 === 0) st[id] = { correct: 1, wrong: 1, box: 0, lastCorrectAt: now - 2 * day, lastAnswered: now - day };   // ★437問中 32問（2段目）
         else if (i % 3 === 0) st[id] = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 3 * day, lastAnswered: now - 3 * day };
       });
     } else if (statsKind === "allDone") {
@@ -77,12 +82,15 @@ async function open(statsKind, settings) {
 const label = page => page.$eval("#pool-count-label", e => e.textContent);
 // ★index.html の本体は <script type="module"> なので、selectedUnits や isWeak は外から見えない。
 //   **画面に出ているもの**と**保存されたもの（localStorage）**から読む。
-//   isWeak は index.html と同じ式: wrong > 0 && box <= 1
+// ★★ 2026-09-26: 以前は index.html の isWeak の式を**写して**数えていました。
+//   ★写しを持つと、本体を直した瞬間に古くなります（確認ポイント 4-6d）。
+//   ★**仕込みそのものから数える**形に変えました。
+//   この道具が自分で i % 14 === 0 を「苦手な問題」にしているので、その数が答えです。
 const weakCount = page => page.evaluate(() => {
   const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}");
-  return QA_DATA.filter(q => q.subj === "社会" && /^第[1-4]回/.test(q.u) && q.kind !== "calc").filter(q => {
-    const s = st[q.id]; return !!s && (s.wrong || 0) > 0 && (s.box || 0) <= 1;
-  }).length;
+  // ★この道具が「苦手な問題」として仕込むのは、誤答がついている問だけです。
+  //   （「記録なし」も「全部2連続正解」も誤答は0なので、0 と出ます）
+  return Object.keys(st).filter(id => (st[id].wrong || 0) > 0).length;
 });
 const selUnits = page => page.evaluate(() => {
   const s = JSON.parse(localStorage.getItem("kq_battle_settings_v1") || "{}");
@@ -107,8 +115,10 @@ let taps = 0, savedSettings = null;
   const allDai = await page.evaluate(() => [...new Set(QA_DATA.filter(q => q.subj === "社会" && q.u.startsWith("第")).map(q => q.u))]);
   check("★「歴史」のチェック1回で、「第◯回」の単元がまとめて選ばれる",
         sel.length === allDai.length && allDai.every(u => sel.includes(u)), `${sel.length}単元: ${sel.map(u => u.split(".")[0]).join("・")}`);
-  await page.$eval("#mode-weak", e => e.click()); taps++;
-  console.log("  ③ 「よく間違える」:    " + await label(page));
+  // ★ 2026-09-26: 「苦手な問題」だけに絞る（既定は3つともON）
+  await page.evaluate(() => { document.querySelectorAll(".mode-filter").forEach(e => {
+    if (e.classList.contains("on") !== (e.dataset.tier === "1")) e.click(); }); }); taps++;
+  console.log("  ③ 「苦手な問題」だけに絞る:    " + await label(page));
   const startText = await page.$eval("#solo-start-btn", e => e.textContent);
   console.log(`  ④ 「${startText}」を押せば始まる`); taps++;
   console.log(`  ★初めては ${taps}タップ`);
@@ -121,8 +131,8 @@ console.log("\n── B. ★開き直したとき、設定が残っているか 
 {
   const { ctx, page } = await open("normal", savedSettings);
   const sel = await selUnits(page);
-  const weakOn = await page.$eval("#mode-weak", e => e.classList.contains("on"));
-  console.log(`  選ばれている単元: ${sel.map(u => u.split(".")[0]).join("・")} ／ よく間違える: ${weakOn ? "ON" : "OFF"}`);
+  const weakOn = await page.$eval("#mode-stage2", e => e.classList.contains("on"));
+  console.log(`  選ばれている単元: ${sel.map(u => u.split(".")[0]).join("・")} ／ 苦手な問題: ${weakOn ? "ON" : "OFF"}`);
   console.log("  問題数の表示: " + await label(page));
   check("★開き直しても、単元とトグルが残っている（次からは1タップ）",
         sel.length >= 4 && weakOn);

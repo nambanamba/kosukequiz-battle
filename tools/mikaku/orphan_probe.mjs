@@ -70,11 +70,12 @@ await page.reload(); await page.waitForTimeout(1200);
 // ① ホームの数字
 const home = await page.evaluate(() => ({
   total: document.getElementById("stat-total").textContent,
-  mastered: document.getElementById("stat-mastered").textContent,
-  weak: document.getElementById("stat-weak").textContent,
+  // ★ 2026-09-26: ホームの数字が出題の3段に揃った
+  mastered: document.getElementById("stat-stage3").textContent,
+  weak: document.getElementById("stat-stage2").textContent,
   miss: (document.getElementById("retry-last-miss-btn") || {}).textContent,
 }));
-console.log(`  ホーム: 全問題数 ${home.total} ／ 正解済み ${home.mastered} ／ 苦手 ${home.weak}`);
+console.log(`  ホーム: 全問題数 ${home.total} ／ 定着した ${home.mastered} ／ 苦手な問題 ${home.weak}`);
 console.log(`  「${home.miss}」`);
 check("★ホームの数字が数として出ている（NaN などになっていない）", [home.total, home.mastered, home.weak].every(v => /^\d+$/.test(v)));
 check("★苦手の数に、消えた問が入っていない（生きている5問だけ）", home.weak === "5", home.weak);

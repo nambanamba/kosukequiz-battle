@@ -54,7 +54,25 @@ function newApp(storageSeed){
     currentSubject: "社会",
     selectedUnits: new Set(["社1","社2"]),
     questionCount: "all", minTotalCount: 0, currentShuffle: true,   // ★reviewMixCount から改名（2026-09-26）
-    filterUnmastered: false, filterWeak: false,
+    // ★★ 2026-09-26: 出題モードが「段の選択」になった。
+    //   旧 filterUnmastered / filterWeak は **tiersFromSaved() の中だけ**が知っている。
+    //   ★このテストは index.html から関数を取り出して動かすので、
+    //   **新しい変数と、移行の部品も同じ名前で用意する**必要がある
+    selectedTiers: new Set([0, 1, 2]),
+    pendingMigrationNotes: [],
+    reviewAllUnitsDone: true,   // ★復習単元の移行はこのテストの対象外（済み扱い）
+    migrateReviewUnitsToAll(){},
+    tiersFromSaved(s2){
+      // ★ index.html と同じ規則。★ここは「写し」になるので、
+      //   本体を直したらここも見直すこと（確認ポイント 4-6d）。
+      //   ⚠★このテストが見ているのは「保存と復元」だけで、段の意味ではありません。
+      //   段の意味は tools/mikaku/tier_align_probe.mjs が見ています
+      if(Array.isArray(s2.tiers)) return new Set(s2.tiers);
+      const un = s2.filterUnmastered === true, wk = s2.filterWeak === true;
+      if(un) return new Set([0, 1]);
+      if(wk) return new Set([1]);
+      return new Set([0, 1, 2]);
+    },
     currentType: "all", currentPriority: "all", currentLevel: "all",
     reviewMode: false, fairMode: false,
     headStartSec: 3, answerTimeSec: 20, judgeTimeSec: 10,
@@ -89,6 +107,8 @@ function newApp(storageSeed){
 }
 
 let pass = 0, fail = 0;
+// ★ 2026-09-26: 段の選択は Set なので、比べやすいよう文字列にする
+const T = a => Array.from(a.selectedTiers).sort().join(",");
 function check(name, got, want){
   const ok = JSON.stringify(got) === JSON.stringify(want);
   console.log((ok ? "  ✅ " : "  ❌ ") + name + "  got=" + JSON.stringify(got) + (ok ? "" : " want=" + JSON.stringify(want)));
@@ -101,18 +121,18 @@ console.log("\n【1】科目を切りかえたとき、問題数とフィルタ�
   const a = newApp({});
   a.loadSettings();
   // 社会で「20問・にがて絞りON」にする
-  a.questionCount = 20; a.filterWeak = true; a.currentLevel = "基礎";
+  a.questionCount = 20; a.selectedTiers = new Set([1]); a.currentLevel = "基礎";   // ★旧 filterWeak=true 相当
   a.saveSettings();
   // 理科に切りかえて「10問・にがて絞りOFF」にする
   a.switchSubject("理科");
-  check("理科に切りかえた直後は理科の既定値", [a.questionCount, a.filterWeak, a.currentLevel], ["all", false, "all"]);
-  a.questionCount = 10; a.filterWeak = false; a.currentLevel = "発展";
+  check("理科に切りかえた直後は理科の既定値", [a.questionCount, T(a), a.currentLevel], ["all", "0,1,2", "all"]);
+  a.questionCount = 10; a.selectedTiers = new Set([0, 1, 2]); a.currentLevel = "発展";
   a.saveSettings();
   // 社会にもどす
   a.switchSubject("社会");
-  check("社会にもどすと社会の前回値", [a.questionCount, a.filterWeak, a.currentLevel], [20, true, "基礎"]);
+  check("社会にもどすと社会の前回値", [a.questionCount, T(a), a.currentLevel], [20, "1", "基礎"]);
   a.switchSubject("理科");
-  check("もう一度理科にすると理科の前回値", [a.questionCount, a.filterWeak, a.currentLevel], [10, false, "発展"]);
+  check("もう一度理科にすると理科の前回値", [a.questionCount, T(a), a.currentLevel], [10, "0,1,2", "発展"]);
 }
 
 // ============ 2. 閉じて開き直しても両科目の設定が残るか ============
@@ -120,10 +140,10 @@ console.log("\n【2】アプリを閉じて開き直したあとも、両方の�
 {
   const a = newApp({});
   a.loadSettings();
-  a.questionCount = 30; a.filterUnmastered = true; a.currentPriority = "高"; a.minTotalCount = 5;
+  a.questionCount = 30; a.selectedTiers = new Set([0, 1]); a.currentPriority = "高"; a.minTotalCount = 5;
   a.saveSettings();
   a.switchSubject("理科");
-  a.questionCount = 10; a.filterUnmastered = false; a.currentPriority = "低"; a.minTotalCount = 0;
+  a.questionCount = 10; a.selectedTiers = new Set([0, 1, 2]); a.currentPriority = "低"; a.minTotalCount = 0;
   a.currentShuffle = false; a.reviewMode = true; a.currentType = "image";
   a.saveSettings();
   // ここで「閉じる」。localStorage の中身だけを引きついで開き直す
@@ -131,12 +151,12 @@ console.log("\n【2】アプリを閉じて開き直したあとも、両方の�
   b.loadSettings();
   check("開き直した直後は理科（最後に使った科目）", b.currentSubject, "理科");
   check("理科の設定が残っている",
-    [b.questionCount, b.filterUnmastered, b.currentPriority, b.minTotalCount, b.currentShuffle, b.reviewMode, b.currentType],
-    [10, false, "低", 0, false, true, "image"]);
+    [b.questionCount, T(b), b.currentPriority, b.minTotalCount, b.currentShuffle, b.reviewMode, b.currentType],
+    [10, "0,1,2", "低", 0, false, true, "image"]);
   b.switchSubject("社会");
   check("社会の設定も残っている",
-    [b.questionCount, b.filterUnmastered, b.currentPriority, b.minTotalCount],
-    [30, true, "高", 5]);
+    [b.questionCount, T(b), b.currentPriority, b.minTotalCount],
+    [30, "0,1", "高", 5]);
 }
 
 // ============ 3. 後方互換：旧フラット形式の設定が消えないか ============
@@ -157,12 +177,12 @@ console.log("\n【3】旧バージョンのフラットな設定が、社会・�
   const a = newApp({ "kq_battle_settings_v1": old });
   a.loadSettings();
   check("社会は旧設定をそのまま引きつぐ",
-    [a.questionCount, a.filterUnmastered, a.filterWeak, a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.minTotalCount, a.reviewMode],
-    [30, true, true, "text", "中", "標準", false, 7, true]);
+    [a.questionCount, T(a), a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.minTotalCount, a.reviewMode],
+    [30, "0,1", "text", "中", "標準", false, 7, true]);   // ★旧「両方ON」→ 1段目+2段目
   a.switchSubject("理科");
   check("理科にも旧設定が初期値として引きつがれる（初期値に戻らない）",
-    [a.questionCount, a.filterUnmastered, a.filterWeak, a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.minTotalCount, a.reviewMode],
-    [30, true, true, "text", "中", "標準", false, 7, true]);
+    [a.questionCount, T(a), a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.minTotalCount, a.reviewMode],
+    [30, "0,1", "text", "中", "標準", false, 7, true]);   // ★旧「両方ON」→ 1段目+2段目
   check("科目共通のままにした時間設定・公平モードは維持",
     [a.fairMode, a.headStartSec, a.answerTimeSec], [true, 9, 45]);
   // 理科だけ変えても社会は動かない
@@ -176,10 +196,10 @@ console.log("\n【4】新形式で保存したものを、旧バージョン（�
 {
   const a = newApp({});
   a.loadSettings();
-  a.questionCount = 20; a.filterWeak = true;
+  a.questionCount = 20; a.selectedTiers = new Set([1]);
   a.saveSettings();
   const saved = JSON.parse(a._store["kq_battle_settings_v1"]);
-  check("フラットなキーも今の科目の値で書かれている", [saved.count, saved.filterWeak], [20, true]);
+  check("フラットなキーも今の科目の値で書かれている", [saved.count, (saved.tiers || []).join(",")], [20, "1"]);
   check("settingsBySubject も書かれている", Object.keys(saved.settingsBySubject).sort(), ["理科","社会"].sort());
   check("旧互換の units も残っている", Array.isArray(saved.units), true);
 }

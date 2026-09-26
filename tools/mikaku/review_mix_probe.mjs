@@ -79,7 +79,12 @@ async function open(opt) {
     localStorage.setItem("kq_battle_settings_v1", JSON.stringify({
       subject: "社会", unitsBySubject: { "社会": [a.MAIN] }, units: [a.MAIN],
       count: a.count, shuffle: a.shuffle,
-      filterUnmastered: true, filterWeak: false,   // ★メインの問数を仕込みで決めるため ON（2026-09-26）
+      // ★メインの問数を仕込みで決めるため、１段目だけに絞る（2026-09-26）。
+      //   仕込みの問は {correct:0, wrong:1, box:0}＝★１段目。新旧両方の鍵を入れておく
+      filterUnmastered: true, filterWeak: false, tiers: [0],
+      // ★ reviewAllUnits が無いと、復習単元の一度だけの移行が走って
+      //   ★**復習の対象に今週の単元まで入り、この道具の場面が壊れます**
+      reviewAllUnits: 1,
       // ★reviewUnitsKnown に「今の科目の全単元」を入れる。入れないと、知らない単元は自動でONになり、
       //   復習ミックスの対象が「選んでいない単元ぜんぶ」になってしまう（＝下の■5で別に確かめる）
       reviewSelectedUnits: a.OLD,   // ★reviewMixCount（旧）は使わない。合計に足りない分が自動で入る

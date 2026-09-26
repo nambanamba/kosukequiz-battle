@@ -144,6 +144,17 @@ const pickUnits = page => page.evaluate(() => {
 const ymd = ts => { const d = new Date(ts);
   return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); };
 
+// ★★ 2026-09-26: 出題モードが「どの段を出すか」になった。
+//   旧 setModes(t, weak, unmastered) → setTiers(t, [段番号の配列])
+//   ⚠★既定は「3つともON」。昇せるつもりで click すると逆に消える
+// ⚠★**3つとも選ぶと「ふだんの出題」になり、3段の並びはかかりません**。
+//   （旧の「両方OFF」と同じ。並びを見たいときは、必ずどれかを外して絞ること）
+const setTiers = (t, tiers) => t.page.evaluate(ts => {
+  document.querySelectorAll(".mode-filter").forEach(e => {
+    if (e.classList.contains("on") !== ts.includes(+e.dataset.tier)) e.click();
+  });
+}, tiers);
+
 await test("単元選択が科目ごとに保存される", async t => {
   await t.open();
   await t.page.evaluate(() => localStorage.clear());
@@ -461,10 +472,10 @@ await test("未クリア優先（両方ONのとき未クリアが先）", async 
   await t.clickUnit("ALL");
   await t.openHistory();
   await t.clickUnit(history);
-  await t.page.click("#mode-unmastered"); await t.page.waitForTimeout(150);
-  await t.page.click("#mode-weak"); await t.page.waitForTimeout(150);
-  t.is("両方ONになっている", await t.page.evaluate(() =>
-    ["mode-unmastered", "mode-weak"].map(i => document.getElementById(i).classList.contains("on"))), [true, true]);
+  // ★ 2026-09-26: 旧「未クリア＋よく間違える」＝1段目＋2段目
+  await setTiers(t, [0, 1]); await t.page.waitForTimeout(200);
+  t.is("1段目と2段目だけ ON になっている", await t.page.evaluate(() =>
+    Array.from(document.querySelectorAll(".mode-filter")).map(e => e.classList.contains("on"))), [true, true, false]);
   // 10問にする
   await t.page.evaluate(() => {
     const c = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
@@ -511,10 +522,10 @@ await test("よく間違える: 最後に正解した日が古い順／まちが
   // ★トグルと出題数は科目別に保存される。リロード後に押すと OFF になるので、
   //   「押す」のではなく「ONにする」形で書く（ここで一度ハマった）
   const setWeakOn = () => t.page.evaluate(() => {
-    const w = document.getElementById("mode-weak");
-    if (!w.classList.contains("on")) w.click();
-    const u = document.getElementById("mode-unmastered");
-    if (u.classList.contains("on")) u.click();
+    // ★ 2026-09-26: 「苦手な問題」（2段目）だけ ON にする
+    document.querySelectorAll(".mode-filter").forEach(e => {
+      if (e.classList.contains("on") !== (e.dataset.tier === "1")) e.click();
+    });
     const c = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
     if (c && !c.classList.contains("on")) c.click();
   });
@@ -638,11 +649,6 @@ async function onlyUnit(t, u) {
   await t.clickUnit(u);
 }
 // ★「押す」ではなく「この状態にする」。リロード後に押すと逆になる
-const setModes = (t, weak, unmastered) => t.page.evaluate(([w, u]) => {
-  const W = document.getElementById("mode-weak"), U = document.getElementById("mode-unmastered");
-  if (W.classList.contains("on") !== w) W.click();
-  if (U.classList.contains("on") !== u) U.click();
-}, [weak, unmastered]);
 const setOrdered = t => t.page.evaluate(() => {     // ランダム順ではなく出題順どおりに
   const o = document.getElementById("order-toggle");
   if (!o.classList.contains("on")) o.click();
@@ -708,7 +714,7 @@ await test("出題順の3段（復習ミックス経路・全3段が順に出る
   await t.open();
   const g = await seedTiers(t, true);
   await onlyUnit(t, TIER_MAIN);
-  await setModes(t, false, false);
+  await setTiers(t, [0, 1, 2]);   // ★ふだんの出題（旧「両方OFF」と同じ意味）
   await setOrdered(t);
   const mainN2 = await unitSize(t, TIER_MAIN);
   await setCount(t, String(mainN2 + g.all.length));   // ★合計＝メイン全部 ＋ 復琡16問
@@ -741,7 +747,7 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
 
   // 経路1: メイン側（よく間違える＋未クリア）
   await onlyUnit(t, TIER_UNIT);
-  await setModes(t, true, true);
+  await setTiers(t, [0, 1]);   // ★旧「よく間違える＋未クリア」＝1段目＋2段目
   await setOrdered(t);
   await setCount(t, "all");
   await setReviewMix(t, 0, TIER_MAIN);
@@ -751,7 +757,7 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
   // 経路2: 復習ミックス側（同じ単元を、別単元のメインに足す）
   await t.page.click("#solo-back"); await t.page.waitForTimeout(400);
   await onlyUnit(t, TIER_MAIN);
-  await setModes(t, false, false);
+  await setTiers(t, [0, 1, 2]);   // ★ふだんの出題
   const mainN3 = await unitSize(t, TIER_MAIN);
   await setCount(t, String(mainN3 + g.all.length));   // ★合計＝メイン全部 ＋ 復琡16問
   await setReviewMix(t, 0, TIER_UNIT);                // ★数字は使わない。単元を選ぶだけ
@@ -790,7 +796,11 @@ await test("★1段目は「まだ一度も正解していない」（未実施�
 
   // 16問とも box は 0 なので「未クリアの問題」では1問も落ちない。並び順だけを見る
   await onlyUnit(t, TIER_UNIT);
-  await setModes(t, false, true);                  // 未クリアの問題だけON
+  // ★★ 2026-09-26: この仕込みは 1段目と2段目しか無い（全部 box 0）ので、
+  //   [0,1] なら**1問も落とさず**、かつ**絞っているので3段の並びがかかります**。
+  // ⚠★[0,1,2]（全部）にすると「ふだんの出題」になり、**並びがかからず、
+  //   この回帰テストが測りたいものを測らなくなります**（一度ここで間違えました）。
+  await setTiers(t, [0, 1]);
   await setOrdered(t);
   await setReviewMix(t, 0, TIER_MAIN);
   await setCount(t, "all");
@@ -816,7 +826,7 @@ await test("補う: トグルの問題が足りないとき、★復習ミック
   await t.open();
   const g = await seedTiers(t, true);              // 1段目4・2段目4・3段目8
   await onlyUnit(t, TIER_UNIT);
-  await setModes(t, true, false);                  // よく間違えるだけ → 対象は2段目の4問
+  await setTiers(t, [1]);                          // ★「苦手な問題」だけ → 対象は2段目の4問
   await setOrdered(t);
   await setReviewMix(t, 0, TIER_MAIN);
   await setCount(t, "10");
@@ -848,7 +858,7 @@ await test("補う: 苦手が0問でも「全部」で始められる", async t 
   }, g.weak);
   await t.reload();
   await onlyUnit(t, TIER_UNIT);
-  await setModes(t, true, false);
+  await setTiers(t, [1]);   // ★「苦手な問題」だけ
   await setOrdered(t);
   await setReviewMix(t, 0, TIER_MAIN);
   await setCount(t, "all");
@@ -891,11 +901,11 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
     return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
   });
   await t.page.selectOption("#list-unit-select", bigUnit);
-  await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-filter="weak"]').click());
+  await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-tier="1"]').click());
   await t.page.waitForTimeout(1500);
   t.is("★描き直しが途中で始まっても、古い行が混ざらない（苦手0問なので0行）",
     await t.page.evaluate(() => document.querySelectorAll("#list-items .list-item").length), 0);
-  await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-filter="weak"]').click());
+  await t.page.evaluate(() => document.querySelector('.list-filter-toggle[data-tier="1"]').click());
 
   const total = await t.page.evaluate(() => parseInt(document.getElementById("list-count").textContent, 10));
   let all = true;
@@ -991,13 +1001,23 @@ await test("正解数＝連続正解数: まちがえると未クリアにもど
   await t.clickUnit("ALL");
   await t.openHistory();
   await t.clickUnit(history);
+  // ★★ 2026-09-26: ホームの数字を出題の3段に揃えた（ユーザー判断）。
+  //   依頼書: 司令塔/回答/対戦_言葉と数字とフィルタを3段に揃える_依頼_2026-09-26.md
+  //   旧: 全問題数 ／ 正解済み数 ／ 苦手な問題 ／ 未クリア（★切り口が3つバラバラ）
+  //   新: 全問題数 ／ まだ正解していない(1段目) ／ 苦手な問題(2段目) ／ 定着した(3段目)
+  //   ★期待値を緩めたのではなく、同じ仕込みを新しい切り口で言い直している（4-1b）。
+  //   ① correct5/wrong2/box0 → 2段目　② correct3/wrong0/box3 → 3段目
+  //   ③ correct1/wrong1/box0 → 2段目　④ 記録なし → 1段目
   const home = await t.page.evaluate(() => ({
     total: +document.getElementById("stat-total").textContent,
-    mastered: +document.getElementById("stat-mastered").textContent,
-    weak: +document.getElementById("stat-weak").textContent }));
-  t.is("★ホームの「正解済み数」は、連続正解がある②だけの1問（以前は累計で①②③の3問）", home.mastered, 1);
-  t.is("苦手な問題は①③の2問（判定は変えていない）", home.weak, 2);
-  t.ok("未クリア＝全問題数−正解済み数", home.total - home.mastered >= 3, home);
+    stage1: +document.getElementById("stat-stage1").textContent,
+    stage2: +document.getElementById("stat-stage2").textContent,
+    stage3: +document.getElementById("stat-stage3").textContent }));
+  t.is("★「定着した」は、連続正解がある②だけの1問（以前は累計で①②③の3問）", home.stage3, 1);
+  t.is("「苦手な問題」は①③の2問", home.stage2, 2);
+  t.is("「まだ正解していない」は、記録の無い残り全部", home.stage1, home.total - 3);
+  // ★★これが今回の核（依頼書の失敗 1）。切り口が揃っていないと成り立たない
+  t.is("★★3つを足すと必ず「全問題数」になる", home.stage1 + home.stage2 + home.stage3, home.total);
 
   const stored = await t.stats();
   t.is("★保存された記録は書きかわっていない", ids.slice(0, 3).map(i => stored[i]), ids.slice(0, 3).map(i => seed[i]));
@@ -1034,7 +1054,7 @@ await test("トップ画面の並び順（仕様どおり）とパネル", async
   await t.reload();
   const order = await t.page.evaluate(() => {
     const ids = ["resume-solo-btn", "resume-battle-btn", "retry-last-miss-btn", "pool-count-bar", "create-btn", "fair-mode-toggle",
-      "solo-start-btn", "review-mode-toggle", "go-join", "unit-choices", "mode-unmastered", "setup-filter-open", "count-row",
+      "solo-start-btn", "review-mode-toggle", "go-join", "unit-choices", "mode-stage1", "setup-filter-open", "count-row",
       "review-unit-choices", "review-filter-open", "review-mix-input", "battle-settings-open", "list-btn",
       "export-link", "import-link", "export-edits-link", "calc-setup-btn"];
     const els = ids.map(i => document.getElementById(i));

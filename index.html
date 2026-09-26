@@ -127,6 +127,11 @@
      ★右側に縦に積むと、長い単元名（「第1回.旧石器時代・縄文時代・弥生時代」）が
      390px で 3行に折れて窄くなる（実機幅で見て決めた・依頼書の失敗 18） */
   .choice{flex-wrap:wrap;}
+  /* ★長い単元名（「第1回.旧石器時代・縄文時代・弥生時代」）でも、
+     「◯問」が1行目に残るよう、名前側に場所を約束させる。
+     ★390px で実際に「◯問」が2行目に落ちていたので直した（2026-09-26） */
+  .choice .choice-left{flex:1 1 auto; max-width:calc(100% - 64px);}
+  .choice .count{margin-left:auto;}
   .choice .unit-tiers{
     width:100%;
     margin-top:4px;

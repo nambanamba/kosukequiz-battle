@@ -7,6 +7,11 @@
 //   未クリアのみ … ★で未クリアの問を**いちばん上**へ（★でも正解ずみは未クリアに入らない）
 //   よく間違える … いつもの3段の並び。鍵（段・最後に正解した日）が**まったく同じ**ときだけ★を上
 //                  （2026-09-22 ユーザー訂正。最初「★を特別扱いしない」と読み違えて作った）
+//
+// ★★ 2026-09-26 に出題モードが「段の選択」になり、上の言い方が変わりました。
+//   旧「未クリアを含む」   → 新「「まだ正解していない」（1段目）を選んでいる」（ユーザー確認ずみ）
+//   旧「よく間違える」     → 新「苦手な問題」（2段目だけ）。★**1段目は入らなくなりました**
+//   ★そのため ⑤ の中身を書き直しています（⑤ のコメントを読んでください）。
 //   ★は自動では外れない／付けるのは問題一覧だけ／★が0件なら、いまとまったく同じ
 //
 // ■ ★「いまと同じ」を、直す前の版と並べて確かめる
@@ -73,7 +78,13 @@ async function run(ver, { stars = [], count = 20, shuffle = false, unmastered = 
     localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
     localStorage.setItem("kq_battle_settings_v1", JSON.stringify({ subject: "社会", unitsBySubject: { "社会": [UNIT] }, units: [UNIT],
-      count, shuffle, filterUnmastered: unmastered, filterWeak: weak, reviewMixCount: 0 }));
+      count, shuffle, reviewMixCount: 0, reviewAllUnits: 1,
+      // ★★ 2026-09-26: 出題モードが「段の選択」になった。
+      //   ★この道具は**新旧両方の版を並べて比べる**ので、両方の鍵を仕込む。
+      //   新しい版は tiers を、古い版は filterUnmastered/filterWeak を読む。
+      //   対応（移行表と同じ）: 未クリアON→1段目+2段目 ／ よく間違えるだけON→2段目 ／ どちらもOFF→全部
+      filterUnmastered: unmastered, filterWeak: weak,
+      tiers: unmastered ? [0, 1] : (weak ? [1] : [0, 1, 2]) }));
     if (stars.length) localStorage.setItem("kq_battle_priority_v1", JSON.stringify(stars));
   }, { UNIT, stars, count, shuffle, unmastered, weak, seed: seedStats.toString() });
   await page.reload(); await page.waitForTimeout(800);
@@ -144,21 +155,34 @@ console.log("\n── ④b 未クリア＋よく間違える 両方 ON ──");
   console.log(`  ${b.label} ${b.seq.join(" ")}`);
   check("★で未クリアの3問がいちばん上", b.seq.slice(0, 3).join() === [ids[100], ids[105], ids[110]].join());
 }
-// ── ⑤ よく間違える のみ: いつもの並び。鍵がまったく同じときだけ★が上 ──
-console.log("\n── ⑤ よく間違える のみ（同点のときだけ★が上）──");
+// ── ⑤ 「苦手な問題」だけ（＝1段目を選んでいない）: ★は持ち上げない ──
+// ★★ 2026-09-26 に出題モードが「段の選択」になり、この場面の中身が変わりました。
+//   旧「よく間違える」= {✕つき未正解, 正解後にまちがえた, 1回連続正解} ＝ ★1段目の一部を含んでいた
+//   新「苦手な問題」  = 2段目だけ           ＝ ★1段目は入らない（ユーザー判断・移行の知らせで周知ずみ）
+//   → ★もとの「1段目の★が1段目のいちばん上に来る」は、**1段目がそもそも入らないので測れません**。
+//     期待値を緩めたのではなく、**その場面が無くなりました**（4-1b）。
+//
+// ★いま測れるのは「1段目を選んでいないとき、★は持ち上げない（同点の決め手にしかならない）」こと。
+//   `starsFirst` は selectedTiers.has(0) のときだけ効くので、ここでは効かないのが正しい。
+//
+// ⚠️★見ていないもの（4-2）: 「鍵がまったく同じときは★が上」という**同点の決め手そのもの**。
+//   この仕込みでは 2段目の lastCorrectAt が全部ちがうため、同点の場面が作れません。
+//   ★1段目を選ぶと starsFirst が先に効いてしまうので、そちらでも切り分けられません。
+//   **持ち上げ（starsFirst）は ④ で見ています。**同点の決め手だけが未測定です。
+console.log("\n── ⑤ 「苦手な問題」だけ＝1段目を選んでいない（★は持ち上げない）──");
 {
-  const WEAK0 = ids[93];   // 1段目（正解日なし）。1段目どうしは鍵が全部 0 で同点 → ★が効くはず
-  const WEAK1 = ids[27];   // 2段目（正解日あり・ミリ秒で全部ちがう）→ 同点の相手がいないので、この記録では位置が変わらないはず（仕様は「同点なら★が先」）
+  const WEAK1 = ids[27];   // 2段目（正解日あり・ミリ秒で全部ちがう）→ ★を付けても位置は変わらないはず
   const a = await run(NEW, { stars: [], count: "all", weak: true, n: 20 });
-  const b = await run(NEW, { stars: [WEAK0, WEAK1], count: "all", weak: true, n: 20 });
+  const b = await run(NEW, { stars: [WEAK1], count: "all", weak: true, n: 20 });
   console.log(`  ★なし: ${a.seq.join(" ")}\n  ★あり: ${b.seq.join(" ")}`);
-  check("★1段目の★（" + WEAK0 + "）は、1段目のいちばん上に来る（同点の決め手）", b.seq[0] === WEAK0, b.seq[0]);
+  check("★★1段目を選んでいないときは、★を付けても並びが1つも変わらない（持ち上げない）",
+        b.seq.join() === a.seq.join(), `★なし ${a.seq.slice(0, 3).join(" ")}… / ★あり ${b.seq.slice(0, 3).join(" ")}…`);
   const posA = a.seq.indexOf(WEAK1), posB = b.seq.indexOf(WEAK1);
-  check("★2段目の★（" + WEAK1 + "）は、鍵がちがうので位置が変わらない（1段目が1つ前に来たぶんを除いて）",
+  check("★2段目の★（" + WEAK1 + "）は、鍵がちがうので位置が変わらない",
         posA >= 0 && posB === posA, `★なし ${posA}番目 / ★あり ${posB}番目`);
   check("入る問の数は同じ", a.label === b.label, `${a.label} / ${b.label}`);
-  check("★の無い問どうしの順は、★なしのときと同じ",
-        b.seq.filter(x => x !== WEAK0 && x !== WEAK1).join() === a.seq.filter(x => x !== WEAK0 && x !== WEAK1).slice(0, b.seq.length - 2).join());
+  check("★予告に「★最優先 …問が先に出ます」は出ない（持ち上げないので）",
+        b.label.indexOf("先に出ます") < 0, b.label);
 }
 
 // ── ⑥ 問題一覧で付け外し・保存・記録に触らない ──
@@ -189,14 +213,19 @@ console.log("\n── ⑥ 問題一覧（付け外し・★のみ・まとめて
   await page.click(btn); await page.waitForTimeout(200);
   const saved2 = await page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_priority_v1") || "[]"));
   check("もう一度押すと外れる", !saved2.includes(ids[2]));
-  // まとめて: 「未実施のみ」で絞って全部★ → ★のみで数える
-  await page.$eval('.list-filter-toggle[data-filter="unseen"]', e => e.click()); await page.waitForTimeout(300);
+  // まとめて: 何かで絞って全部★ → ★のみで数える
+  // ★★ 2026-09-26: 「未実施のみ」のチップはユーザー判断で**消しました**
+  //   （「4ついりますか?」——段のチップを3つにするため）。
+  //   ★この節が見たいのは「絞ってまとめて★を付けたら、その数だけ★になる」ことで、
+  //   絞り方は何でもよいので、段のチップ「まだ正解していない」で絞ります。
+  const NARROW = '.list-filter-toggle[data-tier="0"]';
+  await page.$eval(NARROW, e => e.click()); await page.waitForTimeout(300);
   const shown = parseInt(await page.textContent("#list-count"), 10);
   await page.click("#star-bulk-on"); await page.waitForTimeout(400);
-  await page.$eval('.list-filter-toggle[data-filter="unseen"]', e => e.click()); await page.waitForTimeout(200);
+  await page.$eval(NARROW, e => e.click()); await page.waitForTimeout(200);
   await page.$eval('.list-filter-toggle[data-filter="star"]', e => e.click()); await page.waitForTimeout(400);
   const starred = parseInt(await page.textContent("#list-count"), 10);
-  check("★「表示中を全部★」→「★最優先のみ」で同じ数だけ出る", shown > 0 && starred === shown, `未実施 ${shown}問 → ★ ${starred}問`);
+  check("★「表示中を全部★」→「★最優先のみ」で同じ数だけ出る", shown > 0 && starred === shown, `絞ったとき ${shown}問 → ★ ${starred}問`);
   // 開き直しても残る
   await page.reload(); await page.waitForTimeout(700);
   const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_priority_v1") || "[]").length);

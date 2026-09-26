@@ -21,8 +21,12 @@ await p.reload(); await p.waitForTimeout(1200);
 await p.click('#unit-choices .choice[data-unit="ALL"]'); await p.waitForTimeout(300);
 const gh=await p.$('.unit-group-header[data-group="history"]'); if(gh) await gh.click(); await p.waitForTimeout(300);
 await p.click(`#unit-choices .choice[data-unit="${unit}"]`); await p.waitForTimeout(300);
-await p.evaluate(()=>{ const w=document.getElementById("mode-weak"); if(!w.classList.contains("on")) w.click();
-  const u=document.getElementById("mode-unmastered"); if(u.classList.contains("on")) u.click();
+await p.evaluate(()=>{
+  // ★ 2026-09-26: 出題モードが段の選択になった。「苦手な問題」（2段目）だけ ON にする。
+  //   ⚠★既定は3つともONなので、click だけだと逆に消える
+  document.querySelectorAll(".mode-filter").forEach(e => {
+    if (e.classList.contains("on") !== (e.dataset.tier === "1")) e.click();
+  });
   const c=[...document.querySelectorAll(".count-choice")].find(e=>e.dataset.count==="10"); if(c&&!c.classList.contains("on")) c.click(); });
 await p.waitForTimeout(400);
 await p.click("#solo-start-btn"); await p.waitForTimeout(1000);

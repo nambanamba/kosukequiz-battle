@@ -189,7 +189,15 @@ async function run(label, src) {
         unitsBySubject: { "社会": a.mainAll ? a.allUnits : [a.main] },
         units: a.mainAll ? a.allUnits : [a.main],
         count: a.count, shuffle: false,
-        filterUnmastered: true, filterWeak: false,
+        // ★★ 2026-09-26: 出題モードが「段の選択」になった。
+        //   ★**新旧両方の鍵を仕込む**。新しい版は tiers を読み、古い版（対照のコミット）は
+        //   filterUnmastered を読む。★こうしないと、対照の自己テストが
+        //   「絞りこみがかかっていない」という**別の理由**で鳴ってしまう。
+        //   仕込みの問は {correct:0, wrong:1, box:0}＝★１段目なので tiers:[0]。
+        filterUnmastered: true, filterWeak: false, tiers: [0],
+        // ★ reviewAllUnits を立てないと、復習単元の一度だけの移行が走って
+        //   ★**「復習の候補が0問の日」を作れなくなる**（E・F の場面が消える）
+        reviewAllUnits: 1,
         minTotalCount: a.min,
         // ★復習の対象単元。reviewUnitsKnown に全単元を入れて「知らない単元が自動でON」を止める
         reviewSelectedUnits: a.reviewOn ? a.review : [],
@@ -360,8 +368,12 @@ async function run(label, src) {
         shown.indexOf("苦手な問題を優先して追加") < 0, "");
       check("★I 問題数が「合計」だと画面に書いてある", shown.indexOf("「合計」") >= 0, "");
       check("★I 「全部」のときの最低出題数だと画面に書いてある", shown.indexOf("最低出題数") >= 0, "");
-      check("★I 復習の候補が「メインで選んでいない単元」だけだと画面に書いてある",
-        shown.indexOf("メインで選んでいない単元") >= 0, "");
+      // ★★ 2026-09-26（追記3）: 復習の候補が**全単元**になった。
+      //   ユーザー「全部を選んだときは復習も全部でいいです」
+      //   ★旧い説明（「メインで選んでいない単元」だけ）は**嘘になったので、
+      //   残っていないこと**を見る側に変える（確認ポイント 4-3c）
+      check("★I 嘘になった説明「メインで選んでいない単元だけ」が画面に残っていない",
+        shown.indexOf("メインで選んでいない単元") < 0, "");
       await t.ctx.close();
     }
   } catch (e) {

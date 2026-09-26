@@ -31,8 +31,13 @@ await p.reload(); await p.waitForTimeout(1000);
 await p.click('#unit-choices .choice[data-unit="ALL"]'); await p.waitForTimeout(250);
 const gh=await p.$('.unit-group-header[data-group="history"]'); if(gh) await gh.click(); await p.waitForTimeout(250);
 await p.click(`#unit-choices .choice[data-unit="${unit}"]`); await p.waitForTimeout(250);
-await p.evaluate(()=>{const w=document.getElementById("mode-weak"); if(!w.classList.contains("on")) w.click();
-  const u=document.getElementById("mode-unmastered"); if(u.classList.contains("on")) u.click();});
+await p.evaluate(()=>{
+  // ★ 2026-09-26: 出題モードが段の選択になった。「苦手な問題」（2段目）だけ ON にする。
+  //   ⚠★既定は3つともONなので、click だけだと逆に消える
+  document.querySelectorAll(".mode-filter").forEach(e => {
+    if (e.classList.contains("on") !== (e.dataset.tier === "1")) e.click();
+  });
+});
 await p.waitForTimeout(400);
 const label=await p.evaluate(()=>{const e=document.getElementById("pool-count-label"); return e?e.textContent:"(なし)";});
 const screenBefore=await p.evaluate(()=>{const e=[...document.querySelectorAll(".screen")].find(x=>getComputedStyle(x).display!=="none");return e?e.id:"?";});
