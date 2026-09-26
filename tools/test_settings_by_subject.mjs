@@ -53,7 +53,7 @@ function newApp(storageSeed){
     // --- 実物の既定値（index.html の宣言と同じ） ---
     currentSubject: "社会",
     selectedUnits: new Set(["社1","社2"]),
-    questionCount: "all", minTotalCount: 0, currentShuffle: true,   // ★reviewMixCount から改名（2026-09-26）
+    questionCount: "all", currentShuffle: true,
     // ★★ 2026-09-26: 出題モードが「段の選択」になった。
     //   旧 filterUnmastered / filterWeak は **tiersFromSaved() の中だけ**が知っている。
     //   ★このテストは index.html から関数を取り出して動かすので、
@@ -140,10 +140,10 @@ console.log("\n【2】アプリを閉じて開き直したあとも、両方の�
 {
   const a = newApp({});
   a.loadSettings();
-  a.questionCount = 30; a.selectedTiers = new Set([0, 1]); a.currentPriority = "高"; a.minTotalCount = 5;
+  a.questionCount = 30; a.selectedTiers = new Set([0, 1]); a.currentPriority = "高";
   a.saveSettings();
   a.switchSubject("理科");
-  a.questionCount = 10; a.selectedTiers = new Set([0, 1, 2]); a.currentPriority = "低"; a.minTotalCount = 0;
+  a.questionCount = 10; a.selectedTiers = new Set([0, 1, 2]); a.currentPriority = "低";
   a.currentShuffle = false; a.reviewMode = true; a.currentType = "image";
   a.saveSettings();
   // ここで「閉じる」。localStorage の中身だけを引きついで開き直す
@@ -151,12 +151,12 @@ console.log("\n【2】アプリを閉じて開き直したあとも、両方の�
   b.loadSettings();
   check("開き直した直後は理科（最後に使った科目）", b.currentSubject, "理科");
   check("理科の設定が残っている",
-    [b.questionCount, T(b), b.currentPriority, b.minTotalCount, b.currentShuffle, b.reviewMode, b.currentType],
-    [10, "0,1,2", "低", 0, false, true, "image"]);
+    [b.questionCount, T(b), b.currentPriority, b.currentShuffle, b.reviewMode, b.currentType],
+    [10, "0,1,2", "低", false, true, "image"]);
   b.switchSubject("社会");
   check("社会の設定も残っている",
-    [b.questionCount, T(b), b.currentPriority, b.minTotalCount],
-    [30, "0,1", "高", 5]);
+    [b.questionCount, T(b), b.currentPriority],
+    [30, "0,1", "高"]);
 }
 
 // ============ 3. 後方互換：旧フラット形式の設定が消えないか ============
@@ -168,21 +168,24 @@ console.log("\n【3】旧バージョンのフラットな設定が、社会・�
     units: ["社1"],
     filterUnmastered: true, filterWeak: true,
     type: "text", priority: "中", level: "標準",
-    // ★ここは **旧名 `reviewMixCount` のままにしておく**。
-    //   2026-09-26 に `minTotalCount` へ改名したとき、**旧名も読む**ようにしたので、
-    //   その退避経路が生きていることをここで確かめる（下で a.minTotalCount を 7 と見る）
+    // ★ここに `reviewMixCount: 7` が残っているのは、**わざとです**。
+    //   2026-09-26（午後）に「最低出題数」を概念ごと廃止したので、
+    //   ★**このキーはもう読まれません**。確かめているのは
+    //   「★知らないキーが混じっていても、**他の設定が壊れない**」ことだけです。
     shuffle: false, count: 30, reviewMixCount: 7, reviewMode: true,
     fairMode: true, headStartSec: 9, answerTimeSec: 45
   });
   const a = newApp({ "kq_battle_settings_v1": old });
   a.loadSettings();
   check("社会は旧設定をそのまま引きつぐ",
-    [a.questionCount, T(a), a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.minTotalCount, a.reviewMode],
-    [30, "0,1", "text", "中", "標準", false, 7, true]);   // ★旧「両方ON」→ 1段目+2段目
+    [a.questionCount, T(a), a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.reviewMode],
+    [30, "0,1", "text", "中", "標準", false, true]);   // ★旧「両方ON」→ 1段目+2段目
+    // ★ 2026-09-26（午後）: minTotalCount は概念ごと廃止。読みません
   a.switchSubject("理科");
   check("理科にも旧設定が初期値として引きつがれる（初期値に戻らない）",
-    [a.questionCount, T(a), a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.minTotalCount, a.reviewMode],
-    [30, "0,1", "text", "中", "標準", false, 7, true]);   // ★旧「両方ON」→ 1段目+2段目
+    [a.questionCount, T(a), a.currentType, a.currentPriority, a.currentLevel, a.currentShuffle, a.reviewMode],
+    [30, "0,1", "text", "中", "標準", false, true]);   // ★旧「両方ON」→ 1段目+2段目
+    // ★ 2026-09-26（午後）: minTotalCount は概念ごと廃止。読みません
   check("科目共通のままにした時間設定・公平モードは維持",
     [a.fairMode, a.headStartSec, a.answerTimeSec], [true, 9, 45]);
   // 理科だけ変えても社会は動かない

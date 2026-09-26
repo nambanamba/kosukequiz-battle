@@ -133,7 +133,7 @@ async function run(label, src) {
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
     localStorage.setItem("kq_battle_settings_v1", JSON.stringify(Object.assign({
       subject: "社会", unitsBySubject: { "社会": [main] }, units: [main],
-      count: "all", shuffle: false, minTotalCount: 0,
+      count: "all", shuffle: false,
       reviewSelectedUnits: [], reviewUnitsKnown: units, reviewAllUnits: 1,
       reviewPriority: "all", reviewLevel: "all", reviewType: "all",
       type: "all", priority: "all", level: "all"

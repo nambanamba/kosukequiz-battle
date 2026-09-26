@@ -688,7 +688,13 @@ const setCount = async (t, c) => {
 // ★単元の問数は実測する（数を決め打ちしない・4-6b / C-8b）
 const unitSize = (t, unit) => t.page.evaluate(
   u => QA_DATA.filter(q => q.u === u && q.kind !== "calc").length, unit);
-const setReviewMix = async (t, n, unit) => {
+// ★★ 2026-09-26: 「最低出題数」の欄を廃止したので、数を渡す引数を**消しました**。
+//   ⚠★はじめ「引数は残すが読まない」とコメントに書いたのですが、
+//   ★**それは「気をつける」であって、止める仕組みではありません**（確認ポイント 0-3）。
+//   次に急いでいる人は `setReviewMix(t, 20, unit)` と書いて、20 が効いていると思います。
+//   ★**名前も変えました**。古い呼び方が残っていたら、その場で落ちます。
+//   この関数がするのは「復習の対象単元を unit だけにする」ことだけです。
+const setReviewUnit = async (t, unit) => {
   await t.page.click("#review-unit-clear-link");    // 復習の対象単元をいったん空に
   // ★復習側のアコーディオンは data-review-group。メイン側の data-group とは別属性
   //   （名前空間を分けて querySelector の取り違えを防ぐ作りになっている）。
@@ -697,8 +703,6 @@ const setReviewMix = async (t, n, unit) => {
   if (h && !(await h.evaluate(e => e.classList.contains("open")))) await h.click();
   await t.page.waitForTimeout(150);
   await t.page.click(`#review-unit-choices .choice[data-unit="${unit}"]`);
-  await t.page.fill("#review-mix-input", String(n));
-  await t.page.dispatchEvent("#review-mix-input", "change");
   await t.page.waitForTimeout(200);
 };
 // 出題された id を、始めた順に取り出す
@@ -718,7 +722,7 @@ await test("出題順の3段（復習ミックス経路・全3段が順に出る
   await setOrdered(t);
   const mainN2 = await unitSize(t, TIER_MAIN);
   await setCount(t, String(mainN2 + g.all.length));   // ★合計＝メイン全部 ＋ 復琡16問
-  await setReviewMix(t, 0, TIER_UNIT);                // ★数字は使わない。単元を選ぶだけ
+  await setReviewUnit(t, TIER_UNIT);   // 単元を選ぶだけ
   const picked = await startAndPick(t);
   const rev = picked.slice(mainN2);                   // 後ろが復習ミックスの分
   t.is("復習ミックスが16問つく", rev.length, g.all.length);
@@ -750,7 +754,7 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
   await setTiers(t, [0, 1]);   // ★旧「よく間違える＋未クリア」＝1段目＋2段目
   await setOrdered(t);
   await setCount(t, "all");
-  await setReviewMix(t, 0, TIER_MAIN);
+  await setReviewUnit(t, TIER_MAIN);
   const viaMain = await startAndPick(t);
   t.is("メイン側で単元の16問すべてが対象になる", viaMain.length, g.all.length);
 
@@ -760,7 +764,7 @@ await test("出題順の3段（よく間違える と 復習ミックス で同�
   await setTiers(t, [0, 1, 2]);   // ★ふだんの出題
   const mainN3 = await unitSize(t, TIER_MAIN);
   await setCount(t, String(mainN3 + g.all.length));   // ★合計＝メイン全部 ＋ 復琡16問
-  await setReviewMix(t, 0, TIER_UNIT);                // ★数字は使わない。単元を選ぶだけ
+  await setReviewUnit(t, TIER_UNIT);   // 単元を選ぶだけ
   const viaReview = (await startAndPick(t)).slice(mainN3);
 
   t.is("★同じ集合なら、両経路で並びが完全に一致する", viaReview, viaMain);
@@ -802,7 +806,7 @@ await test("★1段目は「まだ一度も正解していない」（未実施�
   //   この回帰テストが測りたいものを測らなくなります**（一度ここで間違えました）。
   await setTiers(t, [0, 1]);
   await setOrdered(t);
-  await setReviewMix(t, 0, TIER_MAIN);
+  await setReviewUnit(t, TIER_MAIN);
   await setCount(t, "all");
   const all = await startAndPick(t);
 
@@ -828,7 +832,7 @@ await test("補う: トグルの問題が足りないとき、★復習ミック
   await onlyUnit(t, TIER_UNIT);
   await setTiers(t, [1]);                          // ★「苦手な問題」だけ → 対象は2段目の4問
   await setOrdered(t);
-  await setReviewMix(t, 0, TIER_MAIN);
+  await setReviewUnit(t, TIER_MAIN);
   await setCount(t, "10");
   const p = await startAndPick(t);
   // ★★ 2026-09-26: 補う出どころが変わりました。
@@ -860,7 +864,7 @@ await test("補う: 苦手が0問でも「全部」で始められる", async t 
   await onlyUnit(t, TIER_UNIT);
   await setTiers(t, [1]);   // ★「苦手な問題」だけ
   await setOrdered(t);
-  await setReviewMix(t, 0, TIER_MAIN);
+  await setReviewUnit(t, TIER_MAIN);
   await setCount(t, "all");
   await t.page.waitForTimeout(200);
   const btn = await t.page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent }));
@@ -873,13 +877,12 @@ await test("補う: 苦手が0問でも「全部」で始められる", async t 
   t.ok("★苦手も0問、復習の候補も0問なら「問題がありません」で押せない",
     btn.disabled && btn.text.includes("問題がありません"), btn);
 
-  // ★もう片方の枝（4-6e）: 「最低◯問」を決めれば、そこまで復習で埋まる
-  await t.page.fill("#review-mix-input", "5");
-  await t.page.dispatchEvent("#review-mix-input", "change"); await t.page.waitForTimeout(300);
-  const btn2 = await t.page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent }));
-  t.ok("★「最低5問」にすれば、復習から 5問入って押せる",
-    !btn2.disabled && btn2.text.includes("5問"), btn2);
-  t.is("★その5問が実際に出る", (await startAndPick(t)).length, 5);
+  // ⚠★ 2026-09-26（午後）: ここにあった「もう片方の枝」は消しました。
+  //   「最低5問にすれば復習から埋まる」を見ていましたが、
+  //   ★**「最低出題数」が概念ごと廃止になった**ため（ユーザー「複雑なのでやめて欲しい」）。
+  //   ★期待値を緩めたのではなく、**その枝自体が無くなりました**。
+  // ★「足りない分が復習から埋まる」側は、上の
+  //   「補う: トグルの問題が足りないとき、★復習ミックスから補う」で見ています（4-6e）。
 });
 
 await test("一覧: 押した行だけ描き直す／開いたあと全行そろう／途中の描き直しで混ざらない", async t => {
@@ -1053,27 +1056,32 @@ await test("トップ画面の並び順（仕様どおり）とパネル", async
   await t.page.evaluate(() => localStorage.clear());
   await t.reload();
   const order = await t.page.evaluate(() => {
-    const ids = ["resume-solo-btn", "resume-battle-btn", "retry-last-miss-btn", "pool-count-bar", "create-btn", "fair-mode-toggle",
-      "solo-start-btn", "review-mode-toggle", "go-join", "unit-choices", "mode-stage1", "setup-filter-open", "count-row",
-      "review-unit-choices", "review-filter-open", "review-mix-input", "battle-settings-open", "list-btn",
+    // ★★ 2026-09-26（午後）に並びが変わりました（ユーザー依頼）。
+    //   ・問題数を選ぶところ（count-row）が、**pool-count-bar の中**に移った
+    //     （「現在の選択で出題される問題数：30問　ここで問題数を選べるように」）
+    //   ・「最低出題数」（review-mix-input）は**概念ごと廃止**された
+    const ids = ["resume-solo-btn", "resume-battle-btn", "retry-last-miss-btn", "pool-count-bar", "count-row", "create-btn", "fair-mode-toggle",
+      "solo-start-btn", "review-mode-toggle", "go-join", "unit-choices", "mode-stage1", "setup-filter-open",
+      "review-unit-choices", "review-filter-open", "battle-settings-open", "list-btn",
       "export-link", "import-link", "export-edits-link", "calc-setup-btn"];
     const els = ids.map(i => document.getElementById(i));
     const bad = [];
     for (let k = 1; k < els.length; k++) {
       if (!(els[k - 1].compareDocumentPosition(els[k]) & Node.DOCUMENT_POSITION_FOLLOWING)) bad.push(ids[k - 1] + " → " + ids[k]);
     }
-    // 区切りの線3本の位置: コードで参加の下／メインの下（問題数の下）／復習ミックスの下
+    // ★区切りの線は **2本**（2026-09-26 午後に 3本から減った）。
+    //   「問題数」の節と「最低出題数」の節が無くなったため。
+    //   位置: コードで参加の下 ／ 復習ミックスの下
     const hrs = [...document.querySelectorAll("#home-setup hr.home-divider")];
     const after = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     const g = id => document.getElementById(id);
-    const hrOk = hrs.length === 3 &&
+    const hrOk = hrs.length === 2 &&
       after(g("go-join"), hrs[0]) && after(hrs[0], g("unit-choices")) &&
-      after(g("count-row"), hrs[1]) && after(hrs[1], g("review-unit-choices")) &&
-      after(g("review-mix-input"), hrs[2]) && after(hrs[2], g("battle-settings-open"));
+      after(g("review-unit-choices"), hrs[1]) && after(hrs[1], g("battle-settings-open"));
     return { bad, hrs: hrs.length, hrOk };
   });
   t.is("★トップ画面の要素が仕様の順に並ぶ", order.bad, []);
-  t.ok("★区切りの線は3本（コードで参加の下／メインの下／復習ミックスの下）", order.hrOk, order);
+  t.ok("★区切りの線は2本（コードで参加の下／復習ミックスの下）", order.hrOk, order);
 
   const panels = await t.page.evaluate(() => ({
     reviewClosed: document.getElementById("review-filter-panel").hidden,

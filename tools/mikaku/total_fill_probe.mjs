@@ -21,7 +21,7 @@
 //   A 未クリアが多い日（30問）… 合計20 → メインだけで20。復習は入らない
 //   B 未クリアが少ない日（12問）… 合計20 → メイン12＋復習8。★重複なし
 //   C 未クリアが0問の日        … 合計20 → ぜんぶ復習20
-//   D ★「全部」＋未クリア0問   … 最低15 → 15問。★選んだ単元の全問（121問）が出ないこと
+//   D ★「全部」＋未クリア0問   … ★埋めないので 0問。★選んだ単元の全問（121問）が出ないこと
 //   E ★復習の候補が0問        … 合計20・メイン12 → 12問で出し、★足りないと画面に出す
 //   F ★メインも復習も0問       … ★「問題がありません」でボタンが押せない
 //   G 並び（正解した日が古い順）が保たれているか
@@ -153,7 +153,7 @@ async function run(label, src) {
   const out = [];
   const check = (name, ok, extra) => { out.push({ name: name, ok: !!ok, extra: extra == null ? "" : String(extra) }); };
 
-  // opt: { unmastered:N, count, min, reviewOn:bool, mainAll:bool, stars:[] }
+  // opt: { unmastered:N, count, reviewOn:bool, mainAll:bool, stars:[] }
   const open = async (opt) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page = await ctx.newPage();
@@ -198,7 +198,6 @@ async function run(label, src) {
         // ★ reviewAllUnits を立てないと、復習単元の一度だけの移行が走って
         //   ★**「復習の候補が0問の日」を作れなくなる**（E・F の場面が消える）
         reviewAllUnits: 1,
-        minTotalCount: a.min,
         // ★復習の対象単元。reviewUnitsKnown に全単元を入れて「知らない単元が自動でON」を止める
         reviewSelectedUnits: a.reviewOn ? a.review : [],
         reviewUnitsKnown: a.allUnits,
@@ -237,7 +236,7 @@ async function run(label, src) {
   try {
     // ============ A 未クリアが多い日（30問）／合計20 ============
     {
-      const t = await open({ unmastered: 30, count: 20, min: 0 });
+      const t = await open({ unmastered: 30, count: 20 });
       const lab = await labelOf(t.page);
       const ids = await playAll(t.page, 40);
       const us = await unitOf(t.page, ids);
@@ -249,7 +248,7 @@ async function run(label, src) {
     }
     // ============ B 未クリアが少ない日（12問）／合計20 → 12＋復習8 ============
     {
-      const t = await open({ unmastered: 12, count: 20, min: 0 });
+      const t = await open({ unmastered: 12, count: 20 });
       const lab = await labelOf(t.page);
       const ids = await playAll(t.page, 40);
       const us = await unitOf(t.page, ids);
@@ -273,7 +272,7 @@ async function run(label, src) {
     }
     // ============ C 未クリアが0問の日／合計20 → ぜんぶ復習 ============
     {
-      const t = await open({ unmastered: 0, count: 20, min: 0 });
+      const t = await open({ unmastered: 0, count: 20 });
       const lab = await labelOf(t.page);
       const ids = await playAll(t.page, 40);
       const us = await unitOf(t.page, ids);
@@ -283,33 +282,37 @@ async function run(label, src) {
       check("C ★予告の数と実際に出た数が同じ（失敗9）", previewN(lab) === ids.length, "予告 " + previewN(lab) + " / 実際 " + ids.length);
       await t.ctx.close();
     }
-    // ============ D ★「全部」＋未クリア0問／最低15 ============
+    // ============ D ★「全部」＋未クリア0問 ============
+    // ★★ 2026-09-26（午後）: 「最低出題数」を概念ごと廃止したので、
+    //   「全部」は**埋めません**。メインが0問なら 0問です。
+    //   ★この節が見たいのはもともと「**選んだ単元の全問（121問）が一気に出ない**」こと（失敗3）。
+    //   0問になることで、それはやはり示せます。★期待値を緩めたのではなく、
+    //   止まり方が「15問で止まる」から「0問で止まる」に変わっただけです（4-1b）。
+    //   （「問題がありません」でよいのは 2026-09-26 にユーザーが判断ずみ）
     {
-      const t = await open({ unmastered: 0, count: "all", min: 15 });
+      const t = await open({ unmastered: 0, count: "all" });
       const lab = await labelOf(t.page);
-      const ids = await playAll(t.page, 200);
-      const us = await unitOf(t.page, ids);
+      const btn = await t.page.$eval("#solo-start-btn", e => ({ disabled: e.disabled, text: e.textContent.trim() }));
       await shot(t.page, "D_result");
-      check("★★D 「全部」＋未クリア0問 → 最低15問だけ出る（選んだ単元の全問が出ない・失敗3）",
-        ids.length === 15, ids.length + "問（メインの単元は " + U.mainIds.length + "問ある）/ 予告 " + lab);
-      check("★D 15問ぜんぶ復習の単元から来ている",
-        us.length > 0 && us.every(u => U.review.indexOf(u) >= 0), Array.from(new Set(us)).join(" , "));
-      check("D ★予告の数と実際に出た数が同じ（失敗9）", previewN(lab) === ids.length, "予告 " + previewN(lab) + " / 実際 " + ids.length);
+      check("★★D 「全部」＋未クリア0問 → ★選んだ単元の全問（" + U.mainIds.length + "問）が出ない（失敗3）",
+        previewN(lab) === 0, "予告 " + lab);
+      check("★D 埋めないので 0問。ボタンは「問題がありません」",
+        btn.disabled && btn.text === "問題がありません", JSON.stringify(btn));
       await t.ctx.close();
     }
-    // ============ D2 「全部」＋未クリアが最低より多い日 → メイン全部が出る ============
+    // ============ D2 「全部」＋未クリアがある日 → メイン全部が出る ============
     {
-      const t = await open({ unmastered: 30, count: "all", min: 15 });
+      const t = await open({ unmastered: 30, count: "all" });
       const lab = await labelOf(t.page);
       const ids = await playAll(t.page, 60);
       const us = await unitOf(t.page, ids);
-      check("D2 「全部」＋未クリア30問・最低15 → メインの30問が全部出る（最低で切らない）",
+      check("D2 「全部」＋未クリア30問 → メインの30問が全部出る（切らない）",
         ids.length === 30 && us.every(u => u === U.main), ids.length + "問 / 予告 " + lab);
       await t.ctx.close();
     }
     // ============ E ★復習の候補が0問（単元を全部メインに選んでいる日）============
     {
-      const t = await open({ unmastered: 12, count: 20, min: 0, mainAll: true, reviewOn: false });
+      const t = await open({ unmastered: 12, count: 20, mainAll: true, reviewOn: false });
       const lab = await labelOf(t.page);
       const short = await t.page.$eval("#pool-count-bar", e => e.classList.contains("short"));
       const ids = await playAll(t.page, 40);
@@ -328,7 +331,7 @@ async function run(label, src) {
     }
     // ============ F ★メインも復習も0問 → 「問題がありません」 ============
     {
-      const t = await open({ unmastered: 0, count: 20, min: 0, mainAll: true, reviewOn: false });
+      const t = await open({ unmastered: 0, count: 20, mainAll: true, reviewOn: false });
       const lab = await labelOf(t.page);
       const can = await startable(t.page);
       const soloTxt = await t.page.$eval("#solo-start-btn", e => e.textContent.trim());
@@ -344,10 +347,10 @@ async function run(label, src) {
     // ============ H ★最優先（★印）の扱いが変わっていないか（失敗6）============
     {
       // 未クリアの中の「うしろのほう」に★を付ける → 未クリアを含むときは★がいちばん上に来るのが今の動き
-      const t0 = await open({ unmastered: 12, count: 20, min: 0 });
+      const t0 = await open({ unmastered: 12, count: 20 });
       const starIds = t0.unmasteredIds.slice(-2);
       await t0.ctx.close();
-      const t = await open({ unmastered: 12, count: 20, min: 0, stars: starIds });
+      const t = await open({ unmastered: 12, count: 20, stars: starIds });
       const lab = await labelOf(t.page);
       const ids = await playAll(t.page, 40);
       check("★H 未クリアを含むとき、★最優先の2問がいちばん上に来る（失敗6）",
@@ -359,15 +362,25 @@ async function run(label, src) {
     }
     // ============ I ★画面の文言（失敗10・4-3c: 古い説明が残っていないか）============
     {
-      const t = await open({ unmastered: 12, count: 20, min: 0 });
+      const t = await open({ unmastered: 12, count: 20 });
       // ★ソースの grep ではなく、画面に出ている文字（textContent）で見る（4-3c）
       const shown = await t.page.evaluate(() => document.getElementById("screen-home").innerText);
       check("★I 古い見出し「復習ミックスの問題数」が画面に残っていない（失敗10）",
         shown.indexOf("復習ミックスの問題数") < 0, shown.indexOf("復習ミックスの問題数") >= 0 ? "残っています" : "");
       check("★I 「追加」という古い言い方が復習ミックスの見出しに残っていない",
         shown.indexOf("苦手な問題を優先して追加") < 0, "");
-      check("★I 問題数が「合計」だと画面に書いてある", shown.indexOf("「合計」") >= 0, "");
-      check("★I 「全部」のときの最低出題数だと画面に書いてある", shown.indexOf("最低出題数") >= 0, "");
+      // ★★ 2026-09-26（午後）に、この2つの文言がなくなりました。
+      //   旧: 「問題数（★ここの数字は「合計」です）」という見出しがあった
+      //   新: ★**問題数を選ぶところが、「出題される問題数：◯問」の行の中に入った**ので、
+      //     「選んだ数が、出る数」であることが**位置で分かる**（ユーザー依頼）。
+      //   ★言葉で書いてあるかではなく、**その位置にあるか**を見る形に変えます。
+      //   ★期待値を緩めたのではなく、伝え方が「文言」から「位置」に変わったということです（4-1b）。
+      const pickerInBar = await t.page.evaluate(() => !!document.querySelector("#pool-count-bar #count-row"));
+      check("★I 問題数を選ぶところが「出題される問題数」の行の中にある", pickerInBar, "");
+      check("★I 問題数を選ぶところは1か所だけ",
+        (await t.page.evaluate(() => document.querySelectorAll("#count-row").length)) === 1, "");
+      check("★I 廃止した「最低出題数」が画面に残っていない（失敷10）",
+        shown.indexOf("最低出題数") < 0, "");
       // ★★ 2026-09-26（追記3）: 復習の候補が**全単元**になった。
       //   ユーザー「全部を選んだときは復習も全部でいいです」
       //   ★旧い説明（「メインで選んでいない単元」だけ）は**嘘になったので、

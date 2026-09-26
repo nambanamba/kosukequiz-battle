@@ -170,21 +170,19 @@ console.log("■ 4. 画面（ユーザーに渡す手順の裏取り）");
   const { ctx, page, errs } = await open({ mainN: 20, reviewN: 10 });
   const texts = await page.evaluate(() => ({
     sectionTitles: Array.from(document.querySelectorAll(".section-title")).map(e => e.textContent.trim()).slice(0, 14),
-    mixValue: document.querySelector("#review-mix-input").value,
     reviewUnits: Array.from(document.querySelectorAll("#review-unit-choices .choice"))
       .filter(e => e.classList.contains("selected")).map(e => e.dataset.unit)
   }));
-  // ★★2026-09-26: この欄は「復習ミックスの問題数」ではなくなりました。
-  //   今は「問題数を全部にしたときの、最低出題数」です。
-  //   ★数字を選んでいるときは使わないので、0 のままで正しい。
-  //   ★古い見出しが残っていないことを代わりに見ます（確認ポイント 4-3c）
+  // ★★ 2026-09-26（午後）: この欄は**概念ごと廃止**になりました。
+  //   ユーザー「なんか複雑なのでやめて欲しいです」。
+  //   ⚠★同じ日のうちに「復習ミックスの問題数」→「最低出題数」→「無い」と 2回変わっています。
+  //   ★どちらの古い見出しも残っていないことを見ます（確認ポイント 4-3c）
   check("★古い見出し「復習ミックスの問題数」が画面に残っていない",
     texts.sectionTitles.every(t => t !== "復習ミックスの問題数"), texts.sectionTitles.join(" | "));
-  check("★欄の見出しが「最低出題数」になっている",
-    texts.sectionTitles.some(t => t.indexOf("最低出題数") >= 0), texts.sectionTitles.join(" | "));
+  check("★「最低出題数」も画面に残っていない（概念ごと廃止）",
+    texts.sectionTitles.every(t => t.indexOf("最低出題数") < 0), texts.sectionTitles.join(" | "));
   check("復習の単元として、昔の2単元が選ばれている", texts.reviewUnits.length === 2, texts.reviewUnits.join(" / "));
   console.log("    画面の見出し: " + texts.sectionTitles.join(" | "));
-  await (await page.$("#review-mix-input")).scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(ROOT, "tools/mikaku/shots/review_mix.png") });
   check("エラー 0", errs.length === 0, errs.join(" | "));
   await ctx.close();

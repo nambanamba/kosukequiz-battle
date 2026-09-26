@@ -150,7 +150,7 @@ console.log("■ ② 問題数が「合計」になり、足りない分が復�
         count: 20, shuffle: false,
         // ★ 2026-09-26: 出題モードが段の選択になった。新旧両方の鍵を仕込む
         filterUnmastered: true, filterWeak: false, tiers: [0], reviewAllUnits: 1,
-        minTotalCount: 0, reviewSelectedUnits: a.reviewUnits, reviewUnitsKnown: a.allUnits,
+        reviewSelectedUnits: a.reviewUnits, reviewUnitsKnown: a.allUnits,
         reviewPriority: "all", reviewLevel: "all", reviewType: "all",
         type: "all", priority: "all", level: "all"
       });

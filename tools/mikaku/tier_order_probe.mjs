@@ -146,8 +146,8 @@ const rh = await page.$('#review-unit-choices .unit-group-header[data-review-gro
 if (rh && !(await rh.evaluate(e => e.classList.contains("open")))) await rh.click();
 await page.waitForTimeout(250);
 await page.click(`#review-unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(200);
-// ★ review-mix-input は「問題数＝全部」のときの**最低出題数**に役割が変わった。
-//   ここは数字（999）を選んでいるので、この欄は使わない（2026-09-26）
+// ★ 「最低出題数」の欄は 2026-09-26 に廃止（ユーザー「複雑なのでやめて欲しい」）。
+//   合計は上で 999 を選んでいるので、ここでは何もしない
 await page.waitForTimeout(300);
 await page.click("#solo-start-btn"); await page.waitForTimeout(1500);
 await page.screenshot({ path: path.join(HERE, "tier_order_3_復習ミックス.png") });
