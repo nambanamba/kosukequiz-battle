@@ -37,6 +37,14 @@ _spec = importlib.util.spec_from_file_location("ir", os.path.join(HERE, "import_
 ir = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ir)
 
+# ★2026-09-27: 演習年表を「1行＝1問」に作り直したとき、空欄1つの行は元のid、
+#   まとめた行は新しいidを単元の末尾に足したため、data.js の並びがばらばらになった
+#   （司令塔からの指摘）。それが再び起きないよう、取り込んだ回の演習年表だけを
+#   ここで紙面の順に並べ直す。他の回・他の問には一切触らない。
+_spec2 = importlib.util.spec_from_file_location("rt", os.path.join(HERE, "reorder_timeline.py"))
+rt = importlib.util.module_from_spec(_spec2)
+_spec2.loader.exec_module(rt)
+
 BATTLE = os.path.dirname(HERE)
 SRC = os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv")
 
@@ -198,6 +206,13 @@ def main():
     shutil.copyfile(ir.DATA_JS, ir.DATA_JS + ".bak")
     with io.open(ir.DATA_JS, "wb") as f:
         f.write(result.encode("utf-8"))
+
+    # ★演習年表を、いま取り込んだ回だけ紙面の順に並べ直す（他の回は触らない）
+    touched_kais = [kai for kai, _, _, _ in plan]
+    moved = rt.run(touched_kais, backup=False)
+    if moved:
+        print("  演習年表の並び直し: " + " / ".join(
+            "第%d回 %d問" % (kai, moved[kai]) for kai in sorted(moved)))
 
     _, text2 = ir.read_data_js()
     _, parts2, _ = ir.rows_of(text2)
