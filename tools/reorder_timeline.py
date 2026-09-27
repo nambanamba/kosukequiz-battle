@@ -30,8 +30,18 @@ import shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BATTLE = os.path.dirname(HERE)
+def _find_src():
+    # git worktree（kosukequiz-battle/_wt/xxx）から動かしても元データを見つけられるよう、上へたどる
+    d = BATTLE
+    while True:
+        cand = os.path.join(os.path.dirname(d), "5年下", "quiz_csv")
+        if os.path.isdir(cand):
+            return cand
+        if os.path.dirname(d) == d:
+            return os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv")
+        d = os.path.dirname(d)
 DATA_JS = os.path.join(BATTLE, "data.js")
-SRC = os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv")
+SRC = _find_src()
 
 FILES = {
     1: "第1回_旧石器縄文弥生.json",
