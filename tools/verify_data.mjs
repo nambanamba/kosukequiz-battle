@@ -14,7 +14,18 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SRC  = path.resolve(ROOT, "..", "5年下", "quiz_csv_夏期講習");
+// git worktree（kosukequiz-battle/_wt/xxx）から動かしても元データを見つけられるよう、上へたどる
+function findSrc() {
+  let d = ROOT;
+  while (true) {
+    const cand = path.join(path.dirname(d), "5年下", "quiz_csv_夏期講習");
+    if (fs.existsSync(cand)) return cand;
+    const up = path.dirname(d);
+    if (up === d) return path.resolve(ROOT, "..", "5年下", "quiz_csv_夏期講習");
+    d = up;
+  }
+}
+const SRC  = findSrc();
 const FILES = {
   1: "復習編1_日本の食料生産_v2.json", 2: "復習編2_工業資源輸送機関.json",
   3: "復習編3_九州地方.json",          4: "復習編4_中国四国地方.json",
