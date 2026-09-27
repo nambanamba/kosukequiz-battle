@@ -4705,6 +4705,48 @@ function starsFirst(pool){
   return star.length ? star.concat(rest) : pool;
 }
 // ============================================================
+// ★ランダム順でも「最近まちがえた問題」を必ず入れる（2026-09-27）
+// ============================================================
+// 依頼書: 司令塔\回答\対戦_ランダムでも前日まちがえたものを出す_依頼_2026-09-27.md
+// ユーザーの原文:「テスト前なので、ランダムにしたいんですが、前の日に間違えたのはやりたいです」
+//
+// ■ 「最近まちがえた」＝ 次の2つを両方みたす問題（親に説明するときの言い方）
+//   ・最後に答えたとき、まちがえた（連続正解数 box が 0 で、誤答が1回以上ある）
+//   ・最後に答えた日が、今日・昨日・おととい のどれか（RECENT_MISS_DAYS 日。日付の区切りは0時）
+//   ★「昨日だけ」にしないのは、1日あけて勉強した日に前回のまちがいが消えないようにするため
+//   ★正解すると box が1になるので、その問題はすぐ外れる（同じ問題ばかりにならない）
+//
+// ■ 入れ方（★ランダム順を選んでいるときだけ。「出題順どおり」は1問も変えない）
+//   問題数に数字を選んでいれば、その半分（切り上げ）までを最近まちがえた問題に使い、残りをいつもどおり選ぶ
+//   ★半分で止めるのは、効きすぎて毎回まちがえた問題だけにならないため（依頼書の失敗3）
+//   選んだあとで全体を混ぜる。★最優先（★）が頭に来る出し方なら、★はいつもどおり頭に置く
+//   「全部」のときは全部出るので、並びを混ぜるだけ
+const RECENT_MISS_DAYS = 3;
+function isRecentMiss(i){
+  const s = stats[QA_DATA[i].id];
+  if(!s || !((s.wrong||0) > 0) || (s.box||0) !== 0 || !s.lastAnswered) return false;
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - (RECENT_MISS_DAYS - 1));
+  return s.lastAnswered >= d.getTime();
+}
+// ordered … 「どれを選ぶか」の優先順に並んだ候補。starHead … ★を必ず入れて頭に置くか
+function pickRandomWithRecentMisses(ordered, starHead){
+  const head = starHead ? ordered.filter(i => isPriority(QA_DATA[i].id)) : [];
+  const used = new Set(head);
+  let picked;
+  if(questionCount === "all"){
+    picked = ordered.slice();
+  }else{
+    const cap = Math.ceil(questionCount / 2);
+    const miss = ordered.filter(i => !used.has(i) && isRecentMiss(i)).slice(0, cap);
+    miss.forEach(i => used.add(i));
+    const rest = ordered.filter(i => !used.has(i));
+    picked = head.concat(miss, rest).slice(0, questionCount);
+  }
+  picked = shuffleArray(picked);
+  return starHead ? starsFirst(picked) : picked;
+}
+// ============================================================
 // ★★出題の組み立ては、ここ1か所だけ（2026-09-26）
 // ============================================================
 // 依頼書: 司令塔\回答\対戦_合計を決めて足りない分を復習で埋める_依頼_2026-09-26.md
@@ -4737,8 +4779,17 @@ function buildPlan(){
   // ★「段を絞っているか」。3つとも選んでいれば「ふだんの出題」（旧の「両方OFF」と同じ意味）
   const narrowing = selectedTiers.size < 3;
   let main = buildPool();
-  if(narrowing){
-    // ★上の orderByTiers（3段）で並べる。ランダムにはしない（ユーザー指定）。
+  // ★段を絞っていてもいなくても、ランダム順を選んでいれば、最近まちがえた問題を必ず入れて混ぜる（2026-09-27）。
+  //   どれを選ぶかの優先順は、絞っているときは3段の順（★同点の決め手つき）、ふだんはランダム。
+  //   ★は、ふだん・「まだ正解していない」を選んでいるときだけ頭に置く（いままでと同じ）。
+  //   ★「出題順どおり」のときは下の else 以降を通り、2026-09-26 に確認した3段の並びのまま
+  const random = currentShuffle;
+  if(random){
+    const ordered = narrowing ? orderByTiers(main, true) : shuffleArray(main);
+    main = pickRandomWithRecentMisses(ordered, !narrowing || selectedTiers.has(0));
+  }else if(narrowing){
+    // ★「出題順どおり」のときは、上の orderByTiers（3段）で並べる。ランダムにはしない（ユーザー指定）。
+    //   ★2026-09-27 から、段を絞っていてもランダム順を選べます（上の if(random)）。この枝は「出題順どおり」だけ
     //
     // ★ 2026-09-26 から、絞りこみも並びも**同じ tierOf の3段**です。
     //   選んだ段だけが残り、その中を orderByTiers が並べます。
@@ -4777,15 +4828,18 @@ function buildPlan(){
   //   混ぜると3段の並び（正解した日が古い順）が消えてしまい、依頼書の失敗7になります。
   //   ★2026-09-26 に変えたところです。廃止前の reviewMixCount の道は、
   //     トグルONでもシャッフルしていました（3段の並びが壊れていました）。
-  if(!narrowing && review.length > 0 && currentShuffle){
+  //   ★2026-09-27: ランダム順を選んでいるときは、段を絞っていても混ぜる（「出題順どおり」なら混ぜない）
+  if(review.length > 0 && random){
     pool = shuffleArray(pool);
-    // ★混ぜたあとも、ふだんの出題なら★を前に戻す（混ぜると先頭から外れるため）
-    pool = starsFirst(pool);
+    // ★混ぜたあとも、★が頭に来る出し方なら★を前に戻す（混ぜると先頭から外れるため）
+    if(!narrowing || selectedTiers.has(0)) pool = starsFirst(pool);
   }
   return {
     pool: pool,
     mainCount: main.length,
     reviewCount: review.length,
+    // ★ランダム順のとき、最近まちがえた問題（isRecentMiss）が何問入っているか。ホームに出して、なぜ出るかを見せる
+    recentMissCount: random ? pool.filter(isRecentMiss).length : 0,
     target: target,
     // ★あと何問足りないか。0 なら足りている。★「足りない」を黙って隠さないための数（失敗4）
     shortfall: Math.max(0, target - pool.length)
@@ -4947,6 +5001,8 @@ function refreshCreateButton(){
   const n = plan.pool.length;
   let label = n+"問";
   if(plan.reviewCount > 0) label += "（復習"+plan.reviewCount+"問こみ）";
+  // ★2026-09-27: ランダム順で、3日以内に最後の答えがまちがいだった問題を必ず入れている数
+  if(plan.recentMissCount > 0) label += "（最近まちがえた"+plan.recentMissCount+"問こみ）";
   // ★最優先が先に出るときは、その数も1行に添える（★が頭に来る出し方＝ふだん・未クリアを含む のとき）
   // ★「先に出ます」と言えるのは、★が頭に来る出し方のときだけ（ふだん・未クリアを含む）。
   //   よく間違える だけのときは★は同点の決め手なので、数は出さない（言いすぎになる）
@@ -5104,12 +5160,14 @@ els["shuffle-toggle"].addEventListener("click", ()=>{
   currentShuffle = true;
   els["shuffle-toggle"].classList.add("on");
   els["order-toggle"].classList.remove("on");
+  refreshCreateButton();   // ★「最近まちがえた◯問こみ」はランダム順のときだけ出るため
   saveSettings();
 });
 els["order-toggle"].addEventListener("click", ()=>{
   currentShuffle = false;
   els["order-toggle"].classList.add("on");
   els["shuffle-toggle"].classList.remove("on");
+  refreshCreateButton();   // ★「最近まちがえた◯問こみ」はランダム順のときだけ出るため
   saveSettings();
 });
 document.querySelectorAll(".mode-filter").forEach(el=>{

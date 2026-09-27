@@ -478,6 +478,9 @@ await test("未クリア優先（両方ONのとき未クリアが先）", async 
     Array.from(document.querySelectorAll(".mode-filter")).map(e => e.classList.contains("on"))), [true, true, false]);
   // 10問にする
   await t.page.evaluate(() => {
+    // ★2026-09-27 から、段を絞ってもランダム順が効く（ユーザー判断・案A）。
+    //   3段の並びを確かめるので「出題順どおり」にする（折りたたみの中なので要素を直接押す）
+    document.getElementById("order-toggle").click();
     const c = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
     if (c && !c.classList.contains("on")) c.click();
   });
@@ -526,6 +529,8 @@ await test("よく間違える: 最後に正解した日が古い順／まちが
     document.querySelectorAll(".mode-filter").forEach(e => {
       if (e.classList.contains("on") !== (e.dataset.tier === "1")) e.click();
     });
+    // ★2026-09-27 から、段を絞ってもランダム順が効く（ユーザー判断・案A）。3段の並びを見るので「出題順どおり」に
+    document.getElementById("order-toggle").click();
     const c = [...document.querySelectorAll(".count-choice")].find(e => e.dataset.count === "10");
     if (c && !c.classList.contains("on")) c.click();
   });
