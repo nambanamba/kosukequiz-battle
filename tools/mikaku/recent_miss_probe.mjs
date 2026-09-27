@@ -12,9 +12,10 @@
 // 入口の自己テスト（★鳴るのが正しい）
 //   (a) まちがえた問題を入れない偽の実装 ／ (b) 段で絞るとランダムが消える偽の実装 ／
 //   (c) 出題順どおりでも混ぜてしまう偽の実装（3段が壊れる）／ (e) 半分で止めない偽の実装 ／
-//   (d) 対照 = git の HEAD（直す前）
+//   (d) 対照 = 52c3dbd（直す前）
 //   ★偽の実装は出荷される index.html から組み立てる（写しを持たない・4-6d）
 //
+//   E 段を絞る（1段目を含む）＋ランダム＋★ … ★はいままでどおり頭に来る（2026-09-22 の決まり）
 // 使い方: node tools/mikaku/recent_miss_probe.mjs
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url"; import { execSync } from "node:child_process";
@@ -26,7 +27,9 @@ const gRoot = execSync("npm root -g", { encoding: "utf8" }).trim();
 const { chromium } = await import(pathToFileURL(path.join(gRoot, "playwright", "index.mjs")).href);
 
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-const BASELINE = execSync("git show HEAD:index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 });
+// ★対照は「直す前」のコミットに固定する。HEAD にすると、この変更をコミットした時点で対照が直したあとの版になり、鳴らなくなる（実際に踏んだ）
+const BASE_COMMIT = "52c3dbd";
+const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 });
 
 const cut = (src, needle, replacement, what) => {
   const n = src.split(needle).length - 1;
@@ -93,6 +96,7 @@ async function open(sc) {
       reviewAllUnits: 1, reviewSelectedUnits: [], reviewUnitsKnown: a.units,
       reviewPriority: "all", reviewLevel: "all", reviewType: "all", type: "all", priority: "all", level: "all"
     }));
+    if (a.stars) localStorage.setItem("kq_battle_priority_v1", JSON.stringify(a.stars));
   }, Object.assign({ all: U.all, u: U.u, units: U.units }, sc));
   await page.reload(); await page.waitForTimeout(800);
   return { ctx, page, errs };
@@ -175,6 +179,14 @@ async function run(tag, src, RUNS) {
       check("D 出題順どおりでは「最近まちがえた」を出さない", !/最近まちがえた/.test(r.lab), r.lab);
       check("D 予告の数＝実際に出た数", r.previewOk, r.lab);
     }
+    // ---- E 段を絞る（1段目を含む）＋ランダム＋★ … ★はいままでどおり頭（2026-09-22 の決まり）----
+    {
+      const recent = ids.slice(-5), fresh = ids.slice(0, 20), stars = [ids[12], ids[15]];
+      const r = await collect({ recent, old: [], fresh, stars, count: 10, shuffle: true, tiers: [0, 1] }, Math.min(RUNS, 5));
+      check("E ★1段目を選んでいれば、ランダムでも★2問が頭に来る", r.seqs.every(s => stars.every(id => s.slice(0, 2).includes(id))),
+            r.seqs.map(s => s.slice(0, 2).join("+")).join(" , "));
+      check("E ★があっても、昨日まちがえた5問は入る", r.seqs.every(s => recent.every(id => s.includes(id))));
+    }
   } catch (e) { check("例外なく走りきる", false, e.message); }
   return out;
 }
@@ -194,7 +206,7 @@ const selfTests = [
   ["(b) 偽の実装: 段で絞るとランダムが消える", () => fakeNarrowNoRandom(C)],
   ["(c) 偽の実装: 出題順どおりでも混ぜる（3段が壊れる）", () => fakeAlwaysRandom(C)],
   ["(e) 偽の実装: 半分で止めない（効きすぎ）", () => fakeNoCap(C)],
-  ["(d) 対照 HEAD（直す前）", () => BASELINE]
+  ["(d) 対照 " + BASE_COMMIT + "（直す前）", () => BASELINE]
 ];
 let selfNg = 0;
 for (let i = 0; i < selfTests.length; i++) {
