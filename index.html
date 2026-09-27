@@ -2001,10 +2001,13 @@
         <div class="mark-layer" id="solo-marks"></div>
       </div>
       <div id="solo-view">
+        <div id="solo-daimon" style="display:none;"></div>
         <div class="q-text" id="solo-q"></div>
+        <div id="solo-daimon-fig"></div>
         <div class="a-block" id="solo-a-block">
           <div class="a-label">こたえ</div>
           <div class="a-text" id="solo-a"></div>
+          <div id="solo-daimon-afig"></div>
           <div class="sol-block" id="solo-sol-block" style="display:none;">
             <div class="sol-label">解説</div>
             <div class="sol-text" id="solo-sol"></div>
@@ -2295,6 +2298,15 @@ function shuffleKeepingDaimon(ids){
     else blocks.push({ g: dm ? dm.g : null, ids: [id] });
   });
   return shuffleArray(blocks).reduce((a, b) => a.concat(b.ids), []);
+}
+// 「まちがえた問題だけもう一度／前回まちがえた問題」で使う共通の開き直し。
+// ★小問を1つでもまちがえた大問は、大問ごともう一度（対戦・ひとりで共通の規則）。
+//   すでに答えて○になっている小問は answerItemIds が除くので、そのまま答えつきで出る
+function expandMissIdsKeepingDaimon(ids){
+  const keys = Array.from(new Set(ids.map(id => { const dm = DAIMON_ITEM.get(id); return dm ? dm.g.key : id; })));
+  let out = expandDaimonIds(keys);
+  if(currentShuffle) out = shuffleKeepingDaimon(out);
+  return out;
 }
 // ============================================================
 // ★★大問の数え方（2026-09-27 ユーザー「問題数は6問でいいと思います。もちろん正解済みはかぞえません」）
@@ -3002,6 +3014,7 @@ const els = {};
  "daimon-reveal-btn","daimon-judge-row","daimon-judge-ng","daimon-judge-ok","daimon-finish","daimon-finish-score","daimon-finish-btn",
  "daimon-lead-btn","daimon-lead-overlay","daimon-lead-overlay-body","daimon-lead-close",
  "battle-daimon","battle-daimon-fig","battle-daimon-afig",
+ "solo-daimon","solo-daimon-fig","solo-daimon-afig",
  "unit-choices","mode-stage1","mode-stage2","mode-stage3",
  "solo-marks","battle-marks","lightbox-marks",
  "type-all","type-image","type-text",
@@ -4103,7 +4116,8 @@ function saveLastMiss(ids){
   }
 }
 function refreshLastMissButton(){
-  const validIds = lastMissIds.filter(id => QA_DATA.some(d => d.id === id));
+  // ★大問の小問の id も「有効」にする（isKnownId）。QA_DATA だけを見ると小問の id が消えてしまう
+  const validIds = lastMissIds.filter(id => isKnownId(id));
   if(validIds.length !== lastMissIds.length) saveLastMiss(validIds);
   if(validIds.length > 0){
     els["retry-last-miss-btn"].style.display = "block";
@@ -4121,16 +4135,15 @@ function refreshLastMissButton(){
 const SOLO_SESSION_KEY = "kq_battle_solo_session_v1";
 const SOLO_SESSION_VERSION = 2; // 1 = 添字で保存していたころ。読まずに捨てる
 function saveSoloSession(){
-  const ids = quizQueue.map(i => QA_DATA[i] && QA_DATA[i].id);
-  if(ids.some(id => !id)) return; // 念のため。保存時の添字は必ず有効なのでここには来ない
+  // ★quizQueue はいまは id そのもの（大問の小問も id を持つ。QA_DATA の添字ではない。2026-09-28）
+  const ids = quizQueue.slice();
+  if(ids.some(id => !id)) return; // 念のため。保存時の id は必ず有効なのでここには来ない
   try{
     window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify({
       v: SOLO_SESSION_VERSION,
       quizIds: ids,
       quizPos: quizPos,
-      quizResults: quizResults.map(r => ({
-        id: QA_DATA[r.idx] && QA_DATA[r.idx].id, correct: r.correct, recorded: r.recorded
-      })),
+      quizResults: quizResults.map(r => ({ id: r.id, correct: r.correct, recorded: r.recorded })),
       reviewMode: reviewMode,
       inSoloRetryRound: inSoloRetryRound
     }));
@@ -4142,24 +4155,30 @@ function loadSoloSession(){
     return raw ? JSON.parse(raw) : null;
   }catch(e){ return null; }
 }
-// ---- 保存されている id から、いまの QA_DATA での添字を引き直す。
-//      添字で保存していた古い形式は、正しく復元できると保証できないので捨てる
-//      （1回ぶんやり直しになるが、別の問題が出て成績が別の問題に紐づくよりよい） ----
+// ---- 保存されている id から復元する。データから消えた問題（isKnownId で判定。
+//      一問一答も大問の小問もこれで見る）は取りのぞく ----
+// ★大問の途中でやめたときは、その大問の(1)からやり直しにする（2026-09-28 承認ずみの案・4節⑤）。
+//   先に答えた小問は2回記録されることがあるが、まれなので単純なほうを取る
 function restoreSoloSession(session){
   if(!session || session.v !== SOLO_SESSION_VERSION || !Array.isArray(session.quizIds)) return null;
-  const byId = new Map(QA_DATA.map((d,i)=>[d.id, i]));
   const savedPos = session.quizPos || 0;
   const queue = [];
   let pos = 0;
   session.quizIds.forEach((id, i)=>{
-    if(!byId.has(id)) return; // データから消えた問題は取りのぞく
-    queue.push(byId.get(id));
+    if(!isKnownId(id)) return; // データから消えた問題は取りのぞく
+    queue.push(id);
     if(i < savedPos) pos++;   // 消えたぶん、済んだ問題数も数え直す
   });
   if(queue.length === 0) return null;
+  // ★次に出す問題が大問の途中（(1)以外）なら、その大問の頭まで戻す
+  while(pos > 0){
+    const cur = DAIMON_ITEM.get(queue[pos]);
+    const prev = DAIMON_ITEM.get(queue[pos - 1]);
+    if(cur && prev && cur.g === prev.g) pos--; else break;
+  }
   const results = (session.quizResults || []).map(r=>{
-    if(!r || !byId.has(r.id)) return null;
-    return {idx: byId.get(r.id), correct: r.correct, recorded: r.recorded};
+    if(!r || !isKnownId(r.id)) return null;
+    return {id: r.id, correct: r.correct, recorded: r.recorded};
   }).filter(r => r);
   return {
     quizQueue: queue,
@@ -5267,12 +5286,10 @@ function refreshCreateButton(){
     + note;
   els["pool-count-bar"].classList.toggle("short", plan.shortfall > 0);
   const disabled = n === 0;
-  // ★ひとりで解くときは、大問をまだ混ぜない（2026-09-27。入り口を一問一答と同じにするのは あとの作業 B）。
-  //   それまで大問は「テスト形式（大問）で解く」から。★数は隠さず、のぞいたことを書く
-  const soloN = plan.pool.filter(i => !isDaimonEntry(QA_DATA[i])).length;
-  els["solo-start-btn"].disabled = soloN === 0;
-  els["solo-start-btn"].textContent = soloN === 0 ? "問題がありません"
-    : soloN === n ? "一人で始める（"+label+"）" : "一人で始める（"+soloN+"問・大問"+(n - soloN)+"問はのぞく）";
+  // ★ひとりで解くときも、二人と同じように大問が混ざる（2026-09-28・作業B）。
+  //   数え方は weightOf で共通（大問＝答える小問の数）なので、二人の「n」とひとりの数はそろう
+  els["solo-start-btn"].disabled = disabled;
+  els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
   els["create-btn"].disabled = disabled;
   els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+label+"）";
 }
@@ -5906,7 +5923,8 @@ els["selection-clear"].addEventListener("click", ()=>{
 els["selection-solo-btn"].addEventListener("click", ()=>{
   const ids = selectedIdsInOrder();
   if(ids.length === 0) return;
-  quizQueue = ids.map(id => QA_DATA.findIndex(d => d.id === id)).filter(i => i !== -1);
+  // ★一覧で大問の行を選んだときも、小問に開いてから出す（solo-start-btn と同じ規則）
+  quizQueue = expandDaimonIds(ids);
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = false;
@@ -6370,7 +6388,10 @@ function mergeOldDaimonStats(){
 }
 function daimonTierOf(id){ return tierOfStat(stats[id]); }
 function refreshDaimonButton(){
-  els["daimon-open-btn"].style.display = (currentSubject === "理科" && DAIMON.length > 0) ? "" : "none";
+  // ★2026-09-28 ユーザー指示で入り口を1つにした：大問だけを解く専用のボタン・一覧画面は
+  //   ホームから外す（隠すだけ。中の画面・関数・記録は触らない。一人も二人も「ふつうの出題」に
+  //   大問が混ざるので、こちらから解く道は無くなる）
+  els["daimon-open-btn"].style.display = "none";
 }
 function daimonImg(name){
   const div = document.createElement("div");
@@ -6539,7 +6560,7 @@ refreshDaimonButton();
 // ---- solo quiz ----
 let quizQueue = [];
 let quizPos = 0;
-let quizResults = []; // { idx, correct（実際の正誤）, recorded（記録した正誤） }
+let quizResults = []; // { id, correct（実際の正誤）, recorded（記録した正誤） }。id は quizQueue と同じ形（大問の小問も id）
 // ---- 「まちがえた問題だけもう一度」「前回まちがえた問題だけやり直す」で
 //      出しなおしているラウンド中かどうか。このラウンド中に正解しても、
 //      永続的な正誤記録は「まちがえた」のままにする（元々まちがえた問題なので、
@@ -6547,10 +6568,11 @@ let quizResults = []; // { idx, correct（実際の正誤）, recorded（記録�
 let inSoloRetryRound = false;
 
 els["solo-start-btn"].addEventListener("click", ()=>{
-  // ★大問はまだ混ぜない（あとの作業 B で、ひとりで解く画面に入れる）
-  const pool = buildFinalPool().filter(i => !isDaimonEntry(QA_DATA[i]));
+  // ★ひとりで解くときも、二人と同じように大問が小問に開いて混ざる（2026-09-28）。
+  //   並べかえ（buildFinalPool の中）のあとに開くので、大問はばらけない
+  const pool = buildFinalPool();
   if(pool.length === 0) return;
-  quizQueue = pool;
+  quizQueue = expandDaimonIds(pool.map(i => QA_DATA[i].id));
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = false;
@@ -6559,8 +6581,8 @@ els["solo-start-btn"].addEventListener("click", ()=>{
 });
 
 function startSoloCard(){
-  const idx = quizQueue[quizPos];
-  const d = getQ(idx);
+  const id = quizQueue[quizPos];
+  const d = getQById(id);
   els["solo-retry-note"].style.display = (inSoloRetryRound && !reviewMode) ? "block" : "none";
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q-id"].textContent = "No."+d.id;
@@ -6571,6 +6593,9 @@ function startSoloCard(){
   els["solo-sol-block"].style.display = d.sol ? "block" : "none";
   els["solo-view"].style.display = "block";
   els["solo-edit-form"].style.display = "none";
+  renderDaimonBlock("solo", quizQueue, quizPos);
+  // 大問の小問は「文章を直す」を出さない（直す道は一問一答だけ。battle-edit-link と同じ扱い）
+  els["solo-edit-link"].style.display = isDaimonItemId(d.id) ? "none" : "";
   if(d.img){
     setImgWithSize(els["solo-img"], d.img, d.id, els["solo-marks"]);
     els["solo-img-wrap"].style.display = "block";
@@ -6579,6 +6604,7 @@ function startSoloCard(){
   }
   if(reviewMode){
     // review mode: show the answer right away, no reveal tap needed
+    revealDaimonAnswerFig("solo", quizQueue, quizPos);
     els["solo-a-block"].classList.add("show");
     els["solo-reveal-btn"].style.display = "none";
     els["solo-judge-row"].style.display = "none";
@@ -6595,18 +6621,23 @@ function startSoloCard(){
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
-  els["solo-undo-row"].style.display = (quizPos > 0) ? "block" : "none";
+  // ★「ひとつ前の判定をやり直す」は、直前が大問の小問だったときは出さない
+  //   （大問の中の判定を1つずつ戻す道は作らない。承認ずみの案の4節）。review モードは記録を動かさないので対象外
+  const prevWasDaimonItem = !reviewMode && quizPos > 0 && isDaimonItemId(quizQueue[quizPos - 1]);
+  els["solo-undo-row"].style.display = (quizPos > 0 && !prevWasDaimonItem) ? "block" : "none";
   saveSoloSession();
 }
 
 function refreshSoloCountRow(){
-  const qid = QA_DATA[quizQueue[quizPos]].id;
+  const qid = quizQueue[quizPos];
   const s = stats[qid] || {correct:0, wrong:0};
   els["solo-count-correct"].textContent = s.box||0;   // ★正解数＝連続正解数（2026-09-13）
   els["solo-count-wrong"].textContent = s.wrong||0;
 }
 
 els["solo-reveal-btn"].addEventListener("click", ()=>{
+  // ★大問の小問の答えの図は、ここで初めて作る（battle と同じ）
+  revealDaimonAnswerFig("solo", quizQueue, quizPos);
   els["solo-a-block"].classList.add("show");
   els["solo-reveal-btn"].style.display = "none";
   if(reviewMode){
@@ -6630,20 +6661,19 @@ els["solo-review-next-btn"].addEventListener("click", ()=>{
 
 document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
   btn.addEventListener("click", ()=>{
-    const qid = QA_DATA[quizQueue[quizPos]].id;
+    const qid = quizQueue[quizPos];
     adjustStat(qid, btn.dataset.field, parseInt(btn.dataset.delta, 10));
     refreshSoloCountRow();
   });
 });
 
 function judgeSolo(correct){
-  const idx = quizQueue[quizPos];
-  const qid = QA_DATA[idx].id;
+  const qid = quizQueue[quizPos];
   // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
   // 今回のミスリストから外すかどうかは、これまで通り実際の正誤で判定する
   const recorded = inSoloRetryRound ? false : correct;
   recordResult(qid, recorded);
-  quizResults.push({idx, correct, recorded});
+  quizResults.push({id: qid, correct, recorded});
   quizPos++;
   if(quizPos >= quizQueue.length){
     finishSoloQuiz();
@@ -6660,8 +6690,10 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     quizPos--;
   }else{
     if(quizResults.length === 0) return;
+    // ★直前が大問の小問なら、undo-row 自体を出していない（表示側で防いでいる）。ここは念のための保険
+    if(isDaimonItemId(quizQueue[quizPos - 1])) return;
     const last = quizResults.pop();
-    const qid = QA_DATA[last.idx].id;
+    const qid = last.id;
     // 実際の正誤ではなく「記録した側」を戻す（やり直しラウンドでは食いちがう）
     const recorded = last.recorded !== undefined ? last.recorded : last.correct;
     adjustStat(qid, recorded ? "correct" : "wrong", -1);
@@ -6683,7 +6715,7 @@ function finishSoloQuiz(){
   els["solo-result-score"].textContent = correctCount+" / "+quizResults.length;
 
   const misses = quizResults.filter(r=>!r.correct);
-  saveLastMiss(misses.map(m=>QA_DATA[m.idx].id));
+  saveLastMiss(misses.map(m=>m.id));
   els["solo-miss-list"].innerHTML = "";
   if(misses.length === 0){
     els["solo-miss-title"].style.display = "none";
@@ -6694,7 +6726,7 @@ function finishSoloQuiz(){
     els["solo-perfect-note"].style.display = "none";
     els["solo-retry-miss-btn"].style.display = "block";
     misses.forEach(m=>{
-      const d = getQ(m.idx);
+      const d = getQById(m.id);
       const div = document.createElement("div");
       div.className = "miss-item";
       div.innerHTML = '<div class="q">'+escapeHtml(d.q)+'</div><div class="a">'+escapeHtml(d.a)+'</div>';
@@ -6702,9 +6734,8 @@ function finishSoloQuiz(){
     });
   }
   els["solo-retry-miss-btn"].onclick = ()=>{
-    let pool = misses.map(m=>m.idx);
-    if(currentShuffle) pool = shuffleArray(pool);
-    quizQueue = pool;
+    // ★小問を1つでもまちがえた大問は、大問ごともう一度（対戦と同じ規則。expandMissIdsKeepingDaimon）
+    quizQueue = expandMissIdsKeepingDaimon(misses.map(m=>m.id));
     quizPos = 0;
     quizResults = [];
     inSoloRetryRound = true;
@@ -6720,10 +6751,10 @@ els["solo-result-home-btn"].addEventListener("click", ()=>{
 });
 
 els["retry-last-miss-btn"].addEventListener("click", ()=>{
-  let pool = lastMissIds.map(id => QA_DATA.findIndex(d => d.id === id)).filter(i => i !== -1);
-  if(pool.length === 0) return;
-  if(currentShuffle) pool = shuffleArray(pool);
-  quizQueue = pool;
+  // ★データから消えた問題を除いてから開き直す（isKnownId。大問の小問の id もここに含む）
+  const ids = expandMissIdsKeepingDaimon(lastMissIds.filter(id => isKnownId(id)));
+  if(ids.length === 0) return;
+  quizQueue = ids;
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = true;
@@ -7830,12 +7861,14 @@ function addDaimonAnswered(parent, it, pos){
   if(it.sol) add("sol-text", it.sol);
   parent.appendChild(wrap);
 }
-function renderBattleDaimon(idx){
-  const box = els["battle-daimon"];
+// ★対戦・ひとりで解く、共通の大問の描画。prefix は "battle" か "solo"、ids はその画面の並び。
+//   ★2つの画面に同じ条件を書かないよう、ここ1か所だけに大問の描き方を置く（2026-09-28）
+function renderDaimonBlock(prefix, ids, idx){
+  const box = els[prefix+"-daimon"];
   box.innerHTML = "";
-  els["battle-daimon-fig"].innerHTML = "";
-  els["battle-daimon-afig"].innerHTML = "";
-  const dm = DAIMON_ITEM.get(questionIds[idx]);
+  els[prefix+"-daimon-fig"].innerHTML = "";
+  els[prefix+"-daimon-afig"].innerHTML = "";
+  const dm = DAIMON_ITEM.get(ids[idx]);
   if(!dm){ box.style.display = "none"; return; }
   const g = dm.g;
   box.style.display = "";
@@ -7855,21 +7888,28 @@ function renderBattleDaimon(idx){
   g.items.slice(0, dm.pos).forEach((it, k) => addDaimonAnswered(box, it, k));
   const cur = add("battle-daimon-cur", "");
   add("daimon-item-label", dm.it.label || ("(" + (dm.pos + 1) + ")"), cur);
-  if(dm.it.file) els["battle-daimon-fig"].appendChild(daimonImg(dm.it.file));
+  if(dm.it.file) els[prefix+"-daimon-fig"].appendChild(daimonImg(dm.it.file));
 }
-function revealAnswer(){
-  // ★大問の小問の答えの図は、ここで初めて作る（押す前は画面に無い）
-  const dmR = DAIMON_ITEM.get(questionIds[currentIndex]);
-  if(dmR && !els["battle-daimon-afig"].firstChild){
-    if(dmR.it.aFile) els["battle-daimon-afig"].appendChild(daimonImg(dmR.it.aFile));
-    // ★この大問の最後の手なら、うしろに残っている前回○の小問を答えつきで出す（飛ばさない）
-    const nx = DAIMON_ITEM.get(questionIds[currentIndex + 1]);
+function renderBattleDaimon(idx){ renderDaimonBlock("battle", questionIds, idx); }
+// ★答えの図（aFile）は「こたえを見る」のときに初めて作る。大問の最後の手なら、うしろに
+//   残っている前回○の小問も答えつきで出す（飛ばさない）。対戦・ひとりで共通
+function revealDaimonAnswerFig(prefix, ids, idx){
+  const dmR = DAIMON_ITEM.get(ids[idx]);
+  const afig = els[prefix+"-daimon-afig"];
+  if(dmR && !afig.firstChild){
+    if(dmR.it.aFile) afig.appendChild(daimonImg(dmR.it.aFile));
+    const nx = DAIMON_ITEM.get(ids[idx + 1]);
     if(!nx || nx.g !== dmR.g){
       const tail = document.createElement("div");
       dmR.g.items.slice(dmR.pos + 1).forEach((it, k) => addDaimonAnswered(tail, it, dmR.pos + 1 + k));
-      if(tail.firstChild) els["battle-daimon-afig"].appendChild(tail);
+      if(tail.firstChild) afig.appendChild(tail);
     }
   }
+  return dmR;
+}
+function revealAnswer(){
+  // ★大問の小問の答えの図は、ここで初めて作る（押す前は画面に無い）
+  revealDaimonAnswerFig("battle", questionIds, currentIndex);
   stopAnswerCountdown();
   els["status-banner"].classList.remove("show","win","lose","info");
   els["battle-a-block"].classList.add("show");
@@ -8180,8 +8220,7 @@ function startMissRetryRound(){
   let ids = myMissesThisRound.slice();
   if(ids.length === 0) return;
   // ★小問を1つでもまちがえた大問は、大問ごともう一度（小問を1つだけ出さない）。大問の中は元の順
-  ids = expandDaimonIds(Array.from(new Set(ids.map(id => { const dm = DAIMON_ITEM.get(id); return dm ? dm.g.key : id; }))));
-  if(currentShuffle) ids = shuffleKeepingDaimon(ids);
+  ids = expandMissIdsKeepingDaimon(ids);
   questionIds = ids;
   hostSkippedIds = new Set();
   inMissRetryRound = true;
@@ -8417,7 +8456,7 @@ els["battle-img"].addEventListener("click", ()=>{
   if(els["battle-img"].src) openLightbox(els["battle-img"].src, els["battle-img"].__markQid);
 });
 
-setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? QA_DATA[quizQueue[quizPos]].id : null);
+setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? quizQueue[quizPos] : null);
 setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 
 loadStats();
