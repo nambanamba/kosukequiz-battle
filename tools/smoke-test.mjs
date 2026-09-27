@@ -973,14 +973,15 @@ await test("メイン画面: 出題タイプ・優先度・難易度はたたん
   await t.page.click("#setup-filter-open"); await t.page.waitForTimeout(150);
   s = await st();
   t.ok("押すと開く", s.panel && s.btn === "絞りこみ ▴", s);
-  await t.page.click("#priority-high");
-  await t.page.click("#level-basic");
+  // ★2026-09-27: 優先度は「すべて／普通／低」、難易度の絞り込みは画面から消した。条件は 図の問題だけ＋優先度：低 の2つで見る
+  await t.page.click("#type-image");
+  await t.page.click("#priority-low");
   await t.page.waitForTimeout(300);
   s = await st();
   t.is("★ボタンにかかっている条件の数が出る", s.btn, "絞りこみ ▴（2件）");
   await t.page.click("#setup-filter-open"); await t.page.waitForTimeout(150);
   s = await st();
-  t.ok("★閉じると、かかっている条件が1行で出る", !s.panel && s.summaryShown && s.summary === "優先度：高・難易度：基礎", s);
+  t.ok("★閉じると、かかっている条件が1行で出る", !s.panel && s.summaryShown && s.summary === "図の問題だけ・優先度：低", s);
   // 開いたままにして、リロードしても開いている
   await t.page.click("#setup-filter-open");
   await t.reload();
@@ -1091,14 +1092,14 @@ await test("トップ画面の並び順（仕様どおり）とパネル", async
   const panels = await t.page.evaluate(() => ({
     reviewClosed: document.getElementById("review-filter-panel").hidden,
     battleClosed: document.getElementById("battle-settings-panel").hidden,
-    reviewHas: ["review-type-row", "review-priority-row", "review-level-row"].every(i => document.getElementById("review-filter-panel").contains(document.getElementById(i))),
+    reviewHas: ["review-type-row", "review-priority-row"].every(i => document.getElementById("review-filter-panel").contains(document.getElementById(i))),
     battleHas: document.getElementById("battle-settings-panel").querySelectorAll(".time-setting-row").length === 5 &&
       document.getElementById("battle-settings-panel").contains(document.getElementById("shuffle-toggle")),
     checkUnderCreate: document.getElementById("fair-mode-toggle").classList.contains("check-toggle"),
     checkUnderSolo: document.getElementById("review-mode-toggle").classList.contains("check-toggle")
   }));
   t.ok("復習ミックスの絞りこみ・二人対戦の時間と出題順は、はじめは閉じている", panels.reviewClosed && panels.battleClosed, panels);
-  t.ok("復習ミックスのパネルに出題タイプ・優先度・難易度が入っている", panels.reviewHas, panels);
+  t.ok("復習ミックスのパネルに出題タイプ・優先度が入っている（難易度は 2026-09-27 に消した）", panels.reviewHas, panels);
   t.ok("二人対戦のパネルに時間設定5つと出題順が入っている", panels.battleHas, panels);
   t.ok("公平モード・チェックのみはチェックの形", panels.checkUnderCreate && panels.checkUnderSolo, panels);
 
@@ -1110,10 +1111,10 @@ await test("トップ画面の並び順（仕様どおり）とパネル", async
   t.ok("★時間の「自由入力」を押すと、その下の入力欄が出る（並べ替えで壊れていない）",
     await t.page.$eval('.time-setting-row[data-time-key="answertime"]', e => getComputedStyle(e.nextElementSibling).display !== "none"));
   await t.page.click("#review-filter-open"); await t.page.waitForTimeout(150);
-  await t.page.click('#review-priority-row .toggle[data-review-priority="高"]'); await t.page.waitForTimeout(150);
+  await t.page.click('#review-priority-row .toggle[data-review-priority="低"]'); await t.page.waitForTimeout(150);
   await t.page.click("#review-filter-open"); await t.page.waitForTimeout(150);
   t.ok("復習ミックスの絞りこみを閉じると、条件が1行で出る",
-    await t.page.$eval("#review-filter-summary", e => !e.hidden && e.textContent === "優先度：高"));
+    await t.page.$eval("#review-filter-summary", e => !e.hidden && e.textContent === "優先度：低"));
   await t.reload();
   t.ok("二人対戦のパネルは開いたままにしたので、リロードしても開いている",
     await t.page.$eval("#battle-settings-panel", e => !e.hidden));

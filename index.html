@@ -1150,8 +1150,7 @@
     border-radius:100px;
     border:1px solid transparent;
   }
-  .list-item .list-meta-tag.pri-高{background:#fdeaea; color:#a32323;}
-  .list-item .list-meta-tag.pri-中{background:#fdf3e2; color:#8a6100;}
+  .list-item .list-meta-tag.pri-普通{background:#fdf3e2; color:#8a6100;}
   .list-item .list-meta-tag.pri-低{background:#eef1f2; color:#5b6467;}
   .list-item .list-meta-tag.lv-基礎{background:#e8f1ea; color:#2c6b45;}
   .list-item .list-meta-tag.lv-標準{background:#e7eef5; color:#2b5580;}
@@ -1726,21 +1725,13 @@
         <div class="toggle" id="type-text" data-type="text">文章問題だけ</div>
       </div>
 
-      <div class="section-title">優先度（データにない問題は対象外になります）</div>
+      <div class="section-title">優先度</div>
       <div class="toggle-row">
         <div class="toggle on" id="priority-all" data-priority="all">すべて</div>
-        <div class="toggle" id="priority-high" data-priority="高">高</div>
-        <div class="toggle" id="priority-mid" data-priority="中">中</div>
+        <div class="toggle" id="priority-normal" data-priority="普通">普通</div>
         <div class="toggle" id="priority-low" data-priority="低">低</div>
       </div>
 
-      <div class="section-title">難易度（データにない問題は対象外になります）</div>
-      <div class="toggle-row">
-        <div class="toggle on" id="level-all" data-level="all">すべて</div>
-        <div class="toggle" id="level-basic" data-level="基礎">基礎</div>
-        <div class="toggle" id="level-standard" data-level="標準">標準</div>
-        <div class="toggle" id="level-advanced" data-level="発展">発展</div>
-      </div>
       </div><!-- /setup-filter-panel -->
 
 
@@ -1768,16 +1759,8 @@
       <div class="section-title" style="font-size:13px; font-weight:normal; margin-top:10px;">復習の優先度</div>
       <div class="toggle-row" id="review-priority-row">
         <div class="toggle on" data-review-priority="all">優先度：すべて</div>
-        <div class="toggle" data-review-priority="高">優先度：高のみ</div>
-        <div class="toggle" data-review-priority="中">優先度：中のみ</div>
+        <div class="toggle" data-review-priority="普通">優先度：普通のみ</div>
         <div class="toggle" data-review-priority="低">優先度：低のみ</div>
-      </div>
-      <div class="section-title" style="font-size:13px; font-weight:normal; margin-top:10px;">復習の難易度</div>
-      <div class="toggle-row" id="review-level-row">
-        <div class="toggle on" data-review-level="all">すべて</div>
-        <div class="toggle" data-review-level="基礎">基礎</div>
-        <div class="toggle" data-review-level="標準">標準</div>
-        <div class="toggle" data-review-level="発展">発展</div>
       </div>
       </div><!-- /review-filter-panel -->
 
@@ -1935,10 +1918,8 @@
     <div class="list-section-title">優先度</div>
     <div class="toggle-row" id="list-priority-row">
       <div class="toggle on" data-list-priority="all">すべて</div>
-      <div class="toggle" data-list-priority="高">高</div>
-      <div class="toggle" data-list-priority="中">中</div>
+      <div class="toggle" data-list-priority="普通">普通</div>
       <div class="toggle" data-list-priority="低">低</div>
-      <div class="toggle" data-list-priority="none">未設定</div>
     </div>
 
     <div class="list-section-title">難易度</div>
@@ -2894,9 +2875,9 @@ const els = {};
  "unit-choices","mode-stage1","mode-stage2","mode-stage3",
  "solo-marks","battle-marks","lightbox-marks",
  "type-all","type-image","type-text",
- "priority-all","priority-high","priority-mid","priority-low",
- "level-all","level-basic","level-standard","level-advanced",
- "count-row","count-custom-row","count-custom-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","review-level-row","pool-count-label","pool-count-bar","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
+ "priority-all","priority-normal","priority-low",
+
+ "count-row","count-custom-row","count-custom-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","pool-count-label","pool-count-bar","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-start-together-btn","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error","create-retry-btn","join-retry-btn",
@@ -4279,7 +4260,12 @@ function tiersFromSaved(s){
   return new Set([0, 1, 2]);   // 両方OFF （既定）→ 全部。★意味が変わらないので知らせない
 }
 let currentType = "all"; // all | image | text
-let currentPriority = "all"; // all | 高 | 中 | 低
+// ★優先度は「普通／低」の2つだけ（2026-09-27 ユーザー「優先度は低（今回外してもらった分）、普通（それ以外）の2択では？」）。
+//   データの priority が「低」なら低、それ以外（普通・高・中・空）は全部「普通」。★データに優先度が無い問も普通に入る
+function prioOf(d){ return d && d.priority === "低" ? "低" : "普通"; }
+// 保存されていた古い値（高・中・none）は「すべて」に戻す（その値で絞ると0問になるため）
+function normPrio(v){ return (v === "普通" || v === "低") ? v : "all"; }
+let currentPriority = "all"; // all | 普通 | 低
 let currentLevel = "all"; // all | 基礎 | 標準 | 発展
 let headStartSec = 3; // host-only think time before a question auto-advances
 let answerTimeSec = 8; // both sides say their answer out loud before it auto-reveals
@@ -4310,7 +4296,7 @@ function restoreUnitSelection(subject){
 //      その都度（最初に現れたときだけ）自動でonにするために使う ----
 let reviewSelectedUnits = new Set();
 let reviewUnitsKnown = new Set();
-let reviewPriority = "all"; // all | 高 | 中 | 低
+let reviewPriority = "all"; // all | 普通 | 低
 let reviewLevel = "all"; // all | 基礎 | 標準 | 発展
 let reviewType = "all"; // all | image | text
 
@@ -4362,12 +4348,12 @@ function restoreSubjectSettings(subject){
   if(s.count !== undefined) questionCount = s.count;
   selectedTiers = tiersFromSaved(s);
   if(s.type) currentType = s.type;
-  if(s.priority) currentPriority = s.priority;
-  if(s.level) currentLevel = s.level;
+  if(s.priority) currentPriority = normPrio(s.priority);
+  // ★難易度の絞り込みは画面から消した（2026-09-27 ユーザー）。保存されていた値は読まない
   if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
   if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
-  if(s.reviewPriority) reviewPriority = s.reviewPriority;
-  if(s.reviewLevel) reviewLevel = s.reviewLevel;
+  if(s.reviewPriority) reviewPriority = normPrio(s.reviewPriority);
+  // ★復習の難易度も画面から消した。保存されていた値は読まない
   if(s.reviewType) reviewType = s.reviewType;
 }
 
@@ -4388,8 +4374,8 @@ function loadSettings(){
     if(!unitSelectionBySubject["社会"] && Array.isArray(s.socialUnits) && s.socialUnits.length) unitSelectionBySubject["社会"] = new Set(s.socialUnits);
     selectedTiers = tiersFromSaved(s);
     if(s.type) currentType = s.type;
-    if(s.priority) currentPriority = s.priority;
-    if(s.level) currentLevel = s.level;
+    if(s.priority) currentPriority = normPrio(s.priority);
+    // ★難易度の絞り込みは画面から消した（2026-09-27 ユーザー）。保存されていた値は読まない
     if(typeof s.shuffle === "boolean") currentShuffle = s.shuffle;
     if(s.count !== undefined) questionCount = s.count;
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
@@ -4402,8 +4388,8 @@ function loadSettings(){
     if(Array.isArray(s.reviewSelectedUnits)) reviewSelectedUnits = new Set(s.reviewSelectedUnits);
     if(s.reviewAllUnits) reviewAllUnitsDone = true;   // ★移行済み。二度と走らせない
     if(Array.isArray(s.reviewUnitsKnown)) reviewUnitsKnown = new Set(s.reviewUnitsKnown);
-    if(s.reviewPriority) reviewPriority = s.reviewPriority;
-    if(s.reviewLevel) reviewLevel = s.reviewLevel;
+    if(s.reviewPriority) reviewPriority = normPrio(s.reviewPriority);
+    // ★復習の難易度も画面から消した。保存されていた値は読まない
     if(s.reviewType) reviewType = s.reviewType;
     if(s.settingsBySubject && typeof s.settingsBySubject === "object"){
       Object.keys(s.settingsBySubject).forEach(k=>{
@@ -4494,13 +4480,8 @@ function applySettingsUI(){
   els["type-image"].classList.toggle("on", currentType === "image");
   els["type-text"].classList.toggle("on", currentType === "text");
   els["priority-all"].classList.toggle("on", currentPriority === "all");
-  els["priority-high"].classList.toggle("on", currentPriority === "高");
-  els["priority-mid"].classList.toggle("on", currentPriority === "中");
+  els["priority-normal"].classList.toggle("on", currentPriority === "普通");
   els["priority-low"].classList.toggle("on", currentPriority === "低");
-  els["level-all"].classList.toggle("on", currentLevel === "all");
-  els["level-basic"].classList.toggle("on", currentLevel === "基礎");
-  els["level-standard"].classList.toggle("on", currentLevel === "標準");
-  els["level-advanced"].classList.toggle("on", currentLevel === "発展");
   els["shuffle-toggle"].classList.toggle("on", currentShuffle === true);
   els["order-toggle"].classList.toggle("on", currentShuffle === false);
   els["review-mode-toggle"].classList.toggle("on", reviewMode === true);
@@ -4523,9 +4504,6 @@ function applySettingsUI(){
   });
   document.querySelectorAll("#review-priority-row .toggle").forEach(el=>{
     el.classList.toggle("on", el.dataset.reviewPriority === reviewPriority);
-  });
-  document.querySelectorAll("#review-level-row .toggle").forEach(el=>{
-    el.classList.toggle("on", el.dataset.reviewLevel === reviewLevel);
   });
   renderReviewUnitChoices();
   TIME_SETTINGS.forEach(applyTimeSettingUI);
@@ -4637,7 +4615,7 @@ function applyPoolFiltersExceptPriority(pool, skipModes){
 function applyPoolFilters(pool, skipModes){
   pool = applyPoolFiltersExceptPriority(pool, skipModes);
   if(currentPriority !== "all"){
-    pool = pool.filter(i => QA_DATA[i].priority === currentPriority);
+    pool = pool.filter(i => prioOf(QA_DATA[i]) === currentPriority);
   }
   return pool;
 }
@@ -4689,7 +4667,7 @@ function buildReviewPool(){
   QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && units.has(d.u) && d.kind !== "calc") pool.push(i); });
   if(reviewType === "image") pool = pool.filter(i => !!QA_DATA[i].img);
   else if(reviewType === "text") pool = pool.filter(i => !QA_DATA[i].img);
-  if(reviewPriority !== "all") pool = pool.filter(i => QA_DATA[i].priority === reviewPriority);
+  if(reviewPriority !== "all") pool = pool.filter(i => prioOf(QA_DATA[i]) === reviewPriority);
   if(reviewLevel !== "all") pool = pool.filter(i => QA_DATA[i].level === reviewLevel);
   return pool;
 }
@@ -5242,15 +5220,6 @@ document.querySelectorAll("#review-priority-row .toggle").forEach(el=>{
     saveSettings();
   });
 });
-document.querySelectorAll("#review-level-row .toggle").forEach(el=>{
-  el.addEventListener("click", ()=>{
-    reviewLevel = el.dataset.reviewLevel;
-    document.querySelectorAll("#review-level-row .toggle").forEach(c=>c.classList.remove("on"));
-    el.classList.add("on");
-    refreshCreateButton();
-    saveSettings();
-  });
-});
 els["shuffle-toggle"].addEventListener("click", ()=>{
   currentShuffle = true;
   els["shuffle-toggle"].classList.add("on");
@@ -5310,12 +5279,8 @@ function setupSingleChoiceGroup(elIds, dataKey, setCurrent){
   });
 }
 setupSingleChoiceGroup(
-  ["priority-all","priority-high","priority-mid","priority-low"],
+  ["priority-all","priority-normal","priority-low"],
   "priority", v=>{ currentPriority = v; }
-);
-setupSingleChoiceGroup(
-  ["level-all","level-basic","level-standard","level-advanced"],
-  "level", v=>{ currentLevel = v; }
 );
 
 els["review-mode-toggle"].addEventListener("click", ()=>{
@@ -5377,12 +5342,11 @@ let listLevel = "all";
 function metaValue(d, key){ return d[key] ? d[key] : null; }
 // 一覧の各行に出す優先度・難易度のふだ。どちらも無い問題は「未設定」を1つだけ出す
 function metaTagsHtml(d){
-  const pri = metaValue(d, "priority");
+  // ★優先度はいつも「普通」か「低」（データに無ければ普通）。未設定は出さない（2026-09-27）
+  const pri = prioOf(d);
   const lv = metaValue(d, "level");
-  if(!pri && !lv) return '<div class="list-meta"><span class="list-meta-tag unset">優先度・難易度 未設定</span></div>';
   return '<div class="list-meta">'+
-    (pri ? '<span class="list-meta-tag pri-'+escapeHtml(pri)+'">優先度 '+escapeHtml(pri)+'</span>'
-         : '<span class="list-meta-tag unset">優先度 未設定</span>')+
+    '<span class="list-meta-tag pri-'+escapeHtml(pri)+'">優先度 '+escapeHtml(pri)+'</span>'+
     (lv ? '<span class="list-meta-tag lv-'+escapeHtml(lv)+'">難易度 '+escapeHtml(lv)+'</span>'
         : '<span class="list-meta-tag unset">難易度 未設定</span>')+
     '</div>';
@@ -5456,7 +5420,7 @@ function renderListItems(){
   // ★選んだ段だけ残す。何も選んでいなければ全部（2026-09-26）
   if(listTiers.size > 0) indices = indices.filter(i => listTiers.has(tierOf(i)));
   if(listFilterStar) indices = indices.filter(i => isPriority(QA_DATA[i].id));
-  if(listPriority !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "priority"), listPriority));
+  if(listPriority !== "all") indices = indices.filter(i => prioOf(QA_DATA[i]) === listPriority);
   if(listLevel !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "level"), listLevel));
   if(listDateFrom || listDateTo){
     indices = indices.filter(i=>{
