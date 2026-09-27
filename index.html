@@ -1607,6 +1607,34 @@
     pointer-events:none;
   }
 
+  /* ---- ★理科の大問（テスト形式・2026-09-27）---- */
+  .daimon-lead-card{ margin-bottom:14px; justify-content:flex-start; min-height:0; }
+  .daimon-lead-text{ font-size:16px; line-height:1.85; white-space:pre-wrap; }
+  .daimon-fig{ margin-top:12px; text-align:center; }
+  .daimon-fig img{ width:100%; height:auto; object-fit:contain; border-radius:8px;
+    border:1px solid var(--paper-line); background:#fff; cursor:zoom-in; }
+  .daimon-item{ margin-bottom:14px; justify-content:flex-start; min-height:0; }
+  .daimon-item-label{ font-size:13px; font-weight:700; color:var(--gold); margin-bottom:6px; }
+  .daimon-item .a-block{ display:block; }
+  .daimon-item.ok{ border-left:6px solid var(--ok); }
+  .daimon-item.ng{ border-left:6px solid var(--ng); }
+  .daimon-verdict{ margin-top:10px; font-weight:700; font-size:14px; }
+  .daimon-finish{ text-align:center; margin:18px 0 90px; }
+  .daimon-finish .big{ font-size:30px; font-weight:700; margin-bottom:12px; color:var(--navy-deep); }
+  #screen-daimon{ padding-bottom:80px; }
+  .daimon-lead-float{ position:fixed; left:12px; bottom:12px; z-index:40; padding:10px 14px;
+    border-radius:999px; border:1.5px solid var(--gold); background:#fffaf0; color:var(--navy-deep);
+    font-weight:700; font-size:14px; box-shadow:var(--card-shadow); }
+  .daimon-lead-overlay{ position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.45); overflow-y:auto; }
+  .daimon-lead-overlay-inner{ background:#fff; margin:16px; padding:18px; border-radius:14px; }
+  .daimon-group-title{ margin:18px 0 8px; font-weight:700; color:var(--navy-deep); }
+  .daimon-row{ display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--paper-line);
+    border-radius:12px; padding:12px 14px; margin-bottom:8px; font-size:15px; color:inherit; }
+  .daimon-row .name{ font-weight:700; }
+  .daimon-row .gist{ display:block; font-size:13px; color:var(--ink-soft); margin-top:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .daimon-row .tiers{ display:block; font-size:12px; margin-top:4px; color:var(--ink-soft); }
+  .daimon-row .weak{ color:var(--ng); font-weight:700; }
 </style>
 </head>
 <body>
@@ -1670,6 +1698,8 @@
       <div class="toggle-row">
         <div class="toggle check-toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
+      <!-- ★理科の「大問」（テキスト通りの形）。2026-09-27。理科のときだけ出る。一問一答とは別の出し方 -->
+      <button class="btn-secondary" id="daimon-open-btn" style="margin-top:10px; display:none;">テスト形式（大問）で解く</button>
       <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
 
       <hr class="home-divider">
@@ -2028,6 +2058,44 @@
     </div>
   </section>
 
+  <!-- ★大問の一覧（2026-09-27）。選べるのは大問だけ。小問を1つだけ選ぶ入口は作らない（依頼書の失敗1） -->
+  <section id="screen-daimon-list" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="daimon-list-back">← もどる</div>
+      <div class="counter"></div>
+    </div>
+    <div class="section-title">テスト形式（大問）</div>
+    <div class="stat-note">大問ごとに、リード文と図から順に解きます。小問ごとに「こたえを見る」→ 〇／✕ を付けます。時間は計りません。</div>
+    <div id="daimon-list-body"></div>
+  </section>
+
+  <!-- ★大問を解く画面。紙のテストと同じく上から下へ。前の小問と答えは消さずに残す -->
+  <section id="screen-daimon" class="screen">
+    <div class="quiz-head">
+      <div class="back" id="daimon-back">← やめてもどる</div>
+      <div class="counter" id="daimon-counter"></div>
+    </div>
+    <span class="unit-tag" id="daimon-title"></span>
+    <div class="card daimon-lead-card" id="daimon-lead-card"></div>
+    <div id="daimon-items"></div>
+    <button class="reveal-btn" id="daimon-reveal-btn">こたえを見る</button>
+    <div class="judge-row" id="daimon-judge-row" style="display:none;">
+      <button class="judge-btn ng" id="daimon-judge-ng">✕ まちがえた</button>
+      <button class="judge-btn ok" id="daimon-judge-ok">〇 わかった</button>
+    </div>
+    <div class="daimon-finish" id="daimon-finish" style="display:none;">
+      <div class="big" id="daimon-finish-score"></div>
+      <button class="start-btn" id="daimon-finish-btn">大問の一覧にもどる</button>
+    </div>
+    <button type="button" class="daimon-lead-float" id="daimon-lead-btn" style="display:none;">リード文・図を見る</button>
+    <div class="daimon-lead-overlay" id="daimon-lead-overlay" style="display:none;">
+      <div class="daimon-lead-overlay-inner">
+        <div id="daimon-lead-overlay-body"></div>
+        <button type="button" class="start-btn" id="daimon-lead-close">とじる</button>
+      </div>
+    </div>
+  </section>
+
   <!-- BATTLE SCREEN -->
   <section id="screen-battle" class="screen">
     <div class="quiz-head">
@@ -2147,6 +2215,7 @@
 </div>
 
 <script src="data.js"></script>
+<script src="daimon_data.js"></script>
 <script type="module">
 // ---- 対戦の通信ライブラリ（trystero）は、対戦を始めるときに初めて取りに行く。
 //      以前は先頭で import していたが、これは**起動のたびにインターネットへ
@@ -2784,8 +2853,12 @@ window.addEventListener("resize", () => {
 
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
+ "screen-daimon-list","screen-daimon",
  "subject-social","subject-science",
  "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
+ "daimon-reveal-btn","daimon-judge-row","daimon-judge-ng","daimon-judge-ok","daimon-finish","daimon-finish-score","daimon-finish-btn",
+ "daimon-lead-btn","daimon-lead-overlay","daimon-lead-overlay-body","daimon-lead-close",
  "unit-choices","mode-stage1","mode-stage2","mode-stage3",
  "solo-marks","battle-marks","lightbox-marks",
  "type-all","type-image","type-text",
@@ -3035,7 +3108,8 @@ window.addEventListener("beforeunload", e=>{
 function showScreen(name){
   const wasGuarded = GUARDED_SCREENS.includes(currentScreenName);
   currentScreenName = name;
-  ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result"].forEach(id=>{
+  ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
+   "screen-daimon-list","screen-daimon"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   // ★対戦画面を出すときは、点数の表示を必ず `scores` に合わせる（2026-09-26）。
@@ -4067,9 +4141,12 @@ function refreshStatRow(){
 }
 
 els["stat-clear-link"].addEventListener("click", ()=>{
-  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（この操作は元に戻せません）")) return;
+  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（大問の記録もふくみます。この操作は元に戻せません）")) return;
   stats = {};
   saveStats();
+  // ★大問（テスト形式）の記録も消す（2026-09-27）。別の入れ物なので、ここで消さないとどこからも消せなくなる
+  daimonStats = {};
+  saveDaimonStats();
   refreshStatRow();
   refreshCreateButton();
 });
@@ -4112,6 +4189,7 @@ function renderHome(){
   refreshLastMissButton();
   refreshResumeSoloButton();
   refreshResumeBattleButton();
+  refreshDaimonButton();
 }
 
 function escapeHtml(s){
@@ -4434,6 +4512,7 @@ function switchSubject(subject){
   renderUnitChoices();
   refreshStatRow();
   applySettingsUI();
+  refreshDaimonButton();
   saveSettings();
 }
 els["subject-social"].addEventListener("click", ()=> switchSubject("社会"));
@@ -6000,6 +6079,220 @@ els["import-file"].addEventListener("change", (e)=>{
   };
   reader.readAsText(file, "UTF-8");
 });
+
+// ============================================================
+// ★理科の「大問」（テスト形式）── 2026-09-27
+// ============================================================
+// 依頼書: 司令塔\回答\対戦_大問を丸ごと出す_依頼_2026-09-27.md（案は司令塔の承認ずみ）
+// ユーザーの原文:「テキスト通りに、問題やグラフを出して、答えさせる形式で作ったらいい気がしてきました」
+//               「小問ごとに答えを言う、答え合わせをする／時間制限をゆるめる／など、回答可能な感じにしてください」
+//
+// ■ 決まりごと（★作り直しが高くつくので、変えるときは依頼書に戻ること）
+//   ・★大問は必ず丸ごと。選べるのは大問だけで、小問を1つだけ出す道は作らない
+//     （テストの小問は前の小問の答えを使う。例: 問5(3)「(2)で答えたものは…」）
+//   ・紙のテストと同じく上から下へ。リード文と大問の図 → 小問(1) →「こたえを見る」→ 〇✕ → 小問(2) …
+//     ★前の小問と答えは消さずに残す。★「こたえを見る」を押す前に、次の小問は出さない
+//   ・リード文・図から離れても「リード文・図を見る」でいつでも見られる（依頼書の失敗2）
+//   ・★答え側の図（aFile）は「こたえを見る」を押したときに初めて作る（それまで画面に無い）
+//   ・時間は計らない。一人で解くだけ（対戦には出さない）
+//   ・★データは daimon_data.js（DAIMON_DATA）。記録も一問一答（stats）とは別の入れ物。
+//     → ホームの数字・単元・ランダム・問題一覧は1問も変わらない（依頼書の失敗4・6）
+//   ・★「正誤の記録をぜんぶクリアする」は、大問の記録も消す（どこからも消せない記録を残さない）。
+//     教科ごとに消す形になったら、大問の記録は「理科」に入れる
+const DAIMON = (typeof DAIMON_DATA !== "undefined" && Array.isArray(DAIMON_DATA)) ? DAIMON_DATA : [];
+const DAIMON_SIZES = (typeof DAIMON_IMG_SIZES !== "undefined") ? DAIMON_IMG_SIZES : {};
+const DAIMON_STATS_KEY = "kq_battle_daimon_stats_v1";
+let daimonStats = {};
+try{
+  const raw = JSON.parse(window.localStorage.getItem(DAIMON_STATS_KEY) || "{}");
+  if(raw && typeof raw === "object" && !Array.isArray(raw)) daimonStats = raw;
+}catch(e){ /* 読めなければ記録なしから */ }
+function saveDaimonStats(){
+  try{ window.localStorage.setItem(DAIMON_STATS_KEY, JSON.stringify(daimonStats)); }catch(e){ console.error("save daimon stats failed", e); }
+}
+// ★記録の付け方は一問一答の recordResult と同じ（累計・連続正解数・最後に正解した日・最後に答えた日）
+function recordDaimonResult(id, correct){
+  const s = daimonStats[id] || {correct:0, wrong:0};
+  if(correct){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = Date.now(); }
+  else{ s.wrong = (s.wrong||0) + 1; }
+  s.lastAnswered = Date.now();
+  scheduleNext(s, correct);
+  daimonStats[id] = s;
+  saveDaimonStats();
+}
+// ★段の決め方は一問一答の tierOf と同じ3段（0 まだ正解していない／1 苦手／2 定着した）
+function daimonTierOf(id){
+  const s = daimonStats[id];
+  if(!s || (!s.lastCorrectAt && !((s.correct||0) > 0))) return 0;
+  if((s.wrong||0) > 0 && (s.box||0) <= 1) return 1;
+  return 2;
+}
+function refreshDaimonButton(){
+  els["daimon-open-btn"].style.display = (currentSubject === "理科" && DAIMON.length > 0) ? "" : "none";
+}
+function daimonImg(name){
+  const div = document.createElement("div");
+  div.className = "daimon-fig";
+  const img = document.createElement("img");
+  img.src = "images/" + name;
+  img.alt = "図";
+  const sz = DAIMON_SIZES[name];
+  if(sz){ img.width = sz[0]; img.height = sz[1]; }
+  img.addEventListener("click", ()=> openLightbox(img.src));
+  div.appendChild(img);
+  return div;
+}
+function daimonName(g){
+  return /^\d+$/.test(g.daimon) ? "大問" + g.daimon : g.daimon;
+}
+function renderDaimonList(){
+  const body = els["daimon-list-body"];
+  body.innerHTML = "";
+  let lastHead = "";
+  DAIMON.forEach((g, gi)=>{
+    const head = "第" + g.kai + "回 " + g.book;
+    if(head !== lastHead){
+      const h = document.createElement("div");
+      h.className = "daimon-group-title";
+      h.textContent = head;
+      body.appendChild(h);
+      lastHead = head;
+    }
+    const n = [0, 0, 0];
+    g.items.forEach(it => n[daimonTierOf(it.id)]++);
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "daimon-row";
+    row.dataset.key = g.key;
+    row.innerHTML = '<span class="name"></span><span class="gist"></span><span class="tiers"></span>';
+    row.querySelector(".name").textContent = daimonName(g) + "（小問" + g.items.length + "）";
+    row.querySelector(".gist").textContent = (g.lead || g.items[0].q || "").replace(/\s+/g, " ");
+    row.querySelector(".tiers").innerHTML = "まだ " + n[0] + "・"
+      + (n[1] > 0 ? '<span class="weak">苦手 ' + n[1] + '</span>' : "苦手 0") + "・定着 " + n[2];
+    row.addEventListener("click", ()=> startDaimon(gi));
+    body.appendChild(row);
+  });
+}
+let daimonCur = null;   // { g, pos, ok, revealed, done }
+function startDaimon(gi){
+  const g = DAIMON[gi];
+  daimonCur = { g: g, pos: 0, ok: 0, revealed: false, done: false };
+  els["daimon-title"].textContent = "第" + g.kai + "回 " + g.book + " " + daimonName(g);
+  const lead = els["daimon-lead-card"];
+  lead.innerHTML = "";
+  if(g.lead){
+    const t = document.createElement("div");
+    t.className = "daimon-lead-text";
+    t.textContent = g.lead;
+    lead.appendChild(t);
+  }
+  if(g.file) lead.appendChild(daimonImg(g.file));
+  const hasLead = !!(g.lead || g.file);
+  lead.style.display = hasLead ? "" : "none";
+  els["daimon-lead-btn"].style.display = hasLead ? "" : "none";
+  els["daimon-lead-overlay"].style.display = "none";
+  els["daimon-items"].innerHTML = "";
+  els["daimon-finish"].style.display = "none";
+  showScreen("screen-daimon");
+  showDaimonItem();
+}
+function showDaimonItem(){
+  const c = daimonCur, it = c.g.items[c.pos];
+  c.revealed = false;
+  els["daimon-counter"].textContent = (c.pos + 1) + " / " + c.g.items.length;
+  const card = document.createElement("div");
+  card.className = "card daimon-item";
+  card.dataset.id = it.id;
+  const lab = document.createElement("div");
+  lab.className = "daimon-item-label";
+  lab.textContent = it.label || ("(" + (c.pos + 1) + ")");
+  card.appendChild(lab);
+  const q = document.createElement("div");
+  q.className = "q-text";
+  q.textContent = it.q;
+  card.appendChild(q);
+  if(it.file) card.appendChild(daimonImg(it.file));
+  els["daimon-items"].appendChild(card);
+  els["daimon-reveal-btn"].style.display = "";
+  els["daimon-judge-row"].style.display = "none";
+  if(c.pos > 0) card.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+// ★こたえ（と答え側の図）は、ここで初めて作って画面に入れる。押す前は DOM に無い
+function revealDaimon(){
+  const c = daimonCur;
+  if(!c || c.revealed || c.done) return;
+  c.revealed = true;
+  const it = c.g.items[c.pos];
+  const card = els["daimon-items"].lastElementChild;
+  const ab = document.createElement("div");
+  ab.className = "a-block daimon-answer";
+  ab.innerHTML = '<div class="a-label">こたえ</div><div class="a-text"></div>';
+  ab.querySelector(".a-text").textContent = it.a;
+  if(it.aFile) ab.appendChild(daimonImg(it.aFile));
+  if(it.sol){
+    const sb = document.createElement("div");
+    sb.className = "sol-block";
+    sb.innerHTML = '<div class="sol-label">解説</div><div class="sol-text"></div>';
+    sb.querySelector(".sol-text").textContent = it.sol;
+    ab.appendChild(sb);
+  }
+  card.appendChild(ab);
+  els["daimon-reveal-btn"].style.display = "none";
+  els["daimon-judge-row"].style.display = "";
+}
+function judgeDaimon(correct){
+  const c = daimonCur;
+  if(!c || !c.revealed || c.done) return;
+  const it = c.g.items[c.pos];
+  recordDaimonResult(it.id, correct);
+  if(correct) c.ok++;
+  const card = els["daimon-items"].lastElementChild;
+  card.classList.add(correct ? "ok" : "ng");
+  const v = document.createElement("div");
+  v.className = "daimon-verdict";
+  v.textContent = correct ? "〇 わかった" : "✕ まちがえた";
+  card.appendChild(v);
+  els["daimon-judge-row"].style.display = "none";
+  c.revealed = false;
+  c.pos++;
+  if(c.pos < c.g.items.length){ showDaimonItem(); return; }
+  c.done = true;
+  els["daimon-counter"].textContent = c.g.items.length + " / " + c.g.items.length;
+  els["daimon-finish-score"].textContent = c.ok + " / " + c.g.items.length;
+  els["daimon-finish"].style.display = "";
+  els["daimon-finish"].scrollIntoView({ block: "center", behavior: "smooth" });
+}
+function openDaimonList(){
+  renderDaimonList();
+  showScreen("screen-daimon-list");
+}
+els["daimon-open-btn"].addEventListener("click", openDaimonList);
+els["daimon-list-back"].addEventListener("click", ()=>{ showScreen("screen-home"); renderHome(); });
+els["daimon-reveal-btn"].addEventListener("click", revealDaimon);
+els["daimon-judge-ok"].addEventListener("click", ()=> judgeDaimon(true));
+els["daimon-judge-ng"].addEventListener("click", ()=> judgeDaimon(false));
+els["daimon-finish-btn"].addEventListener("click", openDaimonList);
+els["daimon-back"].addEventListener("click", ()=>{
+  if(daimonCur && !daimonCur.done && daimonCur.pos > 0
+     && !confirm("この大問をやめて一覧にもどりますか？（ここまでの〇✕は記録されています）")) return;
+  openDaimonList();
+});
+els["daimon-lead-btn"].addEventListener("click", ()=>{
+  const g = daimonCur && daimonCur.g;
+  if(!g) return;
+  const body = els["daimon-lead-overlay-body"];
+  body.innerHTML = "";
+  if(g.lead){
+    const t = document.createElement("div");
+    t.className = "daimon-lead-text";
+    t.textContent = g.lead;
+    body.appendChild(t);
+  }
+  if(g.file) body.appendChild(daimonImg(g.file));
+  els["daimon-lead-overlay"].style.display = "";
+});
+els["daimon-lead-close"].addEventListener("click", ()=>{ els["daimon-lead-overlay"].style.display = "none"; });
+refreshDaimonButton();
 
 // ---- solo quiz ----
 let quizQueue = [];
