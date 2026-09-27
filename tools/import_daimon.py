@@ -143,6 +143,12 @@ def main():
                     die(fn + ": 大問 " + str(dm["daimon"]) + " に小問が1つもありません")
                 g = {"key": key, "kai": kai, "book": book, "daimon": str(dm["daimon"]),
                      "lead": dm.get("lead", ""), "file": dm.get("file", ""), "items": []}
+                # ★依頼書「理科_大問を紙で出す」: 大問に paper/paperReason が付いていたら、そのまま通す。
+                #   ここ以外の欄には触らない。paper は true のときだけ書く（false は書かない＝今までどおり）
+                if dm.get("paper") is True:
+                    g["paper"] = True
+                    if dm.get("paperReason"):
+                        g["paperReason"] = str(dm["paperReason"])
                 for it in its:
                     x = {"id": it["id"], "label": it.get("label", ""), "q": it["q"], "a": it["a"],
                          "form": it.get("form", ""), "file": it.get("file", ""),
@@ -174,7 +180,8 @@ def main():
     print("■ 元データ")
     for fn, h, nd, ni in srcinfo:
         print("  %s  sha256 %s…  大問%d・小問%d" % (fn, h, nd, ni))
-    print("■ 書き出し: 大問 %d ／ 小問 %d ／ 画像 %d枚（うち新しく置く %d枚）" % (len(groups), n_items, len(sizes), len(new_imgs)))
+    n_paper = sum(1 for g in groups if g.get("paper"))
+    print("■ 書き出し: 大問 %d（うち紙 %d） ／ 小問 %d ／ 画像 %d枚（うち新しく置く %d枚）" % (len(groups), n_paper, n_items, len(sizes), len(new_imgs)))
     print("  週テスト: " + ("第" + "・".join(map(str, args.weekly)) + "回を載せる" if args.weekly else "★載せない（名指しされていない）"))
     for n in new_imgs:
         print("    新: %s %dx%d" % (n, sizes[n][0], sizes[n][1]))

@@ -1254,6 +1254,19 @@
     cursor:pointer;
     -webkit-tap-highlight-color:transparent;
   }
+  /* ★2026-09-28: チェックのみ「何問目」ジャンプ。狭い画面でもはみ出さないよう flex-wrap にする */
+  .review-jump-row{
+    display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+    font-size:13px; color:var(--ink-soft); margin:-2px 0 12px;
+  }
+  .review-jump-row input{
+    width:56px; padding:5px 4px; text-align:center; font-size:14px;
+    border:1px solid var(--paper-line); border-radius:6px; background:#fff; color:var(--ink);
+  }
+  .review-jump-row button{
+    padding:5px 12px; font-size:12px; font-weight:700; color:var(--navy-deep);
+    background:#fffaf0; border:1.5px solid var(--gold); border-radius:8px; cursor:pointer;
+  }
   .progress-bar{
     height:5px;
     background:var(--paper-line);
@@ -1641,6 +1654,36 @@
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .daimon-row .tiers{ display:block; font-size:12px; margin-top:4px; color:var(--ink-soft); }
   .daimon-row .weak{ color:var(--ng); font-weight:700; }
+
+  /* ---- ★「紙で出す」（2026-09-28）---- */
+  .paper-row{ display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--paper-line);
+    border-radius:12px; padding:12px 14px; margin-bottom:8px; font-size:15px; color:inherit; }
+  .paper-row .name{ font-weight:700; }
+  .paper-row .reason{ display:block; font-size:13px; color:var(--gold); margin-top:4px; }
+  .paper-row .gist{ display:block; font-size:13px; color:var(--ink-soft); margin-top:4px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .paper-sheet{ background:#fff; border:1.5px solid var(--paper-line); border-radius:14px;
+    padding:18px 16px; margin-bottom:18px; }
+  .paper-sheet-title{ font-weight:700; font-size:16px; color:var(--navy-deep); margin-bottom:4px; }
+  .paper-sheet-sub{ font-size:12px; color:var(--ink-soft); margin-bottom:14px; }
+  .paper-lead-text{ font-size:15px; line-height:1.85; white-space:pre-wrap; margin-bottom:10px; }
+  .paper-item{ margin-bottom:18px; }
+  .paper-item-label{ font-size:13px; font-weight:700; color:var(--gold); margin-bottom:6px; }
+  .paper-item-q{ font-size:15px; line-height:1.8; white-space:pre-wrap; }
+  .paper-write-box{ border:1px dashed var(--paper-line); border-radius:8px; min-height:64px; margin-top:8px; }
+  .paper-item-a{ font-size:15px; line-height:1.8; white-space:pre-wrap; color:var(--navy-deep); font-weight:700; }
+  .paper-item-sol{ font-size:13px; line-height:1.7; color:var(--ink-soft); margin-top:6px; white-space:pre-wrap; }
+  .paper-page-break{ page-break-after:always; }
+  @media print{
+    .no-print{ display:none !important; }
+    body{ background:#fff; }
+    .wrap{ max-width:none; }
+    .screen{ display:none !important; }
+    #screen-paper-print.active{ display:block !important; }
+    .paper-sheet{ border:none; padding:0; margin-bottom:0; }
+    .paper-write-box{ border:1px solid #999; }
+  }
+  @page{ size:A4 portrait; margin:14mm; }
 </style>
 </head>
 <body>
@@ -1706,6 +1749,9 @@
       </div>
       <!-- ★理科の「大問」（テキスト通りの形）。2026-09-27。理科のときだけ出る。一問一答とは別の出し方 -->
       <button class="btn-secondary" id="daimon-open-btn" style="margin-top:10px; display:none;">テスト形式（大問）で解く</button>
+      <!-- ★「紙で出す」（2026-09-28）。印の付いた大問（paper:true）は出題に出さないので、
+           紙で配るための入口をここに置く。理科で、印の付いた大問が1つ以上あるときだけ出す -->
+      <button class="btn-secondary" id="paper-open-btn" style="margin-top:10px; display:none;">🖨️ 紙で出す（大問）</button>
       <button class="btn-secondary" id="go-join" style="margin-top:10px;">コードをもらった場合はこちら（部屋に入る）</button>
 
       <hr class="home-divider">
@@ -1935,6 +1981,16 @@
       <span class="back-link" id="star-bulk-off">表示中の★を外す</span>
     </div>
 
+    <!-- ★2026-09-28: 種類（すべて／一問一答／大問／紙の大問）。依頼「チェックしやすいように、大問フィルタ欲しいです」。
+         ★紙の大問は出題に出ないので件数を分けて出す（list-count には混ぜない） -->
+    <div class="list-section-title">種類</div>
+    <div class="toggle-row" id="list-kind-row">
+      <div class="toggle on" data-list-kind="all">すべて</div>
+      <div class="toggle" data-list-kind="qa">一問一答</div>
+      <div class="toggle" data-list-kind="daimon">大問</div>
+      <div class="toggle" data-list-kind="paper">紙の大問</div>
+    </div>
+
     <!-- ★2026-09-27: 出題タイプ（図の有無）を足した。メイン画面（#type-all/-image/-text）と同じ3つの言葉 -->
     <div class="list-section-title">出題タイプ</div>
     <div class="toggle-row" id="list-type-row">
@@ -1989,6 +2045,16 @@
     </div>
     <div class="undo-row" id="solo-undo-row" style="display:none;">
       <span id="solo-undo-link">↩ 前の問題にもどる</span>
+      <!-- ★2026-09-28: チェックのみ（review）のときだけ「一つ戻る」の隣に「一つ進む」（依頼:
+           「特定の場所の問題のチェックをしたいので」）。記録（正誤・box・正解日）は一切変えない -->
+      <span id="solo-forward-link" style="display:none; margin-left:14px;">つぎへ ↪</span>
+    </div>
+    <!-- ★チェックのみのときだけ出す「何問目」ジャンプ。通常の一人モードには出さない（順番どおり答えるため） -->
+    <div class="review-jump-row" id="solo-review-jump-row" style="display:none;">
+      <span>何問目：</span>
+      <input type="number" id="solo-review-jump-input" min="1" inputmode="numeric">
+      <span>/ <span id="solo-review-jump-total"></span>問</span>
+      <button type="button" id="solo-review-jump-btn">移動</button>
     </div>
     <div class="progress-bar"><div class="progress-fill" id="solo-progress-fill"></div></div>
 
@@ -2107,6 +2173,30 @@
         <button type="button" class="start-btn" id="daimon-lead-close">とじる</button>
       </div>
     </div>
+  </section>
+
+  <!-- ★「紙で出す」大問の一覧（2026-09-28）。回ごとに並べる。押すと問題の紙・答えの紙のプレビューへ -->
+  <section id="screen-paper-list" class="screen">
+    <div class="quiz-head no-print">
+      <div class="back" id="paper-list-back">← もどる</div>
+      <div class="counter"></div>
+    </div>
+    <div class="section-title">紙で出す（大問）</div>
+    <div class="stat-note">アプリの画面と〇✕では解けない・答え合わせできない大問です。ここから選んで印刷してください。</div>
+    <div id="paper-list-body"></div>
+  </section>
+
+  <!-- ★問題の紙・答えの紙のプレビュー（2026-09-28）。答えは問題の紙に1文字も出さない -->
+  <section id="screen-paper-print" class="screen">
+    <div class="quiz-head no-print">
+      <div class="back" id="paper-print-back">← もどる</div>
+      <div class="counter"></div>
+    </div>
+    <div class="no-print" style="margin:6px 0 16px;">
+      <button type="button" class="start-btn" id="paper-print-btn">🖨️ 印刷する</button>
+      <div class="stat-note">印刷ダイアログで「問題の紙」の次に改ページして「答えの紙」が出ます。A4縦で出してください。</div>
+    </div>
+    <div id="paper-print-body"></div>
   </section>
 
   <!-- BATTLE SCREEN -->
@@ -2247,6 +2337,13 @@
 const DAIMON = (typeof DAIMON_DATA !== "undefined" && Array.isArray(DAIMON_DATA)) ? DAIMON_DATA : [];
 const DAIMON_SIZES = (typeof DAIMON_IMG_SIZES !== "undefined") ? DAIMON_IMG_SIZES : {};
 const DAIMON_ITEM = new Map();   // 小問の id → { it, g, pos, entry, view }
+// ★「紙で出す」印（paper:true）の大問（2026-09-28。依頼書:
+//   司令塔\回答\理科_大問を紙で出す_依頼_2026-09-28.md）。
+//   ★ここに入る大問は QA_DATA にも DAIMON_ITEM にも一切入れない（下の addDaimonEntries で分ける）。
+//   →「数える所と出す所」はどちらも QA_DATA を見て動いているので、
+//     ここで入り口を分けてしまえば、一人・二人・ホームの数・未クリア・一覧の件数のどこにも
+//     同じ条件をもう一度書かずに、印の付いた大問だけが自然に出なくなる。
+const PAPER_DAIMON = [];
 (function addDaimonEntries(){
   const unitOfKai = {};
   QA_DATA.forEach(d => {
@@ -2259,6 +2356,11 @@ const DAIMON_ITEM = new Map();   // 小問の id → { it, g, pos, entry, view }
     // ★単元が見つからない・id がかぶる大問は足さない（黙って別の単元に入れない）
     if(!u || !Array.isArray(g.items) || g.items.length === 0 || qaIds.has(g.key)) return;
     if(g.items.some(it => qaIds.has(it.id) || DAIMON_ITEM.has(it.id))) return;
+    if(g.paper === true){
+      // ★紙の大問はここで止める。QA_DATA にも DAIMON_ITEM にも入れない
+      PAPER_DAIMON.push(Object.assign({u: u}, g));
+      return;
+    }
     const entry = {
       id: g.key, subj: "理科", u: u, kind: "daimon", daimon: g,
       q: (g.lead || g.items[0].q || "").replace(/\s+/g, " "), a: "",
@@ -3007,9 +3109,10 @@ window.addEventListener("resize", () => {
 
 const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
- "screen-daimon-list","screen-daimon",
+ "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print",
  "subject-social","subject-science",
  "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
  "daimon-reveal-btn","daimon-judge-row","daimon-judge-ng","daimon-judge-ok","daimon-finish","daimon-finish-score","daimon-finish-btn",
  "daimon-lead-btn","daimon-lead-overlay","daimon-lead-overlay-body","daimon-lead-close",
@@ -3028,7 +3131,7 @@ const els = {};
  "list-back","list-count","list-unit-select","list-items",
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
- "solo-back","solo-undo-row","solo-undo-link","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id","solo-source-tag",
+ "solo-back","solo-undo-row","solo-undo-link","solo-forward-link","solo-review-jump-row","solo-review-jump-input","solo-review-jump-total","solo-review-jump-btn","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id","solo-source-tag",
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a","solo-sol-block","solo-sol",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
@@ -3265,7 +3368,7 @@ function showScreen(name){
   const wasGuarded = GUARDED_SCREENS.includes(currentScreenName);
   currentScreenName = name;
   ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
-   "screen-daimon-list","screen-daimon"].forEach(id=>{
+   "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print"].forEach(id=>{
     els[id].classList.toggle("active", id === name);
   });
   // ★対戦画面を出すときは、点数の表示を必ず `scores` に合わせる（2026-09-26）。
@@ -4357,6 +4460,7 @@ function renderHome(){
   refreshResumeSoloButton();
   refreshResumeBattleButton();
   refreshDaimonButton();
+  refreshPaperButton();
 }
 
 function escapeHtml(s){
@@ -4677,6 +4781,7 @@ function switchSubject(subject){
   refreshStatRow();
   applySettingsUI();
   refreshDaimonButton();
+  refreshPaperButton();
   saveSettings();
 }
 els["subject-social"].addEventListener("click", ()=> switchSubject("社会"));
@@ -5535,6 +5640,9 @@ let listShownIndices = [];    // いま一覧に出ている問題（★をま�
 let listPriority = "all";
 // ★2026-09-27: 出題タイプ（図の有無）。メイン画面の currentType と同じ3値。一覧専用（保存しない）
 let listType = "all";
+// ★2026-09-28: 種類（すべて／一問一答／大問／紙の大問）。一覧専用（保存しない）。
+//   "paper" のときは QA_DATA を見ない別経路（PAPER_DAIMON）。件数も混ぜない
+let listKind = "all";
 // ★2026-09-27: 表示順。"tier"=出題順（orderByTiers）／"number"=問題番号順（並べ替えない）
 let listOrder = "tier";
 // 「その問題に優先度（難易度）が入っているか」の判定。空文字も未設定とみなす
@@ -5596,6 +5704,9 @@ function renderListScreen(){
   document.querySelectorAll("#list-type-row .toggle").forEach(el=>{
     el.classList.toggle("on", el.dataset.listType === listType);
   });
+  document.querySelectorAll("#list-kind-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.listKind === listKind);
+  });
   document.querySelectorAll("#list-order-row .toggle").forEach(el=>{
     el.classList.toggle("on", el.dataset.listOrder === listOrder);
   });
@@ -5622,7 +5733,12 @@ function renderListItems(){
     els["list-items"].innerHTML = '<div class="empty-note">単元か絞りこみを選んでください。</div>';
     return;
   }
+  // ★2026-09-28: 種類=「紙の大問」は QA_DATA を見ない別経路（出題に出ないので件数も混ぜない）
+  if(listKind === "paper"){ renderPaperListItems(); return; }
   let indices = listUnitIndices();
+  // ★2026-09-28: 種類（一問一答／大問）
+  if(listKind === "qa") indices = indices.filter(i => !isDaimonEntry(QA_DATA[i]));
+  else if(listKind === "daimon") indices = indices.filter(i => isDaimonEntry(QA_DATA[i]));
   // ★選んだ段だけ残す。何も選んでいなければ全部（2026-09-26）
   if(listTiers.size > 0) indices = indices.filter(i => listTiers.has(tierOf(i)));
   if(listFilterStar) indices = indices.filter(i => isPriority(QA_DATA[i].id));
@@ -5696,6 +5812,44 @@ function buildDaimonListRow(d){
   item.querySelector(".daimon-list-tiers").textContent = w === 0
     ? "全部○（0問・対戦には出ません）"
     : TIER_NAMES[tier] + "（答える小問 " + w + "問・前回○ " + (g.items.length - w) + "問）";
+  return item;
+}
+
+// ★2026-09-28: 種類=「紙の大問」の一覧（QA_DATA を見ない別経路）。
+//   出題には出ないので、件数の表示は出題の件数（list-count の「◯問」）と混ぜない。
+//   一覧の他の絞りこみ（段・★最優先・出題タイプ・優先度・解いた日）は紙の大問には無い概念なので使わない。単元だけ効く
+function renderPaperListItems(){
+  ++listRenderGen;   // 前の描き直しの続きがあれば止める
+  const groups = PAPER_DAIMON.filter(g => currentSubject === "理科" && listSelectedUnits.has(g.u));
+  listShownIndices = [];   // ★紙の大問には★最優先の一括付け外しは効かない
+  refreshStarBulkLabel();
+  const nItems = groups.reduce((a, g) => a + g.items.length, 0);
+  els["list-count"].textContent = groups.length === 0 ? "紙の大問 0" : "紙の大問 " + groups.length + "（小問 " + nItems + "問・出題には出ません）";
+  els["list-items"].innerHTML = "";
+  if(groups.length === 0){
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = "この条件の紙の大問はありません。";
+    els["list-items"].appendChild(empty);
+    return;
+  }
+  groups.forEach(g => els["list-items"].appendChild(buildPaperDaimonListRow(g)));
+}
+function buildPaperDaimonListRow(g){
+  const item = document.createElement("div");
+  item.className = "list-item daimon-list-item";
+  item.dataset.daimonKey = g.key;
+  item.innerHTML =
+    '<div class="list-unit-tag"></div>'+
+    '<div class="daimon-list-name"></div>'+
+    '<div class="list-q"></div>'+
+    '<div class="daimon-list-tiers"></div>';
+  item.querySelector(".list-unit-tag").textContent = g.u + "　🖨️紙";
+  item.querySelector(".daimon-list-name").textContent =
+    "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問" + g.items.length + "）";
+  item.querySelector(".list-q").textContent = (g.lead || g.items[0].q || "").replace(/\s+/g, " ");
+  item.querySelector(".daimon-list-tiers").textContent =
+    "紙で出す" + (g.paperReason ? "：" + g.paperReason : "") + "（出題には出ません）";
   return item;
 }
 
@@ -5950,6 +6104,7 @@ els["list-btn"].addEventListener("click", ()=>{
   listFilterStar = false;
   listPriority = "all";
   listType = "all";
+  listKind = "all";
   listOrder = "tier";
   listDateFrom = "";
   listDateTo = "";
@@ -6018,6 +6173,14 @@ document.querySelectorAll("#list-type-row .toggle").forEach(el=>{
   el.addEventListener("click", ()=>{
     listType = el.dataset.listType;
     document.querySelectorAll("#list-type-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
+    renderListItems();
+  });
+});
+// ★2026-09-28: 種類（すべて／一問一答／大問／紙の大問）
+document.querySelectorAll("#list-kind-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    listKind = el.dataset.listKind;
+    document.querySelectorAll("#list-kind-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
     renderListItems();
   });
 });
@@ -6408,6 +6571,129 @@ function daimonImg(name){
 function daimonName(g){
   return /^\d+$/.test(g.daimon) ? "大問" + g.daimon : g.daimon;
 }
+
+// ============================================================
+// ★「紙で出す」（2026-09-28）。依頼書: 司令塔\回答\理科_大問を紙で出す_依頼_2026-09-28.md B節
+// ============================================================
+//   ・PAPER_DAIMON は QA_DATA に入っていない大問だけ（addDaimonEntries 参照）。
+//     ここから先は出題・記録には一切つながらない。印刷して紙で配るためだけの経路
+//   ・問題の紙 … 見出し・リード文・図・小問と書くスペース。答え（a・aFile）は一切出さない
+//   ・答えの紙 … 小問ごとの答え（aFile もここ）。改ページで別ページに
+function refreshPaperButton(){
+  // ★理科のときだけ・印の付いた大問が1つ以上あるときだけ出す
+  els["paper-open-btn"].style.display = (currentSubject === "理科" && PAPER_DAIMON.length > 0) ? "" : "none";
+}
+function renderPaperList(){
+  const body = els["paper-list-body"];
+  body.innerHTML = "";
+  if(PAPER_DAIMON.length === 0){
+    const e = document.createElement("div");
+    e.className = "empty-note";
+    e.textContent = "紙の印が付いた大問はありません。";
+    body.appendChild(e);
+    return;
+  }
+  let lastHead = "";
+  PAPER_DAIMON.forEach(g=>{
+    const head = "第" + g.kai + "回 " + g.book;
+    if(head !== lastHead){
+      const h = document.createElement("div");
+      h.className = "daimon-group-title";
+      h.textContent = head;
+      body.appendChild(h);
+      lastHead = head;
+    }
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "paper-row";
+    row.dataset.key = g.key;
+    row.innerHTML = '<span class="name"></span><span class="reason"></span><span class="gist"></span>';
+    row.querySelector(".name").textContent = daimonName(g) + "（小問" + g.items.length + "）";
+    row.querySelector(".reason").textContent = g.paperReason ? "紙の理由：" + g.paperReason : "";
+    row.querySelector(".gist").textContent = (g.lead || g.items[0].q || "").replace(/\s+/g, " ");
+    row.addEventListener("click", ()=> openPaperPrint(g.key));
+    body.appendChild(row);
+  });
+}
+function openPaperList(){
+  renderPaperList();
+  showScreen("screen-paper-list");
+}
+// 問題の紙・答えの紙、共通の見出し部分
+function paperSheetHead(g, label){
+  const wrap = document.createElement("div");
+  wrap.className = "paper-sheet-title";
+  wrap.textContent = "第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（" + label + "）";
+  return wrap;
+}
+function openPaperPrint(key){
+  const g = PAPER_DAIMON.find(x => x.key === key);
+  if(!g) return;
+  const body = els["paper-print-body"];
+  body.innerHTML = "";
+
+  // ---- 問題の紙。★答え（a・aFile）は1文字も、どの図も入れない ----
+  const qSheet = document.createElement("div");
+  qSheet.className = "paper-sheet paper-page-break";
+  qSheet.appendChild(paperSheetHead(g, "問題"));
+  const sub = document.createElement("div");
+  sub.className = "paper-sheet-sub";
+  sub.textContent = "名前：＿＿＿＿＿＿＿＿＿＿＿＿＿＿";
+  qSheet.appendChild(sub);
+  if(g.lead){
+    const lead = document.createElement("div");
+    lead.className = "paper-lead-text";
+    lead.textContent = g.lead;
+    qSheet.appendChild(lead);
+  }
+  if(g.file) qSheet.appendChild(daimonImg(g.file));
+  g.items.forEach((it, pos)=>{
+    const card = document.createElement("div");
+    card.className = "paper-item";
+    const lab = document.createElement("div");
+    lab.className = "paper-item-label";
+    lab.textContent = it.label || ("(" + (pos + 1) + ")");
+    card.appendChild(lab);
+    const q = document.createElement("div");
+    q.className = "paper-item-q";
+    q.textContent = it.q;
+    card.appendChild(q);
+    if(it.file) card.appendChild(daimonImg(it.file));
+    const box = document.createElement("div");
+    box.className = "paper-write-box";
+    card.appendChild(box);
+    qSheet.appendChild(card);
+  });
+  body.appendChild(qSheet);
+
+  // ---- 答えの紙。別ページ（改ページ）。小問ごとの答え・aFile はここだけ ----
+  const aSheet = document.createElement("div");
+  aSheet.className = "paper-sheet";
+  aSheet.appendChild(paperSheetHead(g, "答え"));
+  g.items.forEach((it, pos)=>{
+    const card = document.createElement("div");
+    card.className = "paper-item";
+    const lab = document.createElement("div");
+    lab.className = "paper-item-label";
+    lab.textContent = it.label || ("(" + (pos + 1) + ")");
+    card.appendChild(lab);
+    const a = document.createElement("div");
+    a.className = "paper-item-a";
+    a.textContent = it.a;
+    card.appendChild(a);
+    if(it.aFile) card.appendChild(daimonImg(it.aFile));
+    if(it.sol){
+      const sol = document.createElement("div");
+      sol.className = "paper-item-sol";
+      sol.textContent = "解説：" + it.sol;
+      card.appendChild(sol);
+    }
+    aSheet.appendChild(card);
+  });
+  body.appendChild(aSheet);
+
+  showScreen("screen-paper-print");
+}
 function renderDaimonList(){
   const body = els["daimon-list-body"];
   body.innerHTML = "";
@@ -6531,6 +6817,10 @@ function openDaimonList(){
 }
 els["daimon-open-btn"].addEventListener("click", openDaimonList);
 els["daimon-list-back"].addEventListener("click", ()=>{ showScreen("screen-home"); renderHome(); });
+els["paper-open-btn"].addEventListener("click", openPaperList);
+els["paper-list-back"].addEventListener("click", ()=>{ showScreen("screen-home"); renderHome(); });
+els["paper-print-back"].addEventListener("click", ()=> showScreen("screen-paper-list"));
+els["paper-print-btn"].addEventListener("click", ()=> window.print());
 els["daimon-reveal-btn"].addEventListener("click", revealDaimon);
 els["daimon-judge-ok"].addEventListener("click", ()=> judgeDaimon(true));
 els["daimon-judge-ng"].addEventListener("click", ()=> judgeDaimon(false));
@@ -6624,7 +6914,18 @@ function startSoloCard(){
   // ★「ひとつ前の判定をやり直す」は、直前が大問の小問だったときは出さない
   //   （大問の中の判定を1つずつ戻す道は作らない。承認ずみの案の4節）。review モードは記録を動かさないので対象外
   const prevWasDaimonItem = !reviewMode && quizPos > 0 && isDaimonItemId(quizQueue[quizPos - 1]);
-  els["solo-undo-row"].style.display = (quizPos > 0 && !prevWasDaimonItem) ? "block" : "none";
+  // ★2026-09-28: チェックのみのときは「一つ進む」も同じ行に出す（依頼:「特定の場所の問題のチェックをしたいので」）。
+  //   ★記録は動かさない（quizPos を動かして startSoloCard を呼ぶだけ）
+  els["solo-forward-link"].style.display = reviewMode ? "inline" : "none";
+  els["solo-undo-row"].style.display = (reviewMode || (quizPos > 0 && !prevWasDaimonItem)) ? "block" : "none";
+  els["solo-undo-link"].style.display = (reviewMode ? quizPos > 0 : (quizPos > 0 && !prevWasDaimonItem)) ? "inline" : "none";
+  // ★「何問目」ジャンプもチェックのみのときだけ。ふつうの一人モードは順番どおり答える作りを変えない
+  els["solo-review-jump-row"].style.display = reviewMode ? "flex" : "none";
+  if(reviewMode){
+    els["solo-review-jump-input"].max = String(quizQueue.length);
+    els["solo-review-jump-input"].placeholder = String(quizPos + 1);
+    els["solo-review-jump-total"].textContent = String(quizQueue.length);
+  }
   saveSoloSession();
 }
 
@@ -6699,6 +7000,26 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     adjustStat(qid, recorded ? "correct" : "wrong", -1);
     quizPos = Math.max(0, quizPos - 1);
   }
+  startSoloCard();
+});
+
+// ★2026-09-28: チェックのみの「一つ進む」。記録は一切触らない（quizPos を動かすだけ）
+els["solo-forward-link"].addEventListener("click", ()=>{
+  if(!reviewMode) return;
+  if(quizPos >= quizQueue.length - 1) return;
+  quizPos++;
+  startSoloCard();
+});
+// ★2026-09-28: チェックのみの「何問目」ジャンプ。範囲外・数字でない入力は無視して知らせる。記録は触らない
+els["solo-review-jump-btn"].addEventListener("click", ()=>{
+  if(!reviewMode) return;
+  const v = parseInt(els["solo-review-jump-input"].value, 10);
+  if(!Number.isInteger(v) || v < 1 || v > quizQueue.length){
+    alert("1〜"+quizQueue.length+"の番号を入れてください。");
+    return;
+  }
+  quizPos = v - 1;
+  els["solo-review-jump-input"].value = "";
   startSoloCard();
 });
 

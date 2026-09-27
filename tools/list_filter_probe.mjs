@@ -251,6 +251,51 @@ console.log("\n【4】表示順「出題順」の並びが、実際の「出題�
   await backToHome();
 }
 
+console.log("\n【5】種類（すべて／一問一答／大問）: 一覧の絞りこみが実際の中身と一致する（2026-09-28）");
+{
+  // 理科・大問のある単元を1つ探す（決め打ちしない・4-6p）
+  const sciUnit = await page.evaluate(() => {
+    const d = QA_DATA.find(x => x.subj === "理科" && x.kind === "daimon");
+    return d ? d.u : null;
+  });
+  if (!sciUnit) {
+    console.log("  （大問のある理科の単元が見つからないため、この検査は省略）");
+  } else {
+    // ★一覧の単元セレクトは currentSubject の単元しか出ない。まず理科に切りかえる
+    await page.click("#subject-science"); await page.waitForTimeout(200);
+    await page.click("#list-btn"); await page.waitForTimeout(400);
+    await page.selectOption("#list-unit-select", [sciUnit]); await page.waitForTimeout(150);
+    // 段を全部選ぶ＝絞りこみなしと同じにする
+    for (const t of [0, 1, 2]) {
+      const on = await page.evaluate((tt) => document.querySelector('.list-filter-toggle[data-tier="' + tt + '"]').classList.contains("on"), t);
+      if (!on) await page.click('.list-filter-toggle[data-tier="' + t + '"]');
+    }
+    await page.waitForTimeout(300);
+    const readKind = async (kind) => {
+      await page.click('#list-kind-row .toggle[data-list-kind="' + kind + '"]');
+      await page.waitForTimeout(250);
+      return page.evaluate(() => ({
+        n: [...document.querySelectorAll("#list-items .list-item")].length,
+        daimonN: document.querySelectorAll("#list-items .daimon-list-item").length,
+        qaN: document.querySelectorAll("#list-items .list-item:not(.daimon-list-item)").length,
+      }));
+    };
+    const all = await readKind("all");
+    const qa = await readKind("qa");
+    const daimon = await readKind("daimon");
+    check("★「すべて」＝「一問一答」＋「大問」の行数", all.n, qa.n + daimon.n);
+    check("★「一問一答」に大問の行が0件", qa.daimonN, 0);
+    check("★「大問」は全部が大問の行（一問一答が混ざらない）", daimon.n > 0 && daimon.qaN === 0, true);
+    check("★0対0の無意味な一致ではない（大問が1件以上ある）", daimon.n > 0, true);
+
+    // 紙の大問（印0件が既定）: フィルタは選べるが、件数は「出題」の◯問には混ざらない
+    await page.click('#list-kind-row .toggle[data-list-kind="paper"]'); await page.waitForTimeout(250);
+    const paperTxt = await page.evaluate(() => document.getElementById("list-count").textContent);
+    check("★「紙の大問」の件数表示は「◯問」ではない専用の文言", /紙の大問/.test(paperTxt), true);
+    await backToHome();
+  }
+}
+
 await ctx.close();
 await browser.close();
 server.close();
