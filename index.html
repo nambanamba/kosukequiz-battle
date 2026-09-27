@@ -1900,7 +1900,20 @@
     </div>
     <!-- 一覧の絞りこみは、たたまずに見える形（2026-09-13 ユーザー原文「これまであった実施日やステータスでの絞り込みは消さないでほしい」）。
          ★いちど「絞りこみ ▾」でたたむ形にしたが、たたむのはメイン画面のほうだった（取り違え）。元の形に戻した -->
-    <select id="list-unit-select" class="list-select" style="width:100%;"></select>
+    <!-- ★2026-09-27: 単元を複数選べるようにした（依頼書「単元も複数選びたい」）。
+         メイン画面（#unit-choices）と同じチェックボックスの並びは作らず、既存の<select>に
+         multiple を足すだけにした。理由は2つ: ①既存の自己テストが selectOption(単一の単元名) を
+         使っており、Playwrightのこの呼び方は「その1つだけ選ぶ」動きなので、既存テストがそのまま通る。
+         ②案_問題一覧のフィルタ_2026-09-27.md の「そろえ方」参照。
+         「すべて選ぶ／クリア」は復習ミックスの単元選択と同じ言い回し -->
+    <div class="list-section-title" style="display:flex; justify-content:space-between; align-items:baseline;">
+      <span>単元をえらぶ（複数選択できます）</span>
+      <span style="font-size:12px; font-weight:normal;">
+        <span class="back-link" id="list-unit-all-link" style="margin:0 8px 0 0; display:inline;">すべて選ぶ</span>
+        <span class="back-link" id="list-unit-clear-link" style="margin:0; display:inline;">クリア</span>
+      </span>
+    </div>
+    <select id="list-unit-select" class="list-select" multiple size="6" style="width:100%;"></select>
 
     <!-- ★段のチップは3つだけ（2026-09-26）。ユーザー「4ついりますか?」
          ★「未実施のみ」は消しました（記録が1件も無い問だけで、1段目とは別の切り口だった） -->
@@ -1922,6 +1935,14 @@
       <span class="back-link" id="star-bulk-off">表示中の★を外す</span>
     </div>
 
+    <!-- ★2026-09-27: 出題タイプ（図の有無）を足した。メイン画面（#type-all/-image/-text）と同じ3つの言葉 -->
+    <div class="list-section-title">出題タイプ</div>
+    <div class="toggle-row" id="list-type-row">
+      <div class="toggle on" data-list-type="all">文章・図をすべて</div>
+      <div class="toggle" data-list-type="image">図の問題だけ</div>
+      <div class="toggle" data-list-type="text">文章問題だけ</div>
+    </div>
+
     <div class="list-section-title">優先度</div>
     <div class="toggle-row" id="list-priority-row">
       <div class="toggle on" data-list-priority="all">すべて</div>
@@ -1929,13 +1950,14 @@
       <div class="toggle" data-list-priority="低">低</div>
     </div>
 
-    <div class="list-section-title">難易度</div>
-    <div class="toggle-row" id="list-level-row">
-      <div class="toggle on" data-list-level="all">すべて</div>
-      <div class="toggle" data-list-level="基礎">基礎</div>
-      <div class="toggle" data-list-level="標準">標準</div>
-      <div class="toggle" data-list-level="発展">発展</div>
-      <div class="toggle" data-list-level="none">未設定</div>
+    <!-- ★2026-09-27: 難易度の絞り込みは削除（ユーザー「難易度は消していい」。出題側は81187c6で消えている） -->
+
+    <!-- ★2026-09-27: 表示順を足した（依頼書「今の出題順、単純な問題番号順の両方」）。
+         定義は 案_問題一覧のフィルタ_2026-09-27.md の4節参照 -->
+    <div class="list-section-title">表示順</div>
+    <div class="toggle-row" id="list-order-row">
+      <div class="toggle on" data-list-order="tier">出題順</div>
+      <div class="toggle" data-list-order="number">問題番号順</div>
     </div>
 
     <div class="list-date-row">
@@ -5480,17 +5502,24 @@ els["result-home-btn"].addEventListener("click", ()=>{
 });
 
 // ---- list screen: browse every question and flip its status by hand ----
-let listUnit = "ALL";
+// ★2026-09-27: 単元は複数選べる（依頼書「単元も複数選びたい」）。初期値＝全単元
+//   （前の listUnit==="ALL" と同じ意味。list-btn を押すたびに全単元へ戻す＝他の絞りこみと同じ扱い）
+let listSelectedUnits = new Set(getUnits());
+function listUnitsAreAll(){
+  const au = getUnits();
+  return au.length > 0 && au.every(u => listSelectedUnits.has(u));
+}
 // ★一覧の段の絞りこみ（2026-09-26）。★空＝絞らない（全部出す）。
 //   ★ホームの出題モードとは別の設定。こちらは保存しない（前からそう）
 let listTiers = new Set();
 let listFilterStar = false;   // ★最優先のみ（2026-09-22）
 let listShownIndices = [];    // いま一覧に出ている問題（★をまとめて付け外しするときに使う）
-// 一覧の優先度・難易度の絞りこみ。"all" か、データの値そのもの（高/中/低・基礎/標準/発展）か、
-// "none"（データにその項目が無い問題）。1631問中463問が未設定なので、
-// 未設定も選べるようにしないと、絞りこんだとたんに消えて混乱する
+// 一覧の優先度の絞りこみ。"all" か、データの値そのもの（普通/低）
 let listPriority = "all";
-let listLevel = "all";
+// ★2026-09-27: 出題タイプ（図の有無）。メイン画面の currentType と同じ3値。一覧専用（保存しない）
+let listType = "all";
+// ★2026-09-27: 表示順。"tier"=出題順（orderByTiers）／"number"=問題番号順（並べ替えない）
+let listOrder = "tier";
 // 「その問題に優先度（難易度）が入っているか」の判定。空文字も未設定とみなす
 function metaValue(d, key){ return d[key] ? d[key] : null; }
 // 一覧の各行に出す優先度・難易度のふだ。どちらも無い問題は「未設定」を1つだけ出す
@@ -5512,19 +5541,22 @@ function matchesMetaFilter(value, filter){
 let listDateFrom = "";
 let listDateTo = "";
 
+// ★2026-09-27: 複数選択の <select multiple> に変えた。選択状態は listSelectedUnits（Set）が正
 function populateListUnitSelect(){
   els["list-unit-select"].innerHTML = "";
-  const optAll = document.createElement("option");
-  optAll.value = "ALL";
-  optAll.textContent = "全単元";
-  els["list-unit-select"].appendChild(optAll);
   getUnits().forEach(u=>{
     const opt = document.createElement("option");
     opt.value = u;
     opt.textContent = u;
+    opt.selected = listSelectedUnits.has(u);
     els["list-unit-select"].appendChild(opt);
   });
-  els["list-unit-select"].value = listUnit;
+}
+// ★一覧用の単元絞り込み（複数）。出題側の unitIndices(unit) と同じ条件で、単元だけ複数版にしたもの
+function listUnitIndices(){
+  const arr = [];
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && d.kind !== "calc" && listSelectedUnits.has(d.u)) arr.push(i); });
+  return arr;
 }
 
 // ★一覧の1問ごとの状態も、出題の3段そのものにした（2026-09-26）。
@@ -5544,8 +5576,11 @@ function renderListScreen(){
   document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
     el.classList.toggle("on", el.dataset.listPriority === listPriority);
   });
-  document.querySelectorAll("#list-level-row .toggle").forEach(el=>{
-    el.classList.toggle("on", el.dataset.listLevel === listLevel);
+  document.querySelectorAll("#list-type-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.listType === listType);
+  });
+  document.querySelectorAll("#list-order-row .toggle").forEach(el=>{
+    el.classList.toggle("on", el.dataset.listOrder === listOrder);
   });
   els["list-date-from"].value = listDateFrom;
   els["list-date-to"].value = listDateTo;
@@ -5570,12 +5605,14 @@ function renderListItems(){
     els["list-items"].innerHTML = '<div class="empty-note">単元か絞りこみを選んでください。</div>';
     return;
   }
-  let indices = unitIndices(listUnit);
+  let indices = listUnitIndices();
   // ★選んだ段だけ残す。何も選んでいなければ全部（2026-09-26）
   if(listTiers.size > 0) indices = indices.filter(i => listTiers.has(tierOf(i)));
   if(listFilterStar) indices = indices.filter(i => isPriority(QA_DATA[i].id));
   if(listPriority !== "all") indices = indices.filter(i => prioOf(QA_DATA[i]) === listPriority);
-  if(listLevel !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "level"), listLevel));
+  // ★2026-09-27: 出題タイプ（図の有無）。メイン画面の applyPoolFiltersExceptPriority と同じ式
+  if(listType === "image") indices = indices.filter(i => !!QA_DATA[i].img);
+  else if(listType === "text") indices = indices.filter(i => !QA_DATA[i].img);
   if(listDateFrom || listDateTo){
     indices = indices.filter(i=>{
       const d = QA_DATA[i];
@@ -5590,6 +5627,8 @@ function renderListItems(){
       return true;
     });
   }
+  // ★2026-09-27: 表示順。「出題順」は buildPlan と同じ3段（案の4節）。「問題番号順」は並べ替えない
+  if(listOrder === "tier") indices = orderByTiers(indices, true);
   els["list-count"].textContent = sumWeight(indices)+"問";   // ★大問は答える小問の数（2026-09-27）
   listShownIndices = indices;
   refreshStarBulkLabel();
@@ -5888,11 +5927,12 @@ els["selection-battle-btn"].addEventListener("click", ()=>{
 });
 
 els["list-btn"].addEventListener("click", ()=>{
-  listUnit = "ALL";
+  listSelectedUnits = new Set(getUnits());
   listTiers.clear();
   listFilterStar = false;
   listPriority = "all";
-  listLevel = "all";
+  listType = "all";
+  listOrder = "tier";
   listDateFrom = "";
   listDateTo = "";
   selectedQuestionIds = new Set();
@@ -5905,7 +5945,17 @@ els["list-back"].addEventListener("click", ()=>{
   showScreen("screen-home");
 });
 els["list-unit-select"].addEventListener("change", ()=>{
-  listUnit = els["list-unit-select"].value;
+  listSelectedUnits = new Set(Array.from(els["list-unit-select"].selectedOptions).map(o=>o.value));
+  renderListItems();
+});
+document.getElementById("list-unit-all-link").addEventListener("click", ()=>{
+  listSelectedUnits = new Set(getUnits());
+  populateListUnitSelect();
+  renderListItems();
+});
+document.getElementById("list-unit-clear-link").addEventListener("click", ()=>{
+  listSelectedUnits = new Set();
+  populateListUnitSelect();
   renderListItems();
 });
 document.querySelectorAll(".list-filter-toggle").forEach(el=>{
@@ -5937,8 +5987,7 @@ function bulkStar(on){
 }
 document.getElementById("star-bulk-on").addEventListener("click", () => bulkStar(true));
 document.getElementById("star-bulk-off").addEventListener("click", () => bulkStar(false));
-// 優先度・難易度は「すべて／値／未設定」からひとつ選ぶ形。
-// 出題設定側の priority/level と同じ選び方にそろえてある
+// 優先度は「すべて／普通／低」からひとつ選ぶ形。出題設定側の priority と同じ選び方・同じ言葉
 document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
   el.addEventListener("click", ()=>{
     listPriority = el.dataset.listPriority;
@@ -5946,10 +5995,19 @@ document.querySelectorAll("#list-priority-row .toggle").forEach(el=>{
     renderListItems();
   });
 });
-document.querySelectorAll("#list-level-row .toggle").forEach(el=>{
+// ★2026-09-27: 出題タイプ（図の有無）。出題設定側の type と同じ選び方・同じ言葉
+document.querySelectorAll("#list-type-row .toggle").forEach(el=>{
   el.addEventListener("click", ()=>{
-    listLevel = el.dataset.listLevel;
-    document.querySelectorAll("#list-level-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
+    listType = el.dataset.listType;
+    document.querySelectorAll("#list-type-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
+    renderListItems();
+  });
+});
+// ★2026-09-27: 表示順（出題順／問題番号順）
+document.querySelectorAll("#list-order-row .toggle").forEach(el=>{
+  el.addEventListener("click", ()=>{
+    listOrder = el.dataset.listOrder;
+    document.querySelectorAll("#list-order-row .toggle").forEach(o=>o.classList.toggle("on", o === el));
     renderListItems();
   });
 });
@@ -5972,10 +6030,11 @@ els["list-date-clear"].addEventListener("click", ()=>{
 // ---- 一覧: 単元・状態・解いた日のどれかを選ぶまで、何も描かない（2026-09-13 ユーザー原文
 //      「一覧画面は初期表示で絞込が効いている状態、または絞り込みを押すまで何も出さない。
 //        いまだといきなり全件読もうとするので非常に時間が掛かります」）。
-//      ★優先度・難易度だけでは出さない（「高」だけでも数百問になり、全件と同じくらい遅いため）。
+//      ★優先度・出題タイプだけでは出さない（「普通」だけでも数百問になり、全件と同じくらい遅いため）。
 //      条件は画面を閉じても覚えているので、次に一覧を開くとその条件で出る ----
+//      ★2026-09-27: 単元は複数選択になったので「全単元を選んでいる＝ALLと同じ」で判定する
 function listHasCondition(){
-  return listUnit !== "ALL" || listTiers.size > 0 || listFilterStar || !!listDateFrom || !!listDateTo;
+  return !listUnitsAreAll() || listTiers.size > 0 || listFilterStar || !!listDateFrom || !!listDateTo;
 }
 
 // ---- メイン画面の「出題タイプ・優先度・難易度」をたたむ（2026-09-13 ユーザー原文
