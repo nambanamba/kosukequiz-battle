@@ -26,7 +26,8 @@ fs.mkdirSync(SHOTS, { recursive: true });
 const gRoot = execSync("npm root -g", { encoding: "utf8" }).trim();
 const { chromium } = await import(pathToFileURL(path.join(gRoot, "playwright", "index.mjs")).href);
 
-const BASE_COMMIT = "79533e7";
+// ★2026-09-27 夕: 対照を b68eb5d（大問を数に入れる前・公開版）に置きかえた。HEAD にはしない（4-6c）
+const BASE_COMMIT = "b68eb5d";
 const lf = s => s.replace(/\r\n/g, "\n");
 const CURRENT = lf(fs.readFileSync(path.join(ROOT, "index.html"), "utf8"));
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 });
@@ -41,8 +42,10 @@ const fakeAnsFigEarly = s => cut(s, "  if(it.file) card.appendChild(daimonImg(it
   "  if(it.file) card.appendChild(daimonImg(it.file));\n  if(it.aFile) card.appendChild(daimonImg(it.aFile));  /* ★偽の実装 */\n", "小問の図");
 const fakeDropLead = s => cut(s, "  c.revealed = false;\n  c.pos++;\n",
   "  c.revealed = false;\n  c.pos++;\n  els[\"daimon-lead-card\"].innerHTML = \"\"; els[\"daimon-lead-btn\"].style.display = \"none\";  /* ★偽の実装 */\n", "judge の pos++");
-const fakeWrongStore = s => cut(s, "  recordDaimonResult(it.id, correct);\n",
-  "  recordResult(it.id, correct);  /* ★偽の実装 */\n", "記録の行");
+// ★2026-09-27 夕: 記録は一問一答と同じ入れ物（stats）に入れるのが正しい形になった。
+//   偽の実装は「前のまま、古い別の入れ物に書く」に入れかえた
+const fakeWrongStore = s => cut(s, "function recordDaimonResult(id, correct){ recordResult(id, correct); }",
+  "function recordDaimonResult(id, correct){ const o = daimonStats[id] || {correct:0, wrong:0}; if(correct) o.correct++; else o.wrong++; daimonStats[id] = o; saveDaimonStats(); }  /* ★偽の実装 */", "記録の行");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png" };
 let SERVED = CURRENT;
@@ -94,7 +97,15 @@ async function run(tag, src) {
     const home = await homeNumbers(src);
     SERVED = src;
     check("⑥ ホームの数字と問題数が直す前と同じ（社会）", home["社会"] === HOME_BEFORE["社会"], home["社会"] + " ／ 前 " + HOME_BEFORE["社会"]);
-    check("⑥ ホームの数字と問題数が直す前と同じ（理科）", home["理科"] === HOME_BEFORE["理科"], home["理科"] + " ／ 前 " + HOME_BEFORE["理科"]);
+    // ★2026-09-27 夕: 理科は大問を「答える小問の数」で数えるようになった。この仕込みでは小問に記録が無いので、
+    //   全部が「まだ正解していない」に入る ＝ 総数と1段目と「◯問」が「前＋小問の数」、2・3段目は前と同じ。★小問の数は決め打ちしない（4-6p）
+    const nItems = await (async () => { const c = await browser.newContext(); const q = await c.newPage(); await q.goto(URL0);
+      const n = await q.evaluate(() => DAIMON_DATA.reduce((a, g) => a + g.items.length, 0)); await c.close(); return n; })();
+    const nums = t => t.split(" | ").map(x => parseInt(x, 10));
+    const hb = nums(HOME_BEFORE["理科"]), hn = nums(home["理科"]);
+    check("⑥ 理科のホーム: 総数・1段目・「◯問」が前＋小問" + nItems + "、2・3段目は前と同じ",
+      hn[0] === hb[0] + nItems && hn[1] === hb[1] + nItems && hn[2] === hb[2] && hn[3] === hb[3] && hn[4] === hb[4] + nItems,
+      home["理科"] + " ／ 前 " + HOME_BEFORE["理科"]);
 
     await p.goto(URL0); await p.waitForTimeout(300); await p.evaluate(SEED); await p.reload(); await p.waitForTimeout(800);
     const qaBefore = await p.evaluate(() => localStorage.getItem("kq_battle_stats_v1"));
@@ -152,7 +163,8 @@ async function run(tag, src) {
       if (gi === 0 || g.key.includes("基本問題_1")) await p.screenshot({ path: path.join(SHOTS, tag + "_" + gi + "_done.png"), fullPage: true });
       await p.click("#daimon-finish-btn"); await p.waitForTimeout(100);
     }
-    const ds = await p.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_daimon_stats_v1") || "{}"));
+    // ★2026-09-27 夕: 小問の記録は一問一答と同じ入れ物（stats）に、小問の id で入る
+    const ds = await p.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}"));
     for (const g of D) g.ids.forEach((id, k) => {
       const s = ds[id]; const want = k % 2 === 0;
       if (!s || (want ? s.correct !== 1 || s.wrong !== 0 : s.correct !== 0 || s.wrong !== 1)) { recOk = false; }
@@ -163,15 +175,18 @@ async function run(tag, src) {
     check("③ どの小問を解いているときも、リード文・図が上に残り、ボタンもある", leadOk, bad.filter(b => b.includes("リード")).slice(0, 2).join(" ／ "));
     check("③ 「リード文・図を見る」で開ける", overlayOk);
     check("⑤ 答えの図は「こたえを見る」の前には無く、押すと出る", ansFigOk && ansFigSeen > 0, "出た " + ansFigSeen + "枚");
-    check("④ 〇✕が小問ごとに、大問の入れ物に記録される（" + nIds + "問）", recOk && Object.keys(ds).length === nIds, Object.keys(ds).length);
-    const qaAfter = await p.evaluate(() => localStorage.getItem("kq_battle_stats_v1"));
-    check("④ ★一問一答の記録は1文字も変わらない", qaAfter === qaBefore);
+    const itemSet = new Set(D.flatMap(g => g.ids));
+    check("④ 〇✕が小問ごとに、stats に小問の id で記録される（" + nIds + "問）", recOk && Object.keys(ds).filter(k => itemSet.has(k)).length === nIds, Object.keys(ds).filter(k => itemSet.has(k)).length);
+    const qaB = JSON.parse(qaBefore), qaA = ds;
+    const qaChanged = Object.keys(Object.assign({}, qaB, qaA)).filter(k => !itemSet.has(k) && JSON.stringify(qaB[k]) !== JSON.stringify(qaA[k]));
+    check("④ ★一問一答の記録は1文字も変わらない", qaChanged.length === 0, qaChanged.slice(0, 5).join(","));
     check("⑧ 横のはみ出し 0", overflow <= 0, overflow);
     // ⑦ ぜんぶクリア
     await p.click("#daimon-list-back"); await p.waitForTimeout(200);
     await p.evaluate(() => document.getElementById("stat-clear-link").click()); await p.waitForTimeout(200);
-    const after = await p.evaluate(() => localStorage.getItem("kq_battle_daimon_stats_v1"));
-    check("⑦ 「記録をぜんぶクリア」で大問の記録も消える", after === "{}" || after === null, after && after.slice(0, 40));
+    const after = await p.evaluate(() => [localStorage.getItem("kq_battle_daimon_stats_v1"), localStorage.getItem("kq_battle_stats_v1")]);
+    check("⑦ 「記録をぜんぶクリア」で大問の記録も消える（stats と古い入れ物の両方）",
+      (after[0] === "{}" || after[0] === null) && (after[1] === "{}" || after[1] === null), after.map(x => x && x.slice(0, 40)).join(" / "));
   } catch (e) { check("例外なく走りきる", false, e.message.split("\n")[0]); }
   check("⑧ 画面のエラー 0", errs.length === 0, errs.slice(0, 2).join(" / "));
   await ctx.close();
@@ -191,7 +206,7 @@ const selfTests = [
   ["(a) 偽の実装: 小問を最初から全部出す", () => fakeAllAtOnce(CURRENT)],
   ["(b) 偽の実装: 答えの図を問題と一緒に出す", () => fakeAnsFigEarly(CURRENT)],
   ["(c) 偽の実装: 2問目からリード文を消す", () => fakeDropLead(CURRENT)],
-  ["(d) 偽の実装: 記録を一問一答の入れ物に書く", () => fakeWrongStore(CURRENT)],
+  ["(d) 偽の実装: 記録を古い別の入れ物に書く（前のまま）", () => fakeWrongStore(CURRENT)],
   ["(e) 対照 " + BASE_COMMIT + "（直す前）", () => BASELINE]
 ];
 const ONLY = (() => { const k = process.argv.indexOf("--only"); return k >= 0 ? process.argv[k + 1] : null; })();

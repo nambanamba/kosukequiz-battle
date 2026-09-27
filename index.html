@@ -1621,6 +1621,13 @@
   .daimon-finish{ text-align:center; margin:18px 0 90px; }
   .daimon-finish .big{ font-size:30px; font-weight:700; margin-bottom:12px; color:var(--navy-deep); }
   #screen-daimon{ padding-bottom:80px; }
+  .daimon-list-name{ font-weight:700; color:var(--navy-deep); margin:4px 0; }
+  .daimon-list-tiers{ font-size:12px; color:var(--ink-soft); margin-top:6px; }
+  /* 対戦で大問の小問を出すとき（2026-09-27）。★battle-view の中に置く（待ち画面で一緒に隠れる） */
+  .battle-daimon-title{ font-size:13px; font-weight:700; color:var(--gold); margin-bottom:6px; }
+  .battle-daimon-prev{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:10px; font-size:14px; }
+  .battle-daimon-prev .a-text{ font-size:15px; }
+  .battle-daimon-cur{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:12px; }
   .daimon-lead-float{ position:fixed; left:12px; bottom:12px; z-index:40; padding:10px 14px;
     border-radius:999px; border:1.5px solid var(--gold); background:#fffaf0; color:var(--navy-deep);
     font-weight:700; font-size:14px; box-shadow:var(--card-shadow); }
@@ -2115,10 +2122,13 @@
         <div class="mark-layer" id="battle-marks"></div>
       </div>
       <div id="battle-view">
+        <div id="battle-daimon" style="display:none;"></div>
         <div class="q-text" id="battle-q"></div>
+        <div id="battle-daimon-fig"></div>
         <div class="a-block" id="battle-a-block">
           <div class="a-label">こたえ</div>
           <div class="a-text" id="battle-a"></div>
+          <div id="battle-daimon-afig"></div>
           <div class="sol-block" id="battle-sol-block" style="display:none;">
             <div class="sol-label">解説</div>
             <div class="sol-text" id="battle-sol"></div>
@@ -2198,6 +2208,103 @@
 <script src="data.js"></script>
 <script src="daimon_data.js"></script>
 <script type="module">
+// ============================================================
+// ★★ 理科の大問を「1問」として問題の並びに足す（2026-09-27 ユーザー承認）
+// ============================================================
+// 依頼書 = 司令塔\回答\対戦_大問の入り口を一問一答と同じにする_依頼_2026-09-27.md
+// 案     = 案_大問の入り口を一問一答と同じにする_20260927.md（ユーザー「その案で作り始めてください」）
+//   ・★大問1つ＝1問。ホームの数・3段・単元の数・問題数の選択・一覧は、大問を1と数える
+//   ・大問の段は、小問の段のうち一番低いもの（tierOf）
+//   ・★記録は小問ごとに、一問一答と同じ入れ物（stats）へ、小問の id で入れる。大問の行には記録を書かない
+//   ・★対戦では小問に開いて、続けて並べる（小問1つ＝対戦の1手。点数も「◯ / ◯」の分母も小問で数える）
+//   ・data.js は変えない。読み込んだあとに、QA_DATA のうしろに足す（kind:"daimon"）
+//   ・★ここはほかのどの処理よりも先に走ること（単元・移行・記録の片づけが QA_DATA を見るため）
+const DAIMON = (typeof DAIMON_DATA !== "undefined" && Array.isArray(DAIMON_DATA)) ? DAIMON_DATA : [];
+const DAIMON_SIZES = (typeof DAIMON_IMG_SIZES !== "undefined") ? DAIMON_IMG_SIZES : {};
+const DAIMON_ITEM = new Map();   // 小問の id → { it, g, pos, entry, view }
+(function addDaimonEntries(){
+  const unitOfKai = {};
+  QA_DATA.forEach(d => {
+    const m = d.subj === "理科" && /^第(\d+)回\./.exec(d.u || "");
+    if(m && !unitOfKai[m[1]]) unitOfKai[m[1]] = d.u;
+  });
+  const qaIds = new Set(QA_DATA.map(d => d.id));
+  DAIMON.forEach(g => {
+    const u = unitOfKai[String(g.kai)];
+    // ★単元が見つからない・id がかぶる大問は足さない（黙って別の単元に入れない）
+    if(!u || !Array.isArray(g.items) || g.items.length === 0 || qaIds.has(g.key)) return;
+    if(g.items.some(it => qaIds.has(it.id) || DAIMON_ITEM.has(it.id))) return;
+    const entry = {
+      id: g.key, subj: "理科", u: u, kind: "daimon", daimon: g,
+      q: (g.lead || g.items[0].q || "").replace(/\s+/g, " "), a: "",
+      itemIds: g.items.map(it => it.id),
+      hasFig: !!(g.file || g.items.some(it => it.file))
+    };
+    QA_DATA.push(entry);
+    g.items.forEach((it, pos) => {
+      DAIMON_ITEM.set(it.id, { it: it, g: g, pos: pos, entry: entry,
+        view: { id: it.id, subj: "理科", u: u, q: it.q, a: it.a, sol: it.sol, note: it.note, daimonKey: g.key } });
+    });
+  });
+})();
+function isDaimonEntry(d){ return !!(d && d.kind === "daimon"); }
+function isDaimonItemId(id){ return DAIMON_ITEM.has(id); }
+// 図があるか（出題タイプ「図あり／図なし」）。大問は大問か小問のどれかに図があれば図あり
+function qHasFig(d){ return isDaimonEntry(d) ? d.hasFig : !!d.img; }
+// ★「データにある id か」（記録の片づけ・対戦の再開で使う）。小問の id も入れる。入れないと小問の記録が捨てられる
+function isKnownId(id){ return DAIMON_ITEM.has(id) || QA_DATA.some(d => d.id === id); }
+// 対戦に出す並び: 大問の id は小問の id に開く（順番どおり・続けて）。★並べかえは開く前にすること
+function expandDaimonIds(ids){
+  const out = [];
+  ids.forEach(id => {
+    const d = QA_DATA.find(x => x.id === id);
+    // ★答える小問だけを手にする（前回○の小問は、画面に答えつきで出すだけ）。ホストの端末の記録で決める
+    if(isDaimonEntry(d)) answerItemIds(d).forEach(x => out.push(x)); else out.push(id);
+  });
+  return out;
+}
+// 開いた並びを、大問をかたまりのまま混ぜる（公平モードで相手の単元を足したとき・まちがえた問題のやり直し）
+function shuffleKeepingDaimon(ids){
+  const blocks = [];
+  ids.forEach(id => {
+    const dm = DAIMON_ITEM.get(id);
+    const last = blocks[blocks.length - 1];
+    if(dm && last && last.g === dm.g) last.ids.push(id);
+    else blocks.push({ g: dm ? dm.g : null, ids: [id] });
+  });
+  return shuffleArray(blocks).reduce((a, b) => a.concat(b.ids), []);
+}
+// ============================================================
+// ★★大問の数え方（2026-09-27 ユーザー「問題数は6問でいいと思います。もちろん正解済みはかぞえません」）
+// ============================================================
+//   ・大問は「答える小問の数」で数える。★答える小問＝前回○でない小問（最後の答えが✕／まだ答えていない）。
+//     前回○（連続正解数 box が1以上）の小問は、答えを最初から出しておき、○✕は付けない・数えない
+//   ・★ホームの数・3段・単元・一覧・「◯問」・問題数の指定・対戦の分母は、全部この weightOf で数える
+//   ・答える小問が0の大問（全部○）は0問。出題の候補に入れない（対戦にも出ない）
+//   ・★問題数を指定したとき、入れると指定の数をこえる大問は飛ばして、次の問題で埋める（takeByWeight）
+function answerItemIds(d){
+  return d.itemIds.filter(id => !((stats[id] && stats[id].box || 0) > 0));
+}
+function weightOf(i){
+  const d = QA_DATA[i];
+  return isDaimonEntry(d) ? answerItemIds(d).length : 1;
+}
+function sumWeight(list){ return list.reduce((a, i) => a + weightOf(i), 0); }
+// 並んだ順に取り、cap をこえるものは飛ばす（★大問を切って数を合わせることはしない）。
+// 戻り値の skippedDaimon … 大問を1つでも飛ばしたか（「一問一答が足りない」の知らせに使う）
+function takeByWeight(list, cap){
+  const out = [];
+  let total = 0, skippedDaimon = false;
+  for(const i of list){
+    if(total >= cap) break;
+    const w = weightOf(i);
+    if(total + w > cap){ if(isDaimonEntry(QA_DATA[i])) skippedDaimon = true; continue; }
+    out.push(i);
+    total += w;
+  }
+  out.skippedDaimon = skippedDaimon;
+  return out;
+}
 // ---- 対戦の通信ライブラリ（trystero）は、対戦を始めるときに初めて取りに行く。
 //      以前は先頭で import していたが、これは**起動のたびにインターネットへ
 //      4回続けて取りに行く**ことを意味していた
@@ -2872,6 +2979,7 @@ const els = {};
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
  "daimon-reveal-btn","daimon-judge-row","daimon-judge-ng","daimon-judge-ok","daimon-finish","daimon-finish-score","daimon-finish-btn",
  "daimon-lead-btn","daimon-lead-overlay","daimon-lead-overlay-body","daimon-lead-close",
+ "battle-daimon","battle-daimon-fig","battle-daimon-afig",
  "unit-choices","mode-stage1","mode-stage2","mode-stage3",
  "solo-marks","battle-marks","lightbox-marks",
  "type-all","type-image","type-text",
@@ -3800,6 +3908,8 @@ function migrateKakiStats(mig){
 //        先に走った古いほうの掃除が、次の移行の引きつぎ元をまるごと消してしまう ----
 function cleanupAfterMigrations(){
   const liveIds = new Set(QA_DATA.map(d => d.id));
+  // ★大問の小問の記録も「生きている」。入れないと、ここで小問の記録が消える（2026-09-27）
+  DAIMON_ITEM.forEach((v, id) => liveIds.add(id));
   // 対応がつかなかった旧問題の記録は、問題自体が無くなっているので取りのぞく
   Object.keys(stats).forEach(id=>{ if(!liveIds.has(id)) delete stats[id]; });
   saveStats();
@@ -3841,7 +3951,10 @@ function getQ(idx){
 }
 function getQById(id){
   const idx = QA_DATA.findIndex(d => d.id === id);
-  return idx === -1 ? null : getQ(idx);
+  if(idx !== -1) return getQ(idx);
+  // ★大問の小問（対戦で1手ずつ出す）。文章を直す道は作らない（edits は見ない）
+  const dm = DAIMON_ITEM.get(id);
+  return dm ? dm.view : null;
 }
 
 // ---- inline "文章を直す" editing, directly from the solo/battle quiz card ----
@@ -4100,7 +4213,7 @@ function refreshResumeBattleButton(){
 //   「数が合わない」と言われたときは、backfillLastCorrectAt の効き方も見ること。
 function countByTier(indices){
   const n = [0, 0, 0];
-  indices.forEach(i => n[tierOf(i)]++);
+  indices.forEach(i => n[tierOf(i)] += weightOf(i));   // ★大問は答える小問の数
   return n;
 }
 // ★単元ごとの3段。★単元の数だけ走査しないよう、1回の走査でまとめて数える。
@@ -4111,7 +4224,7 @@ function countByUnitAndTier(){
   const out = {};
   applyPoolFilters(all, true).forEach(i=>{
     const u = QA_DATA[i].u;
-    (out[u] || (out[u] = [0,0,0]))[tierOf(i)]++;
+    (out[u] || (out[u] = [0,0,0]))[tierOf(i)] += weightOf(i);   // ★大問は答える小問の数
   });
   return out;
 }
@@ -4601,11 +4714,13 @@ function applyPoolFiltersExceptPriority(pool, skipModes){
   //   （以前は未クリア／よく間違えるの OR を手で書いていた——段なら重ならないので不要）
   // ★skipModes は「数を数えるとき」と「復習の候補を作るとき」に使う。
   //   そこで段を絞ると、「その段を選ぶと数字が変わる」ことになる
+  // ★答える小問が0の大問（全部○）は候補に入れない。数えても0問（2026-09-27）
+  pool = pool.filter(i => weightOf(i) > 0);
   if(!skipModes) pool = pool.filter(i => selectedTiers.has(tierOf(i)));
   if(currentType === "image"){
-    pool = pool.filter(i => !!QA_DATA[i].img);
+    pool = pool.filter(i => qHasFig(QA_DATA[i]));
   }else if(currentType === "text"){
-    pool = pool.filter(i => !QA_DATA[i].img);
+    pool = pool.filter(i => !qHasFig(QA_DATA[i]));
   }
   if(currentLevel !== "all"){
     pool = pool.filter(i => QA_DATA[i].level === currentLevel);
@@ -4665,8 +4780,9 @@ function buildReviewPool(){
   let pool = [];
   const units = currentReviewUnits();
   QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && units.has(d.u) && d.kind !== "calc") pool.push(i); });
-  if(reviewType === "image") pool = pool.filter(i => !!QA_DATA[i].img);
-  else if(reviewType === "text") pool = pool.filter(i => !QA_DATA[i].img);
+  pool = pool.filter(i => weightOf(i) > 0);   // ★全部○の大問は入れない
+  if(reviewType === "image") pool = pool.filter(i => qHasFig(QA_DATA[i]));
+  else if(reviewType === "text") pool = pool.filter(i => !qHasFig(QA_DATA[i]));
   if(reviewPriority !== "all") pool = pool.filter(i => prioOf(QA_DATA[i]) === reviewPriority);
   if(reviewLevel !== "all") pool = pool.filter(i => QA_DATA[i].level === reviewLevel);
   return pool;
@@ -4676,7 +4792,14 @@ function buildReviewPool(){
 // 0 になるが、昇順（古い順）に並べるので**先頭に来る**。それが望ましい。
 // ★復習ミックスと「よく間違える問題」で、同じ読み方を使うためにここへ出した。
 function lastCorrectOf(i){
-  const s = stats[QA_DATA[i].id];
+  const d = QA_DATA[i];
+  // ★大問: 答える小問の中でいちばん古い「最後に正解した日」（まだ正解していない小問があれば 0）
+  //   ★段と同じく「答える小問」だけを見る（前回○の小問は出さないので、並びにも使わない）
+  if(isDaimonEntry(d)){
+    const ids = answerItemIds(d);
+    return ids.length ? ids.reduce((m, id) => Math.min(m, (stats[id] && stats[id].lastCorrectAt) || 0), Infinity) : 0;
+  }
+  const s = stats[d.id];
   return (s && s.lastCorrectAt) ? s.lastCorrectAt : 0;
 }
 // ============================================================
@@ -4729,7 +4852,14 @@ function lastCorrectOf(i){
 //   ★1段目の中は全員が「正解日なし」＝0 なので、安定ソートによって data.js の並び順
 //     （＝一覧に見えている順）で出る。一覧の1問目がそのまま1問目に出る。
 function tierOf(i){
-  const s = stats[QA_DATA[i].id];
+  const d = QA_DATA[i];
+  // ★大問（2026-09-27）: 小問の段のうち一番低いもの。大問そのものには記録を書かない
+  //   ★2026-09-27 夕: 数えるのは答える小問だけなので、段も答える小問のうち一番低いもの（全部○なら定着・0問）
+  if(isDaimonEntry(d)) return answerItemIds(d).reduce((m, id) => Math.min(m, tierOfStat(stats[id])), 2);
+  return tierOfStat(stats[d.id]);
+}
+// 1つの記録から段を出す（一問一答・小問で同じ）
+function tierOfStat(s){
   // 1段目: まだ一度も正解していない（未実施 ＋ 答えたが未正解）
   // ★correct も見るのは、lastCorrectAt を入れる前の記録や CSV インポートで作られた記録に
   //   「正解しているのに正解日が無い」ものがあるため（backfillLastCorrectAt のコメント参照）。
@@ -4796,13 +4926,19 @@ function starsFirst(pool){
 //   「全部」のときは全部出るので、並びを混ぜるだけ
 const RECENT_MISS_DAYS = 3;
 function isRecentMiss(i){
-  const s = stats[QA_DATA[i].id];
+  const d = QA_DATA[i];
+  // ★大問: 小問のどれかが最近まちがえた
+  if(isDaimonEntry(d)) return d.itemIds.some(id => isRecentMissStat(stats[id]));
+  return isRecentMissStat(stats[d.id]);
+}
+function isRecentMissStat(s){
   if(!s || !((s.wrong||0) > 0) || (s.box||0) !== 0 || !s.lastAnswered) return false;
   const d = new Date(); d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - (RECENT_MISS_DAYS - 1));
   return s.lastAnswered >= d.getTime();
 }
 // ordered … 「どれを選ぶか」の優先順に並んだ候補。starHead … ★を必ず入れて頭に置くか
+let lastPickSkippedDaimon = false;   // buildPlan の中だけで使う（大問を飛ばしたか）
 function pickRandomWithRecentMisses(ordered, starHead){
   const head = starHead ? ordered.filter(i => isPriority(QA_DATA[i].id)) : [];
   const used = new Set(head);
@@ -4811,10 +4947,11 @@ function pickRandomWithRecentMisses(ordered, starHead){
     picked = ordered.slice();
   }else{
     const cap = Math.ceil(questionCount / 2);
-    const miss = ordered.filter(i => !used.has(i) && isRecentMiss(i)).slice(0, cap);
+    const miss = takeByWeight(ordered.filter(i => !used.has(i) && isRecentMiss(i)), cap);   // ★大問は答える小問の数で
     miss.forEach(i => used.add(i));
     const rest = ordered.filter(i => !used.has(i));
-    picked = head.concat(miss, rest).slice(0, questionCount);
+    picked = takeByWeight(head.concat(miss, rest), questionCount);
+    if(picked.skippedDaimon || miss.skippedDaimon) lastPickSkippedDaimon = true;
   }
   picked = shuffleArray(picked);
   return starHead ? starsFirst(picked) : picked;
@@ -4852,6 +4989,7 @@ function buildPlan(){
   // ★「段を絞っているか」。3つとも選んでいれば「ふだんの出題」（旧の「両方OFF」と同じ意味）
   const narrowing = selectedTiers.size < 3;
   let main = buildPool();
+  lastPickSkippedDaimon = false;
   // ★段を絞っていてもいなくても、ランダム順を選んでいれば、最近まちがえた問題を必ず入れて混ぜる（2026-09-27）。
   //   どれを選ぶかの優先順は、絞っているときは3段の順（★同点の決め手つき）、ふだんはランダム。
   //   ★は、ふだん・「まだ正解していない」を選んでいるときだけ頭に置く（いままでと同じ）。
@@ -4885,16 +5023,19 @@ function buildPlan(){
     main = starsFirst(main);
   }
   // ★「全部」のときはメインを切らない（メインに当てはまる問題は全部出す）
-  if(questionCount !== "all") main = main.slice(0, questionCount);
+  // ★大問は答える小問の数で数える。入れるとこえる大問は飛ばして次で埋める（takeByWeight）
+  let skippedDaimon = lastPickSkippedDaimon;
+  if(questionCount !== "all"){ main = takeByWeight(main, questionCount); if(main.skippedDaimon) skippedDaimon = true; }
   // ★「全部」は埋めない（メインに当てはまる問題をそのまま）。
   //   数字を選んでいれば、その数字が合計（2026-09-26 「最低出題数」廃止）
-  const target = questionCount === "all" ? main.length : questionCount;
+  const target = questionCount === "all" ? sumWeight(main) : questionCount;
   // ★足りない分を、復習ミックスの候補からだけ埋める。並びは「いまの3段」のまま（依頼書4）
-  const want = Math.max(0, target - main.length);
+  const want = Math.max(0, target - sumWeight(main));
   let review = [];
   if(want > 0){
     const has = new Set(main);
-    review = orderReviewCandidatesByWeakness(buildReviewPool()).filter(i => !has.has(i)).slice(0, want);
+    review = takeByWeight(orderReviewCandidatesByWeakness(buildReviewPool()).filter(i => !has.has(i)), want);
+    if(review.skippedDaimon) skippedDaimon = true;
   }
   let pool = main.concat(review);
   // ⚠️★トグルを使っているときは、混ぜたあとにシャッフルしません。
@@ -4909,13 +5050,17 @@ function buildPlan(){
   }
   return {
     pool: pool,
-    mainCount: main.length,
-    reviewCount: review.length,
+    mainCount: sumWeight(main),
+    reviewCount: sumWeight(review),
     // ★ランダム順のとき、最近まちがえた問題（isRecentMiss）が何問入っているか。ホームに出して、なぜ出るかを見せる
-    recentMissCount: random ? pool.filter(isRecentMiss).length : 0,
+    recentMissCount: random ? sumWeight(pool.filter(isRecentMiss)) : 0,
     target: target,
     // ★あと何問足りないか。0 なら足りている。★「足りない」を黙って隠さないための数（失敗4）
-    shortfall: Math.max(0, target - pool.length)
+    shortfall: Math.max(0, target - sumWeight(pool)),
+    // ★足りない原因に「大問を飛ばした」ことがあるか。あれば「一問一答が足りない」と出す（2026-09-27 ユーザー）
+    skippedDaimon: skippedDaimon,
+    daimonCount: sumWeight(pool.filter(i => isDaimonEntry(QA_DATA[i]))),
+    qaCount: pool.filter(i => !isDaimonEntry(QA_DATA[i])).length
   };
 }
 function buildFinalPool(){
@@ -5071,7 +5216,7 @@ function refreshCreateButton(){
   //   ★いまは「予告の数」と「実際に出る数」が同じ関数から出ます（依頼書の失敗9）。
   const plan = buildPlan();
   const narrowing2 = selectedTiers.size < 3;
-  const n = plan.pool.length;
+  const n = sumWeight(plan.pool);   // ★大問は答える小問の数（2026-09-27）
   let label = n+"問";
   if(plan.reviewCount > 0) label += "（復習"+plan.reviewCount+"問こみ）";
   // ★2026-09-27: ランダム順で、3日以内に最後の答えがまちがいだった問題を必ず入れている数
@@ -5087,7 +5232,11 @@ function refreshCreateButton(){
   //   ★ 2026-09-26: 候補が全単元になったので、ここはめったに出ません。
   //   ★それでも残します（安全網）。科目全体でも合計に届かない日はあり得ます。
   let note = "";
-  if(plan.shortfall > 0){
+  if(plan.shortfall > 0 && plan.skippedDaimon){
+    // ★大問を入れるとこえるので飛ばし、一問一答で埋めようとして足りなかった（2026-09-27 ユーザー
+    //   「一問一答が先に無くなってしまったら、そのようなエラーメッセージを出してください」）。★黙って減らさない
+    note = "／★一問一答が足りないため、指定の"+plan.target+"問にできませんでした（大問"+plan.daimonCount+"問・一問一答"+plan.qaCount+"問）";
+  }else if(plan.shortfall > 0){
     note = "／★合計"+plan.target+"問には"+plan.shortfall+"問足りません（復習ミックスの候補が"
          + buildReviewPool().length + "問しかありません。復習する単元を増やすか、絞りこみを緩めてください）";
   }
@@ -5096,8 +5245,12 @@ function refreshCreateButton(){
     + note;
   els["pool-count-bar"].classList.toggle("short", plan.shortfall > 0);
   const disabled = n === 0;
-  els["solo-start-btn"].disabled = disabled;
-  els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
+  // ★ひとりで解くときは、大問をまだ混ぜない（2026-09-27。入り口を一問一答と同じにするのは あとの作業 B）。
+  //   それまで大問は「テスト形式（大問）で解く」から。★数は隠さず、のぞいたことを書く
+  const soloN = plan.pool.filter(i => !isDaimonEntry(QA_DATA[i])).length;
+  els["solo-start-btn"].disabled = soloN === 0;
+  els["solo-start-btn"].textContent = soloN === 0 ? "問題がありません"
+    : soloN === n ? "一人で始める（"+label+"）" : "一人で始める（"+soloN+"問・大問"+(n - soloN)+"問はのぞく）";
   els["create-btn"].disabled = disabled;
   els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+label+"）";
 }
@@ -5377,6 +5530,7 @@ function populateListUnitSelect(){
 // ★一覧の1問ごとの状態も、出題の3段そのものにした（2026-09-26）。
 //   ★以前は isWeak → isMastered の順に見ており、**5つ目の切り口**になっていた。
 function questionTier(id){
+  if(DAIMON_ITEM.has(id)) return tierOfStat(stats[id]);   // 小問（CSV の書き出しで使う）
   const i = QA_DATA.findIndex(d => d.id === id);
   return i < 0 ? 0 : tierOf(i);
 }
@@ -5424,7 +5578,11 @@ function renderListItems(){
   if(listLevel !== "all") indices = indices.filter(i => matchesMetaFilter(metaValue(QA_DATA[i], "level"), listLevel));
   if(listDateFrom || listDateTo){
     indices = indices.filter(i=>{
-      const s = stats[QA_DATA[i].id];
+      const d = QA_DATA[i];
+      // ★大問は、小問のどれかを最後に答えた日（いちばん新しい日）で見る（2026-09-27）
+      const s = isDaimonEntry(d)
+        ? { lastAnswered: d.itemIds.reduce((m, id) => Math.max(m, (stats[id] && stats[id].lastAnswered) || 0), 0) }
+        : stats[d.id];
       if(!s || !s.lastAnswered) return false;
       const ymd = dateToYMD(s.lastAnswered);
       if(listDateFrom && ymd < listDateFrom) return false;
@@ -5432,7 +5590,7 @@ function renderListItems(){
       return true;
     });
   }
-  els["list-count"].textContent = indices.length+"問";
+  els["list-count"].textContent = sumWeight(indices)+"問";   // ★大問は答える小問の数（2026-09-27）
   listShownIndices = indices;
   refreshStarBulkLabel();
   els["list-items"].innerHTML = "";
@@ -5461,6 +5619,29 @@ function renderListItems(){
   if(pos < indices.length) setTimeout(step, 0);
 }
 let listRenderGen = 0;
+// ★大問の行（2026-09-27 ユーザー「一覧とホームの数をずらさない」）。大問1つ＝1行。
+//   ★〇✕の数・状態・★・文章を直す は付けない（記録は小問にある。data-qid を付けないので、押しても何も起きない）
+function buildDaimonListRow(d){
+  const g = d.daimon;
+  const item = document.createElement("div");
+  item.className = "list-item daimon-list-item";
+  item.dataset.daimonKey = g.key;
+  const w = answerItemIds(d).length;
+  const tier = tierOf(QA_DATA.indexOf(d));
+  item.innerHTML =
+    '<div class="list-unit-tag">'+escapeHtml(d.u)+'</div>'+
+    '<div class="daimon-list-name"></div>'+
+    '<div class="list-q"></div>'+
+    '<div class="daimon-list-tiers"></div>';
+  item.querySelector(".daimon-list-name").textContent =
+    "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問" + g.items.length + "）";
+  item.querySelector(".list-q").textContent = d.q;
+  // ★数は「答える小問」だけ（前回○の小問は数えない）。全部○なら 0問
+  item.querySelector(".daimon-list-tiers").textContent = w === 0
+    ? "全部○（0問・対戦には出ません）"
+    : TIER_NAMES[tier] + "（答える小問 " + w + "問・前回○ " + (g.items.length - w) + "問）";
+  return item;
+}
 
 // ★押した行だけ描き直す（2026-09-13）。
 //   以前は〇✕・正解数・日付を1つ変えるたびに一覧を全部作り直していた。
@@ -5478,6 +5659,7 @@ function renderListRow(qid){
 }
 
 function buildListRow(i){
+    if(isDaimonEntry(QA_DATA[i])) return buildDaimonListRow(QA_DATA[i]);
     const base = QA_DATA[i];
     const d = getQ(i);
     const isEdited = !!edits[base.id];
@@ -5749,7 +5931,7 @@ function bulkStar(on){
   if(!listShownIndices.length) return;
   const n = listShownIndices.length;
   if(!confirm(on ? "いま一覧に出ている "+n+"問 を★最優先にしますか？" : "いま一覧に出ている "+n+"問 の★を外しますか？")) return;
-  listShownIndices.forEach(i => { const id = QA_DATA[i].id; if(on) priorityIds.add(id); else priorityIds.delete(id); });
+  listShownIndices.forEach(i => { if(isDaimonEntry(QA_DATA[i])) return; const id = QA_DATA[i].id; if(on) priorityIds.add(id); else priorityIds.delete(id); });
   savePriority();
   renderListItems();
 }
@@ -5916,7 +6098,10 @@ els["export-link"].addEventListener("click", ()=>{
   // ★「正解した回数」は、これまでどおり累計（correct）。元のアプリや古いファイルとの読み書きを変えないため。
   //   2026-09-13 からアプリの「正解数」は連続正解数なので、最後に「連続正解数」の列を足した
   const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日","最終回答日","連続正解数"]];
-  QA_DATA.forEach(d=>{
+  // ★大問の「1問」の行は出さない（記録は小問にある）。小問は一問一答のうしろに1行ずつ（2026-09-27）
+  const csvRows = QA_DATA.filter(d => !isDaimonEntry(d));
+  DAIMON_ITEM.forEach((v, id) => csvRows.push({ id: id, u: v.view.u, q: (v.it.label ? v.it.label + " " : "") + v.it.q, a: v.it.a }));
+  csvRows.forEach(d=>{
     const s = stats[d.id] || {correct:0, wrong:0};
     const correct = s.correct||0;
     const streak = stats[d.id] ? (s.box||0) : "";
@@ -6000,8 +6185,9 @@ els["import-file"].addEventListener("change", (e)=>{
         alert("このCSVの形式を読み取れませんでした。kosukequiz（元のアプリ）またはこの対戦アプリからエクスポートしたファイルを選んでください。");
         return;
       }
-      const byId = new Map(QA_DATA.map(d=>[d.id, d]));
-      const byQuestion = new Map(QA_DATA.map(d=>[(d.u||"")+"||"+(d.q||""), d]));
+      const byId = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[d.id, d]));
+      DAIMON_ITEM.forEach((v, id) => byId.set(id, v.view));   // ★小問の行は id で合わせる（2026-09-27）
+      const byQuestion = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[(d.u||"")+"||"+(d.q||""), d]));
       let matched = 0, unmatched = 0, updated = 0;
       for(let i=1;i<parsed.length;i++){
         const row = parsed[i];
@@ -6090,39 +6276,40 @@ els["import-file"].addEventListener("change", (e)=>{
 //     ★前の小問と答えは消さずに残す。★「こたえを見る」を押す前に、次の小問は出さない
 //   ・リード文・図から離れても「リード文・図を見る」でいつでも見られる（依頼書の失敗2）
 //   ・★答え側の図（aFile）は「こたえを見る」を押したときに初めて作る（それまで画面に無い）
-//   ・時間は計らない。一人で解くだけ（対戦には出さない）
-//   ・★データは daimon_data.js（DAIMON_DATA）。記録も一問一答（stats）とは別の入れ物。
-//     → ホームの数字・単元・ランダム・問題一覧は1問も変わらない（依頼書の失敗4・6）
-//   ・★「正誤の記録をぜんぶクリアする」は、大問の記録も消す（どこからも消せない記録を残さない）。
-//     教科ごとに消す形になったら、大問の記録は「理科」に入れる
-const DAIMON = (typeof DAIMON_DATA !== "undefined" && Array.isArray(DAIMON_DATA)) ? DAIMON_DATA : [];
-const DAIMON_SIZES = (typeof DAIMON_IMG_SIZES !== "undefined") ? DAIMON_IMG_SIZES : {};
+//   ・時間は計らない（ひとりで解くとき）。★2026-09-27 から対戦にも出す（小問に開く。先頭の addDaimonEntries を読むこと）
+//   ・★データは daimon_data.js（DAIMON_DATA）。★2026-09-27 から記録は一問一答と同じ入れ物（stats）に小問の id で入れる。
+//     今日の朝の別の入れ物（kq_battle_daimon_stats_v1）は、起動時に1回だけ stats に写した（mergeOldDaimonStats）
+//   ・★ひとりで解くときの入り口を一問一答と同じにするのは、あとの作業（B）。それまでは、この一覧の画面から解く
+//   ・★「正誤の記録をぜんぶクリアする」は、古い入れ物も消す（どこからも消せない記録を残さない）
 const DAIMON_STATS_KEY = "kq_battle_daimon_stats_v1";
-let daimonStats = {};
-try{
-  const raw = JSON.parse(window.localStorage.getItem(DAIMON_STATS_KEY) || "{}");
-  if(raw && typeof raw === "object" && !Array.isArray(raw)) daimonStats = raw;
-}catch(e){ /* 読めなければ記録なしから */ }
+let daimonStats = {};   // ★古い入れ物。読むのは写すときだけ。書くのは「ぜんぶクリア」だけ
 function saveDaimonStats(){
   try{ window.localStorage.setItem(DAIMON_STATS_KEY, JSON.stringify(daimonStats)); }catch(e){ console.error("save daimon stats failed", e); }
 }
-// ★記録の付け方は一問一答の recordResult と同じ（累計・連続正解数・最後に正解した日・最後に答えた日）
-function recordDaimonResult(id, correct){
-  const s = daimonStats[id] || {correct:0, wrong:0};
-  if(correct){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = Date.now(); }
-  else{ s.wrong = (s.wrong||0) + 1; }
-  s.lastAnswered = Date.now();
-  scheduleNext(s, correct);
-  daimonStats[id] = s;
-  saveDaimonStats();
+function recordDaimonResult(id, correct){ recordResult(id, correct); }
+// ★朝の別の入れ物の記録を、stats に1回だけ写す（2026-09-27）。
+//   ・写すのは stats に「まだ無い」小問の id だけ。一問一答の id には1つも触らない（小問の id は一問一答と重ならない）
+//   ・★古い入れ物は消さない（戻せるように残す）
+//   ・⚠️★runStatsMigrations の done に入れないこと。入れると cleanupAfterMigrations が走り、
+//     データから消えた問題の記録（r3m107 など・残す決まり）まで消す
+const DAIMON_MERGED_KEY = "kq_battle_daimon_merged_v1";
+function mergeOldDaimonStats(){
+  try{
+    if(window.localStorage.getItem(DAIMON_MERGED_KEY)) return;
+    const raw = JSON.parse(window.localStorage.getItem(DAIMON_STATS_KEY) || "{}");
+    let n = 0;
+    if(raw && typeof raw === "object" && !Array.isArray(raw)){
+      Object.keys(raw).forEach(id => {
+        if(!DAIMON_ITEM.has(id) || stats[id] || !raw[id] || typeof raw[id] !== "object") return;
+        stats[id] = raw[id];
+        n++;
+      });
+    }
+    if(n > 0) saveStats();
+    window.localStorage.setItem(DAIMON_MERGED_KEY, String(Date.now()));
+  }catch(e){ console.error("merge daimon stats failed", e); }
 }
-// ★段の決め方は一問一答の tierOf と同じ3段（0 まだ正解していない／1 苦手／2 定着した）
-function daimonTierOf(id){
-  const s = daimonStats[id];
-  if(!s || (!s.lastCorrectAt && !((s.correct||0) > 0))) return 0;
-  if((s.wrong||0) > 0 && (s.box||0) <= 1) return 1;
-  return 2;
-}
+function daimonTierOf(id){ return tierOfStat(stats[id]); }
 function refreshDaimonButton(){
   els["daimon-open-btn"].style.display = (currentSubject === "理科" && DAIMON.length > 0) ? "" : "none";
 }
@@ -6301,7 +6488,8 @@ let quizResults = []; // { idx, correct（実際の正誤）, recorded（記録�
 let inSoloRetryRound = false;
 
 els["solo-start-btn"].addEventListener("click", ()=>{
-  const pool = buildFinalPool();
+  // ★大問はまだ混ぜない（あとの作業 B で、ひとりで解く画面に入れる）
+  const pool = buildFinalPool().filter(i => !isDaimonEntry(QA_DATA[i]));
   if(pool.length === 0) return;
   quizQueue = pool;
   quizPos = 0;
@@ -6577,7 +6765,12 @@ function buildCheeseTrack(){
     track.appendChild(piece);
   }
 }
+// ★大問の小問は、考える時間・答える時間を2倍（2026-09-27 ユーザー「時間を延ばすのは伸ばしたらいい」）。
+//   設定の行は増やさない。倍率はここ1か所
+const DAIMON_TIME_FACTOR = 2;
+function timeFactorAt(idx){ return isDaimonItemId(questionIds[idx]) ? DAIMON_TIME_FACTOR : 1; }
 function startAnswerCountdown(){
+  const answerSec = answerTimeSec * timeFactorAt(currentIndex);
   buildCheeseTrack();
   clearInterval(cheeseInterval);
   clearTimeout(cheeseTimeout);
@@ -6589,7 +6782,7 @@ function startAnswerCountdown(){
   els["answer-countdown"].style.display = "block";
   els["answer-reveal-btn"].style.display = "block";
   let eaten = 0;
-  const stepMs = (answerTimeSec*1000)/CHEESE_COUNT;
+  const stepMs = (answerSec*1000)/CHEESE_COUNT;
   cheeseInterval = setInterval(()=>{
     if(eaten >= CHEESE_COUNT) return;
     pieces[eaten].classList.add("eaten");
@@ -6597,7 +6790,7 @@ function startAnswerCountdown(){
     mouse.style.left = (eaten/CHEESE_COUNT*100)+"%";
     if(eaten >= CHEESE_COUNT) clearInterval(cheeseInterval);
   }, stepMs);
-  cheeseTimeout = setTimeout(revealAnswer, answerTimeSec*1000);
+  cheeseTimeout = setTimeout(revealAnswer, answerSec*1000);
 }
 function stopAnswerCountdown(){
   clearInterval(cheeseInterval);
@@ -6907,10 +7100,11 @@ function setupActions(){
     QA_DATA.forEach((d,i)=>{
       if(d.subj === currentSubject && d.kind !== "calc" && guestUnits.has(d.u) && !selectedUnits.has(d.u)) extra.push(i);
     });
-    const extraIds = applyPoolFilters(extra).map(i => QA_DATA[i].id).filter(id => !questionIds.includes(id));
+    const extraIds = expandDaimonIds(applyPoolFilters(extra).map(i => QA_DATA[i].id)).filter(id => !questionIds.includes(id));
     if(extraIds.length){
       questionIds = questionIds.concat(extraIds);
-      if(currentShuffle) questionIds = shuffleArray(questionIds);
+      // ★大問はかたまりのまま混ぜる（小問を1つだけ離して出さない）
+      if(currentShuffle) questionIds = shuffleKeepingDaimon(questionIds);
       els["home-waiting-note"].innerHTML = "相手が参加しました！（相手が選んだ単元の問題を"+extraIds.length+"問追加しました）";
     }
   };
@@ -7118,7 +7312,8 @@ els["create-btn"].addEventListener("click", ()=>{
   const pool = buildFinalPool();
   if(pool.length === 0) return;
 
-  questionIds = pool.map(i => QA_DATA[i].id);
+  // ★大問は小問に開いて続けて並べる（並べかえは buildFinalPool の中で済んでいる＝大問はばらけない）
+  questionIds = expandDaimonIds(pool.map(i => QA_DATA[i].id));
   hostSkippedIds = new Set();
   inMissRetryRound = false;
 
@@ -7160,6 +7355,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   session.scoredIdx = -1;
   {
     const known = new Set(QA_DATA.map(d => d.id));
+    DAIMON_ITEM.forEach((v, id) => known.add(id));   // ★対戦の並びには小問の id が入っている（2026-09-27）
     const keptBefore = i => session.questionIds.slice(0, i).filter(id => known.has(id)).length;
     const rIdx = typeof session.recordedIdx === "number" ? session.recordedIdx : null;
     if(rIdx !== null && rIdx >= 0){
@@ -7354,11 +7550,15 @@ function showQuestion(idx, hostPrivate){
   }else{
     els["battle-img-wrap"].style.display = "none";
   }
+  renderBattleDaimon(idx);
+  // 大問の小問は「文章を直す」を出さない（直す道は一問一答だけ）
+  els["battle-edit-link"].style.display = isDaimonItemId(d.id) ? "none" : "";
 
   if(hostPrivate){
     // host is looking at this question alone; nothing has been sent to the
     // guest yet, so わかった makes no sense until スキップ or わかった itself is tapped
-    els["skip-btn"].style.display = "block";
+    // ★大問の小問ではスキップを出さない（スキップは問題を末尾に回すので、大問がばらける）
+    els["skip-btn"].style.display = isDaimonItemId(d.id) ? "none" : "block";
     els["advance-btn"].style.display = "block";
   }else{
     els["skip-btn"].style.display = "none";
@@ -7407,14 +7607,15 @@ function hostAdvanceAndArm(idx){
   // ★時間切れは「スキップを押した」とは別あつかいにする（2026-09-19 ユーザー原文
   //   「ぼーっとしてたりほかのことをしていて、時間切れてスキップになってることがあるのです」）。
   //   以前はここで performSkip を呼んでいたので、押していないのに答えが見えて誤答が付いていた。
-  pendingSendTimer = setTimeout(performTimeUp, headStartSec*1000);
-  startCountdown(headStartSec);
+  const thinkSec = headStartSec * timeFactorAt(idx);   // ★大問の小問は2倍
+  pendingSendTimer = setTimeout(performTimeUp, thinkSec*1000);
+  startCountdown(thinkSec);
   if(room){
     // share the question text (not the answer) with the guest even while
     // the host is still deciding スキップ vs 進める, so they're not left
     // completely in the dark during the think-time countdown
     const q = getQById(questionIds[idx]).q;
-    try{ statusAction.send({type: "thinking", position: idx+1, total: questionIds.length, seconds: headStartSec, q: q}); }catch(e){}
+    try{ statusAction.send({type: "thinking", position: idx+1, total: questionIds.length, seconds: thinkSec, q: q}); }catch(e){}
   }
 }
 
@@ -7511,6 +7712,8 @@ els["skip-btn"].addEventListener("click", performSkip);
 //      ★「まちがえた問題だけもう一勝負」にも入らない。myMissesThisRound は判定の
 //        ときだけ積むので、判定を通らないこの経路では何も積まれない
 function performTimeUp(){
+  // ★大問の小問は末尾に回さない（回すと大問がばらける）。考える時間が切れたら、そのまま相手に出す
+  if(isDaimonItemId(questionIds[currentIndex])){ doAdvance(); return; }
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
@@ -7551,7 +7754,63 @@ function enterAnsweringPhase(){
 //   ★判定のカウントダウンは、ボタンが出たときから数える（遅らせたぶん判定の時間が短くならない）
 const JUDGE_SHOW_DELAY_MS = 300;
 let judgeShowTimer = null;
+// ★対戦で大問の小問を出すときの上の部分（2026-09-27）。★全部 battle-view の中（待ち画面で一緒に隠れる）。
+//   上から: 大問の名前 → リード文・大問の図 → 前の小問とこたえ（消さずに残す）→ いまの小問の見出し。
+//   いまの小問の図は問題文の下。★答えの図（aFile）はここでは作らない（revealAnswer で初めて作る）
+// 答えつきで小問を1つ出す（前の小問・前回○の小問）
+function addDaimonAnswered(parent, it, pos){
+  const wrap = document.createElement("div");
+  wrap.className = "battle-daimon-prev";
+  const add = (cls, text) => { const el = document.createElement("div"); el.className = cls; el.textContent = text; wrap.appendChild(el); };
+  add("daimon-item-label", it.label || ("(" + (pos + 1) + ")"));
+  add("q-text", it.q);
+  if(it.file) wrap.appendChild(daimonImg(it.file));
+  add("a-label", "こたえ");
+  add("a-text", it.a);
+  if(it.aFile) wrap.appendChild(daimonImg(it.aFile));
+  if(it.sol) add("sol-text", it.sol);
+  parent.appendChild(wrap);
+}
+function renderBattleDaimon(idx){
+  const box = els["battle-daimon"];
+  box.innerHTML = "";
+  els["battle-daimon-fig"].innerHTML = "";
+  els["battle-daimon-afig"].innerHTML = "";
+  const dm = DAIMON_ITEM.get(questionIds[idx]);
+  if(!dm){ box.style.display = "none"; return; }
+  const g = dm.g;
+  box.style.display = "";
+  const add = (cls, text, parent) => {
+    const el = document.createElement("div");
+    el.className = cls;
+    el.textContent = text;
+    (parent || box).appendChild(el);
+    return el;
+  };
+  add("battle-daimon-title", "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
+  if(g.lead) add("daimon-lead-text", g.lead);
+  if(g.file) box.appendChild(daimonImg(g.file));
+  // 前の小問: 大問の中で、いまの小問より前の小問は全部こたえつきで出す
+  //   （もう答えた小問と、★前回○で最初から答えを出しておく小問。どちらも答えが出てよいもの）。
+  //   ★並びは大問の中の順のまま・続けて並んでいるので、いまより前の小問に「まだ答えていない手」は無い
+  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonAnswered(box, it, k));
+  const cur = add("battle-daimon-cur", "");
+  add("daimon-item-label", dm.it.label || ("(" + (dm.pos + 1) + ")"), cur);
+  if(dm.it.file) els["battle-daimon-fig"].appendChild(daimonImg(dm.it.file));
+}
 function revealAnswer(){
+  // ★大問の小問の答えの図は、ここで初めて作る（押す前は画面に無い）
+  const dmR = DAIMON_ITEM.get(questionIds[currentIndex]);
+  if(dmR && !els["battle-daimon-afig"].firstChild){
+    if(dmR.it.aFile) els["battle-daimon-afig"].appendChild(daimonImg(dmR.it.aFile));
+    // ★この大問の最後の手なら、うしろに残っている前回○の小問を答えつきで出す（飛ばさない）
+    const nx = DAIMON_ITEM.get(questionIds[currentIndex + 1]);
+    if(!nx || nx.g !== dmR.g){
+      const tail = document.createElement("div");
+      dmR.g.items.slice(dmR.pos + 1).forEach((it, k) => addDaimonAnswered(tail, it, dmR.pos + 1 + k));
+      if(tail.firstChild) els["battle-daimon-afig"].appendChild(tail);
+    }
+  }
   stopAnswerCountdown();
   els["status-banner"].classList.remove("show","win","lose","info");
   els["battle-a-block"].classList.add("show");
@@ -7861,7 +8120,9 @@ function endGame(){
 function startMissRetryRound(){
   let ids = myMissesThisRound.slice();
   if(ids.length === 0) return;
-  if(currentShuffle) ids = shuffleArray(ids);
+  // ★小問を1つでもまちがえた大問は、大問ごともう一度（小問を1つだけ出さない）。大問の中は元の順
+  ids = expandDaimonIds(Array.from(new Set(ids.map(id => { const dm = DAIMON_ITEM.get(id); return dm ? dm.g.key : id; }))));
+  if(currentShuffle) ids = shuffleKeepingDaimon(ids);
   questionIds = ids;
   hostSkippedIds = new Set();
   inMissRetryRound = true;
@@ -8101,6 +8362,7 @@ setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? QA_DATA[quizQueu
 setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 
 loadStats();
+mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
 loadLastMiss();
 loadSettings();
