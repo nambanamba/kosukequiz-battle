@@ -53,7 +53,7 @@ const browser = await chromium.launch({ channel: "chrome" });
 let ng = 0;
 const check = (label, ok, extra) => { console.log(`  ${ok ? "✔" : "✘"} ${label}${extra ? " … " + extra : ""}`); if (!ok) ng++; };
 
-const UNIT = "第3回.奈良時代";   // 113問。ここで試す
+const UNIT = "第3回.奈良時代";   // ★問題数は決め打ちしない（2026-09-27 に 113→109問）
 // 記録: 前半は正解ずみ、10問に1問はまちがえ、後半は未実施
 function seedStats(ids) {
   const st = {}, now = Date.now(), day = 86400000;
@@ -108,7 +108,13 @@ const ids = await (async () => {
   const r = await p.evaluate(u => QA_DATA.filter(q => q.u === u).map(q => q.id), UNIT); await ctx.close(); return r;
 })();
 // ★は後ろのほうの未実施の3問（ふだんなら先頭に来るはず）＋ 正解ずみの1問（未クリアでは出ないはず）
-const STARS = [ids[100], ids[105], ids[110], ids[5]];
+// ★2026-09-27 に直した: 以前は ids[100]・ids[105]・ids[110] と番号で決め打ちしていたため、
+//   社会 第3回が 113問 → 109問になった日に ids[110] が無くなり、★が3つしか付かずに8件落ちた（アプリは正しかった）。
+//   意図は同じまま、条件で選ぶ（4-6b）: 60番目より後ろで記録を付けない問（下の seedStats で 1段目・2段目にしない問）の、
+//   後ろから 11・6・1 番目。data の順に並ぶ。＋ 正解ずみの ids[5]
+const BACK = ids.map((_, i) => i).filter(i => i >= 60 && i % 10 !== 3 && i % 10 !== 7);
+if (BACK.length < 11) throw new Error("単元の問題が少なすぎて★を選べません（" + ids.length + "問）");
+const STARS = [ids[BACK[BACK.length - 11]], ids[BACK[BACK.length - 6]], ids[BACK[BACK.length - 1]], ids[5]];
 console.log(`単元「${UNIT}」${ids.length}問 ／ ★に付ける: ${STARS.join(" ")}（${STARS[3]} は正解ずみ）`);
 
 // ── ① ★0件なら、直す前とまったく同じ ──
@@ -124,7 +130,7 @@ console.log("\n── ② ふだん・出題順どおり・20問 ──");
 {
   const r = await run(NEW, { stars: STARS, count: 20, n: 5 });
   console.log(`  表示: ${r.label} ／ 最初の5問: ${r.seq.join(" ")}`);
-  check("★4問が先頭（data の順のまま）", r.seq.slice(0, 4).join() === [ids[5], ids[100], ids[105], ids[110]].join());
+  check("★4問が先頭（data の順のまま）", r.seq.slice(0, 4).join() === [STARS[3], STARS[0], STARS[1], STARS[2]].join());
   check("★問題数の表示に「★最優先 4問が先に出ます」", /★最優先 4問が先に出ます/.test(r.label), r.label);
   check("5問目からは★以外（いまどおり）", r.seq[4] === ids[0], r.seq[4]);
 }
@@ -141,19 +147,19 @@ console.log("\n── ④ 未クリアのみ（★で未クリアの問が、い
   const a = await run(NEW, { stars: [], count: "all", unmastered: true, n: 6 });
   const b = await run(NEW, { stars: STARS, count: "all", unmastered: true, n: 6 });
   console.log(`  ★なし: ${a.label} ${a.seq.join(" ")}\n  ★あり: ${b.label} ${b.seq.join(" ")}`);
-  check("★で未クリアの3問（" + [ids[100], ids[105], ids[110]].join(" ") + "）がいちばん上", b.seq.slice(0, 3).join() === [ids[100], ids[105], ids[110]].join());
+  check("★で未クリアの3問（" + STARS.slice(0, 3).join(" ") + "）がいちばん上", b.seq.slice(0, 3).join() === STARS.slice(0, 3).join());
   check("正解ずみの★（" + STARS[3] + "）は出ない", !b.seq.includes(STARS[3]));
   // ★表示には「（★最優先 N問が先に出ます）」が付くのが狙いどおり。比べるのは問題数だけ
   check("★を付けても、入る問の数は同じ（並びだけ変わる）", parseInt(a.label, 10) === parseInt(b.label, 10), `${a.label} / ${b.label}`);
   check("未クリアで★が上に来るときは「★最優先 3問が先に出ます」と出る", /★最優先 3問が先に出ます/.test(b.label), b.label);
-  check("★のあとは、★なしのときの並びのまま", b.seq.slice(3).join() === a.seq.filter(x => ![ids[100], ids[105], ids[110]].includes(x)).slice(0, 3).join());
+  check("★のあとは、★なしのときの並びのまま", b.seq.slice(3).join() === a.seq.filter(x => !STARS.slice(0, 3).includes(x)).slice(0, 3).join());
 }
 // ── ④b 未クリア＋よく間違える（両方 ON）: 未クリアを含むので★が上 ──
 console.log("\n── ④b 未クリア＋よく間違える 両方 ON ──");
 {
   const b = await run(NEW, { stars: STARS, count: 20, unmastered: true, weak: true, n: 4 });
   console.log(`  ${b.label} ${b.seq.join(" ")}`);
-  check("★で未クリアの3問がいちばん上", b.seq.slice(0, 3).join() === [ids[100], ids[105], ids[110]].join());
+  check("★で未クリアの3問がいちばん上", b.seq.slice(0, 3).join() === STARS.slice(0, 3).join());
 }
 // ── ⑤ 「苦手な問題」だけ（＝1段目を選んでいない）: ★は持ち上げない ──
 // ★★ 2026-09-26 に出題モードが「段の選択」になり、この場面の中身が変わりました。
