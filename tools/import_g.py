@@ -161,18 +161,24 @@ def main():
         if gone and not a.allow_delete:
             ir.die("元データから消えた問があります。履歴が宙に浮くので止めました（C-5）。"
                    "意図した削除なら --allow-delete を付けてください。")
-        plan.append((kai, pre, new_rows))
+        plan.append((kai, pre, new_rows, gone))
 
     if a.check:
         print("\n（--check なので data.js は変えていません）")
         return
 
-    for kai, pre, new_rows in plan:
+    for kai, pre, new_rows, gone in plan:
         byrec = {r["id"]: r for r in new_rows}
         out = []
         seen = set()
+        # ★2026-09-27 に直した: 以前は --allow-delete を付けても消えた問を data.js に残していた
+        #   （説明では「data.js からも消す」なのに、書きこみの側が消していなかった）。
+        #   社会 第4回で 1635→1640（本当は 1631）になって気づいた。下の「消えたか」の検算も足した
+        gone_set = set(gone)
         for p in parts:
             i = id_of(p)
+            if i in gone_set:
+                continue
             if i in byrec:
                 # 既存は同じ位置で入れかえる（並びを動かさない）。
                 # ★中身が同じ行は元のまま残す（書式だけの差分を作らないため）
@@ -197,6 +203,9 @@ def main():
     _, parts2, _ = ir.rows_of(text2)
     ids2 = [id_of(p) for p in parts2]
     print("\n  総数: %d問（%+d）" % (len(parts2), len(parts2) - total_before))
+    left = [i for _, _, _, g in plan for i in g if i in set(ids2)]
+    if left:
+        ir.die("消したはずの問が data.js に残っています: " + " ".join(left))
     if len(ids2) != len(set(ids2)):
         ir.die("id が重複しました。data.js.bak から戻してください。")
     print("  id重複: 0")
