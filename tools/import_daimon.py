@@ -37,7 +37,19 @@ import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 BATTLE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv_理科")
+def _find_src():
+    # git worktree（kosukequiz-battle/_wt/xxx）から動かしても元データを見つけられるよう、上へたどる
+    d = BATTLE
+    while True:
+        cand = os.path.join(os.path.dirname(d), "5年下", "quiz_csv_理科")
+        if os.path.isdir(cand):
+            return cand
+        if os.path.dirname(d) == d:
+            return os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv_理科")
+        d = os.path.dirname(d)
+
+
+SRC = _find_src()
 IMG_SRC = os.path.join(SRC, "画像プレビュー")
 IMG_DST = os.path.join(BATTLE, "images")
 OUT = os.path.join(BATTLE, "daimon_data.js")

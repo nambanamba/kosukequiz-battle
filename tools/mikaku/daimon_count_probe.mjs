@@ -155,6 +155,9 @@ async function run(label, src) {
     // 一覧（全単元・絞りこみなし）
     await p.evaluate(() => document.getElementById("list-btn").click()); await p.waitForTimeout(400);
     await p.selectOption("#list-unit-select", "ALL").catch(() => {}); await p.evaluate(() => document.getElementById("list-unit-select").dispatchEvent(new Event("change"))); await p.waitForTimeout(600);
+    // ★「全単元」だけでは一覧は何も描かない作り（listHasCondition）。3段を全部選ぶ ＝ 絞りこみなしと同じ
+    for (const t of [0, 1, 2]) { await p.click('#list-status-filters .list-filter-toggle[data-tier="' + t + '"]'); await p.waitForTimeout(150); }
+    await p.waitForSelector('.daimon-list-item[data-daimon-key="' + info.gl + '"]', { timeout: 8000 }).catch(() => {});
     const listCount = await p.evaluate(() => document.getElementById("list-count").textContent);
     const drow = await p.evaluate(k => { const r = document.querySelector('.daimon-list-item[data-daimon-key="' + k + '"]'); return r ? r.textContent : null; }, info.g0);
     const lrow = await p.evaluate(k => { const r = document.querySelector('.daimon-list-item[data-daimon-key="' + k + '"]'); return r ? r.textContent : null; }, info.gl);
