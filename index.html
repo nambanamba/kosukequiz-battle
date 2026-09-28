@@ -6619,6 +6619,18 @@ function openPaperList(){
   renderPaperList();
   showScreen("screen-paper-list");
 }
+// ★2026-09-28: 書く欄の高さ。解説（sol）が長い＝途中式が要る小問ほど広くする（司令塔指摘）。
+//   sol が無い（知識問題）ときは今までどおりの1行ぶん
+function paperWriteBoxHeight(it){
+  // ★作図（グラフに線をかき入れる等）は、解説（sol）の長さと関係なく広い場所が要る
+  if(/作図|グラフ|図示/.test(it.form || "")) return 260;
+  const n = (it.sol || "").length;
+  if(n === 0) return 64;
+  if(n <= 40) return 90;
+  if(n <= 90) return 140;
+  if(n <= 150) return 190;
+  return 230;
+}
 // 問題の紙・答えの紙、共通の見出し部分
 function paperSheetHead(g, label){
   const wrap = document.createElement("div");
@@ -6661,6 +6673,9 @@ function openPaperPrint(key){
     if(it.file) card.appendChild(daimonImg(it.file));
     const box = document.createElement("div");
     box.className = "paper-write-box";
+    // ★2026-09-28 司令塔指摘: 計算の小問（途中式が要る）は、書くスペースが1行ぶんでは足りない。
+    //   解説（sol）の長さを目安に、書く欄の高さを変える（短い記号・ことばの答えは今までどおり）
+    box.style.minHeight = paperWriteBoxHeight(it) + "px";
     card.appendChild(box);
     qSheet.appendChild(card);
   });
