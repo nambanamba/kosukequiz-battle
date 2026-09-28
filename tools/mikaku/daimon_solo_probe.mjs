@@ -30,6 +30,25 @@ const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g"
 const lf = s => s.replace(/\r\n/g, "\n");
 const CURRENT = lf(fs.readFileSync(path.join(ROOT, "index.html"), "utf8"));
 const BASELINE = lf(execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }));
+
+// ★2026-09-28: aFile（答えの図）を持つ大問は「紙で出す」に回りやすく、実測では非紙の中に
+//   1つも残らなかった（唯一の aFile 例が paper:true だった）。S5（aFile の表示タイミング）を
+//   実際に踏むため、写しに合成の aFile を1つだけ足して配る。★本物の daimon_data.js は書かない
+const DAIMON_SRC = fs.readFileSync(path.join(ROOT, "daimon_data.js"), "utf8");
+function parseDaimonSrc(src) {
+  const m = src.match(/const DAIMON_DATA = (\[[\s\S]*?\]);\r?\nconst DAIMON_IMG_SIZES = (\{[\s\S]*?\});/);
+  if (!m) throw new Error("daimon_data.js の形が読めません");
+  return { data: JSON.parse(m[1]), sizes: JSON.parse(m[2]) };
+}
+const { data: daimonData, sizes: daimonSizes } = parseDaimonSrc(DAIMON_SRC);
+const SYN_AFILE = Object.keys(daimonSizes)[0];   // 実在する画像を流用（寸法が既に登録ずみ）
+const afileTarget = daimonData.find(g => !g.paper && g.items.length >= 2 && g.items.length <= 4 && !g.items.some(it => it.aFile));
+if (!afileTarget) throw new Error("合成の aFile を足す先の大問（紙でない・aFile が無い・小問2つ以上）が見つかりません");
+const patchedDaimonData = daimonData.map(g => g !== afileTarget ? g : Object.assign({}, g, {
+  items: g.items.map((it, k) => k !== g.items.length - 1 ? it : Object.assign({}, it, { aFile: SYN_AFILE }))
+}));
+const PATCHED_DAIMON = "const DAIMON_DATA = " + JSON.stringify(patchedDaimonData) + ";\nconst DAIMON_IMG_SIZES = " + JSON.stringify(daimonSizes) + ";\n";
+console.log("（合成の aFile を " + afileTarget.key + " の最後の小問に足して検査します。本物の daimon_data.js は書きません）");
 const cut = (src, needle, rep, what) => {
   const n = src.split(needle).length - 1;
   if (n !== 1) throw new Error("偽の実装を作れません（" + what + " が " + n + " 件、期待1件）");
@@ -59,6 +78,7 @@ let SERVED = CURRENT;
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split("?")[0]).replace(/^\/+/, "") || "index.html";
   if (rel === "index.html") { res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-store" }); res.end(Buffer.from(SERVED, "utf8")); return; }
+  if (rel === "daimon_data.js") { res.writeHead(200, { "content-type": MIME[".js"], "cache-control": "no-store" }); res.end(Buffer.from(PATCHED_DAIMON, "utf8")); return; }
   const file = path.join(ROOT, rel);
   if (!file.startsWith(ROOT + path.sep)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (e, b) => e ? res.writeHead(404).end()
@@ -73,11 +93,22 @@ const SEED = () => {
   const now = Date.now();
   const u3 = QA_DATA.find(d => d.subj === "理科" && /^第3回\./.test(d.u) && d.kind !== "daimon").u;
   const qa3 = QA_DATA.filter(d => d.u === u3 && d.kind !== "daimon" && d.kind !== "calc");
-  const G = DAIMON_DATA.filter(g => g.kai === 3);
-  const g1 = G.find(g => g.items.length >= 3 && !g.items.some(it => it.aFile));
-  const g5 = G.find(g => g.items.some((it, k) => it.aFile && k >= 1));
+  // ★2026-09-28: paper:true の大問は QA_DATA/DAIMON_ITEM に入らない（紙で出す・出題から除く）。
+  //   候補から外さないと、仕込みが実際には出題されない大問を選んでしまう
+  const G = DAIMON_DATA.filter(g => g.kai === 3 && !g.paper);
+  // ★2026-09-28: 小問の q が重複する大問（同じ設問文を複数の空欄で共有する形。実データにある）は
+  //   「うしろの小問が画面に無い」を文字列一致で見る自己テストと相性が悪い（q が同じなら必ず一致してしまう）。
+  //   g1・g5 とも、小問の q が全部ちがう大問だけを候補にする
+  const uniqueQ = g => new Set(g.items.map(it => it.q)).size === g.items.length;
+  const g1 = G.find(g => g.items.length >= 3 && g.items.length <= 6 && uniqueQ(g) && !g.items.some(it => it.aFile));
+  // ★2026-09-28: aFile を持つ大問は「紙で出す」に回りやすく、非紙の中に1つも残らないことがある
+  //   （実測: この日の本物データでは aFile 付き大問は1つだけで、それが paper:true だった）。
+  //   その場合は aFile 無しの別の大問で代用し、S5（aFile の表示タイミング）だけ省略する
+  let g5 = G.find(g => g !== g1 && g.items.some((it, k) => it.aFile && k >= 1));
+  if (!g5) g5 = G.find(g => g !== g1 && g.items.length >= 2 && uniqueQ(g));
   if (!g1 || !g5) return { err: "条件に合う大問がありません" };
-  const af = g5.items.findIndex(it => it.aFile);
+  let af = g5.items.findIndex((it, k) => it.aFile && k >= 1);
+  if (af < 0) af = g5.items.length - 1;   // aFile が無いときは、末尾の1問だけ答えさせる位置にする
   const st = {};
   qa3.slice(1).forEach(d => { st[d.id] = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }; });
   const known = { correct: 1, wrong: 0, box: 1, lastCorrectAt: now - 5e8, lastAnswered: now - 5e8 };
@@ -89,13 +120,27 @@ const SEED = () => {
   localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
   localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
   localStorage.setItem("kq_battle_daimon_merged_v1", "1");
-  const plan = [qa3[0].id].concat(g1.items.slice(0, -1).map(it => it.id), g5.items.filter((it, k) => k !== af - 1).map(it => it.id));
+  // ★2026-09-28: G1・G5 の出る順は「大問を選んだ理由」ではなく、DAIMON_DATA（＝QA_DATA）の並び順で決まる。
+  //   g1 の条件を絞ったことで、g5（要点チェック）より後ろの大問が g1 に選ばれることがあるため、
+  //   実際に先に並ぶほうを先に置く（決め打ちしない）
+  const g1First = G.indexOf(g1) < G.indexOf(g5);
+  const g1Ids = g1.items.slice(0, -1).map(it => it.id);
+  const g5Ids = g5.items.filter((it, k) => k !== af - 1).map(it => it.id);
+  const plan = [qa3[0].id].concat(g1First ? g1Ids.concat(g5Ids) : g5Ids.concat(g1Ids));
   localStorage.setItem("kq_battle_settings_v1", JSON.stringify({
     subject: "理科", unitsBySubject: { "理科": [u3] }, units: [u3], count: plan.length, shuffle: false, tiers: [0],
     filterUnmastered: false, filterWeak: false, fairMode: false, reviewAllUnits: true
   }));
+  // ★2026-09-28: S8（大問の途中でやめて再開）は S1〜S7 のあとに、同じ localStorage のまま
+  //   もう一度出題させて見る。S1〜S7 の道中で judge を t%2===0 なら○・奇数なら✕と交互に付けて
+  //   いくため、○が付いた小問は次の出題で「もう答えた（box>0）」として外れてしまう。
+  //   ★途中でやめる位置は、plan の中で「必ず✕になる（奇数番目）」小問から選ぶ（先頭は避ける）
+  let midIdx = g1Ids.findIndex((id, i) => i > 0 && plan.indexOf(id) % 2 === 1);
+  if (midIdx < 0) midIdx = g1Ids.findIndex((id, i) => plan.indexOf(id) % 2 === 1);
+  if (midIdx < 0) midIdx = g1Ids.length > 1 ? 1 : 0;
   return { u3, x: qa3[0].id, g1: g1.items.map(it => it.id), g5: g5.items.map(it => it.id), af,
-           aFile: g5.items[af].aFile, plan, g1Lead: g1.lead || "" };
+           aFile: g5.items[af].aFile || null, plan, g1Lead: g1.lead || "",
+           g1MidId: g1Ids[midIdx] };
 };
 
 async function run(label, src) {
@@ -119,6 +164,7 @@ async function run(label, src) {
     await page.goto(PAGE_URL); await page.waitForTimeout(500);
     S = await page.evaluate(SEED);
     if (S.err) throw new Error(S.err);
+    if (!S.aFile) console.log("  （このデータには aFile 付きの非紙の大問が無いため、S5 は省略）");
     await page.reload(); await page.waitForTimeout(800);
     const statsBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1")));
     const texts = await page.evaluate(() => { const m = {}; DAIMON_DATA.forEach(g => g.items.forEach(it => { m[it.id] = { q: it.q, a: it.a, g: g.key }; })); return m; });
@@ -142,14 +188,14 @@ async function run(label, src) {
         check("★S3 " + id + ": 答える前に、うしろの小問が画面に無い", leak.length === 0, leak.join(","));
         const prevMissing = earlier(id).filter(x => !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
         if (earlier(id).length) check("S4 " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
-        if (S.g5[S.af] === id) check("★S5 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
+        if (S.aFile && S.g5[S.af] === id) check("★S5 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
         // ★S7: 直前が大問の小問のとき、「一個前を直す」を出さない
         if (t > 0 && texts[seq[t - 1]]) check("★S7 直前が大問の小問（" + seq[t - 1] + "）のとき、undo が出ない", !(await visible("#solo-undo-row")));
       }
       await tap("#solo-reveal-btn"); await page.waitForTimeout(60);
       if (isItem) {
         const html = await screenHtml();
-        if (S.g5[S.af] === id) check("★S5 答えを開いたら、答えの図が出る", html.includes(S.aFile));
+        if (S.aFile && S.g5[S.af] === id) check("★S5 答えを開いたら、答えの図が出る", html.includes(S.aFile));
         if (S.g1.indexOf(id) === S.g1.length - 2) {
           const tail = S.g1[S.g1.length - 1];
           const tx = await screenText();
@@ -173,7 +219,7 @@ async function run(label, src) {
     for (let t = 0; t < S.plan.length; t++) {
       await waitVisible("#solo-reveal-btn", 15000);
       const id = await shown();
-      if (texts[id] && S.g1.includes(id) && S.g1.indexOf(id) === S.g1.length - 3) { firstItemPos = t; firstItemId = id; break; }
+      if (id === S.g1MidId) { firstItemPos = t; firstItemId = id; break; }
       await tap("#solo-reveal-btn"); await page.waitForTimeout(40);
       await tap("#solo-judge-ok"); await page.waitForTimeout(40);
     }

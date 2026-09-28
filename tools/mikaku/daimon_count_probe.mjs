@@ -67,9 +67,12 @@ const SEED = (opts) => {
   QA_DATA.forEach(q => { if (q.kind === "daimon") return; k++;
     if (k % 3 === 0) st[q.id] = { correct: 1, wrong: 1, box: 0, lastCorrectAt: now - 5e8, lastAnswered: now - 1e8 };
     else if (k % 3 === 1) st[q.id] = { correct: 3, wrong: 0, box: 3, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }; });
-  const G = DAIMON_DATA.filter(g => g.items.length >= 2);
+  // ★2026-09-28: paper:true の大問（紙で出す）は QA_DATA/DAIMON_ITEM に入らないので、
+  //   仕込みの対象から外す（外さないと、そもそも出題されない大問に記録を仕込むことになる）
+  const nonPaper = DAIMON_DATA.filter(g => !g.paper);
+  const G = nonPaper.filter(g => g.items.length >= 2);
   const known = () => ({ correct: 1, wrong: 0, box: 1, lastCorrectAt: now - 4e8, lastAnswered: now - 4e8 });
-  const g0 = G[0], gw = G[1], gl = DAIMON_DATA[DAIMON_DATA.length - 1];
+  const g0 = G[0], gw = G[1], gl = nonPaper[nonPaper.length - 1];
   st[g0.items[0].id] = known();
   gl.items.forEach(it => { st[it.id] = known(); });
   st[gw.items[0].id] = { correct: 1, wrong: 1, box: 0, lastCorrectAt: now - 6e8, lastAnswered: now - 2e8 };
@@ -141,7 +144,8 @@ async function run(label, src) {
       const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
       const qa = QA_DATA.filter(d => d.subj === "理科" && d.kind !== "daimon" && d.kind !== "calc").length;
       const ans = g => g.items.filter(it => !((st[it.id] && st[it.id].box || 0) > 0)).length;
-      const items = DAIMON_DATA.reduce((a, g) => a + ans(g), 0);
+      // ★2026-09-28: paper:true の大問（紙で出す）は答える小問の数に入らない
+      const items = DAIMON_DATA.filter(g => !g.paper).reduce((a, g) => a + ans(g), 0);
       const G = k => DAIMON_DATA.find(g => g.key === k);
       return { qa, items, total: qa + items, g0: ans(G(inf.g0)), g0n: G(inf.g0).items.length, gl: ans(G(inf.gl)) };
     }, info);
@@ -175,7 +179,8 @@ async function run(label, src) {
       const now = Date.now(), st = {};
       QA_DATA.forEach(d => { if (d.kind !== "daimon") st[d.id] = { correct: 3, wrong: 0, box: 3, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }; });
       const u3 = QA_DATA.find(d => d.subj === "理科" && /^第3回\./.test(d.u) && d.kind !== "daimon").u;
-      const G = DAIMON_DATA.filter(g => g.kai === 3);
+      // ★2026-09-28: paper:true の大問（紙で出す）は候補から外す
+      const G = DAIMON_DATA.filter(g => g.kai === 3 && !g.paper);
       // 2つめの大問が2問以上になる並びを探す（こえさせるため）
       const i = G.findIndex((g, k) => k + 1 < G.length && G[k + 1].items.length >= 2);
       if (i < 0) return { err: "条件に合う大問がありません" };
@@ -197,17 +202,19 @@ async function run(label, src) {
       localStorage.setItem("kq_battle_settings_v1", JSON.stringify(s));
       // 全部の単元・全部の段。最後の大問を「答える小問2」にし、指定を「総数−1」にする ＝ 最後の大問が入らず、埋める問題も無い
       const now = Date.now(), st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
+      // ★2026-09-28: paper:true の大問（紙で出す）は QA_DATA/DAIMON_ITEM に無いので、この仕込みから外す
+      const nonPaper = DAIMON_DATA.filter(g => !g.paper);
       // ★小問が2つ以上ある最後の大問を gl にし、それよりうしろの大問は全部前回○（0問）にする
-      let li = -1; DAIMON_DATA.forEach((g, k) => { if (g.items.length >= 2) li = k; });
+      let li = -1; nonPaper.forEach((g, k) => { if (g.items.length >= 2) li = k; });
       if (li < 0) return { err: "小問が2つ以上の大問がありません" };
-      const gl = DAIMON_DATA[li];
+      const gl = nonPaper[li];
       const ok = () => ({ correct: 1, wrong: 0, box: 1, lastCorrectAt: now, lastAnswered: now });
-      DAIMON_DATA.forEach(g => g.items.forEach(it => { delete st[it.id]; }));
-      DAIMON_DATA.slice(li + 1).forEach(g => g.items.forEach(it => { st[it.id] = ok(); }));
+      nonPaper.forEach(g => g.items.forEach(it => { delete st[it.id]; }));
+      nonPaper.slice(li + 1).forEach(g => g.items.forEach(it => { st[it.id] = ok(); }));
       gl.items.slice(2).forEach(it => { st[it.id] = ok(); });
       localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
       const qa = QA_DATA.filter(d => d.subj === "理科" && d.kind !== "daimon" && d.kind !== "calc").length;
-      const items = DAIMON_DATA.slice(0, li).reduce((a, g) => a + g.items.length, 0) + 2;
+      const items = nonPaper.slice(0, li).reduce((a, g) => a + g.items.length, 0) + 2;
       s.count = qa + items - 1;
       localStorage.setItem("kq_battle_settings_v1", JSON.stringify(s));
       return { n: s.count };
@@ -223,7 +230,9 @@ async function run(label, src) {
     const [dl] = await Promise.all([p.waitForEvent("download", { timeout: 10000 }), p.evaluate(() => document.getElementById("export-link").click())]);
     const csv = fs.readFileSync(await dl.path(), "utf8");
     const ids = new Set(csv.split(/\r\n/).slice(1).map(l => l.split(",")[0].replace(/^"|"$/g, "")));
-    const k8 = await p.evaluate(() => ({ items: DAIMON_DATA.flatMap(g => g.items.map(i => i.id)), keys: DAIMON_DATA.map(g => g.key) }));
+    // ★2026-09-28: paper:true の大問の小問は、そもそも QA_DATA/DAIMON_ITEM・stats に入らないので
+    //   CSV にも出ない（正しい）。K8 の対象からも外す
+    const k8 = await p.evaluate(() => ({ items: DAIMON_DATA.filter(g => !g.paper).flatMap(g => g.items.map(i => i.id)), keys: DAIMON_DATA.map(g => g.key) }));
     const miss = k8.items.filter(id => !ids.has(id));
     check("K8 CSV に小問が全部 1行ずつ入る（" + k8.items.length + "行）", miss.length === 0, miss.slice(0, 3).join(","));
     check("K8 CSV に大問の行は入らない", k8.keys.every(k => !ids.has(k)));

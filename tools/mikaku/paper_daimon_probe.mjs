@@ -48,8 +48,16 @@ function itemCountOf(key) {
   const block = DAIMON_SRC.slice(i, next < 0 ? DAIMON_SRC.length : next);
   return (block.match(/"id":/g) || []).length;
 }
-const candidates = keysAll.filter(k => itemCountOf(k) >= 2);
-if (candidates.length < 2) throw new Error("小問2つ以上の大問が2つ見つかりません");
+// ★本物の元データにすでに paper:true が付いている大問（2026-09-28〜）は候補から外す。
+//   外さないと「すでに紙」の大問を選んでしまい、対照（base）との差分計算が合わなくなる
+function alreadyPaper(key) {
+  const i = DAIMON_SRC.indexOf('"key": "' + key + '"');
+  const next = DAIMON_SRC.indexOf('"key": "', i + 1);
+  const block = DAIMON_SRC.slice(i, next < 0 ? DAIMON_SRC.length : next);
+  return /"paper":\s*true/.test(block);
+}
+const candidates = keysAll.filter(k => itemCountOf(k) >= 2 && !alreadyPaper(k));
+if (candidates.length < 2) throw new Error("小問2つ以上・まだ紙でない大問が2つ見つかりません");
 const PAPER_KEYS = [candidates[0], candidates[candidates.length - 1]];
 const REASON = { [PAPER_KEYS[0]]: "作図が必要（テスト用の仮の印）", [PAPER_KEYS[1]]: "長い計算の途中式が要る（テスト用の仮の印）" };
 const PATCHED_DAIMON = patchDaimon(DAIMON_SRC, PAPER_KEYS, k => REASON[k]);
@@ -93,7 +101,10 @@ function report(title, out) {
 
 const only = process.argv.indexOf("--only") >= 0 ? process.argv[process.argv.indexOf("--only") + 1] : null;
 
-// ---- 対照: 印0件（素のまま）の理科の総数・「◯問」を測る ----
+// ---- 対照: 素の daimon_data.js（写しに何も足す前）の理科の総数・「◯問」を測る ----
+//   ★2026-09-28: 本物の元データにすでに paper:true が付いている（理科担当が印を付け終わった）。
+//   「印0件」ではなく「いま実際に付いている数」で期待値を作る（4-6p: 決め打ちしない）
+const realPaperKeys = keysAll.filter(alreadyPaper);
 const baseOut = [];
 let baseTotal = 0, basePoolLabel = "";
 {
@@ -102,10 +113,12 @@ let baseTotal = 0, basePoolLabel = "";
     baseTotal = await p.evaluate(() => parseInt(document.getElementById("stat-total").textContent, 10));
     basePoolLabel = await p.evaluate(() => document.getElementById("pool-count-label").textContent);
     const paperBtn = await p.evaluate(() => getComputedStyle(document.getElementById("paper-open-btn")).display);
-    check("★P3 印0件のとき「紙で出す」ボタンは出ない", paperBtn === "none", paperBtn);
+    const wantShown = realPaperKeys.length > 0;
+    check("★P3 素の daimon_data.js（紙 " + realPaperKeys.length + "件）で「紙で出す」ボタンの表示が正しい",
+      (paperBtn !== "none") === wantShown, paperBtn + " ／ 紙 " + realPaperKeys.length + "件");
     check.p = p;
   });
-  report("(base) 印0件（素の daimon_data.js） ── 対照", out);
+  report("(base) 素の daimon_data.js（紙 " + realPaperKeys.length + "件） ── 対照", out);
 }
 
 // ---- 印を2件付けた写しで検査 ----
@@ -174,18 +187,31 @@ if (!only || only === "now") {
       const info = await p.evaluate((key) => {
         const g = DAIMON_DATA.find(x => x.key === key);
         const sheets = [...document.querySelectorAll("#paper-print-body .paper-sheet")];
-        const qHtml = sheets[0] ? sheets[0].textContent : "";
-        const aHtml = sheets[1] ? sheets[1].textContent : "";
+        const qSheet = sheets[0], aSheet = sheets[1];
+        const qHtml = qSheet ? qSheet.textContent : "";
+        const aHtml = aSheet ? aSheet.textContent : "";
         const answers = g.items.map(it => it.a).filter(Boolean);
+        // ★構造で見る（本体）: 答えを入れる要素（.paper-item-a）そのものが問題の紙に無いか。
+        //   「イ」「H」のような1文字の答えは、文字列一致だとリード文・他の設問に必ず紛れて
+        //   誤検出になる（確認ポイント 0-1）。DOM の要素の有無で見れば、この型を避けられる
+        const qHasAnswerEl = qSheet ? qSheet.querySelectorAll(".paper-item-a").length > 0 : true;
+        const aFileNames = g.items.map(it => it.aFile).filter(Boolean);
+        const qImgSrcs = qSheet ? [...qSheet.querySelectorAll("img")].map(im => im.getAttribute("src") || "") : [];
+        const qHasAnswerImg = aFileNames.some(n => qImgSrcs.some(src => src.includes(n)));
+        // ★参考: 2文字以上の答えの文字列一致（1文字の答えは判定できないので対象外・0-1）
+        const longAnswers = answers.filter(a => a.length >= 2);
+        const qHasLongAnswerText = longAnswers.some(a => qHtml.includes(a));
         return {
           nSheets: sheets.length,
-          qHasAnyAnswer: answers.some(a => qHtml.includes(a)),
+          qHasAnswerEl, qHasAnswerImg, qHasLongAnswerText,
           aHasAllAnswers: answers.every(a => aHtml.includes(a)),
-          qBreak: sheets[0] ? sheets[0].classList.contains("paper-page-break") : false,
+          qBreak: qSheet ? qSheet.classList.contains("paper-page-break") : false,
         };
       }, k);
       check("P5 " + k + " 問題の紙・答えの紙の2枚がある", info.nSheets === 2, info.nSheets);
-      check("★P5 " + k + " 問題の紙に答えが1文字も出ない", info.qHasAnyAnswer === false, info.qHasAnyAnswer);
+      check("★P5 " + k + " 問題の紙に答えの要素（.paper-item-a）が無い", info.qHasAnswerEl === false, info.qHasAnswerEl);
+      check("★P5 " + k + " 問題の紙に答えの図（aFile）が無い", info.qHasAnswerImg === false, info.qHasAnswerImg);
+      check("P5 " + k + " 問題の紙に2文字以上の答えの文字列が紛れていない（参考）", info.qHasLongAnswerText === false, info.qHasLongAnswerText);
       check("P5 " + k + " 答えの紙に全部の答えが出る", info.aHasAllAnswers === true, info.aHasAllAnswers);
       check("P5 " + k + " 問題の紙が改ページで分かれている", info.qBreak === true, info.qBreak);
       await p.click("#paper-print-back"); await p.waitForTimeout(300);

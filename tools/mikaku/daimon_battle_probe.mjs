@@ -41,6 +41,25 @@ const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g"
 const lf = s => s.replace(/\r\n/g, "\n");
 const CURRENT = lf(fs.readFileSync(path.join(ROOT, "index.html"), "utf8"));
 const BASELINE = lf(execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 }));
+
+// ★2026-09-28: aFile（答えの図）を持つ大問は「紙で出す」に回りやすく、実測では非紙の中に
+//   1つも残らなかった（唯一の aFile 例が paper:true だった）。B4（aFile の表示タイミング）を
+//   実際に踏むため、写しに合成の aFile を1つだけ足して配る。★本物の daimon_data.js は書かない
+const DAIMON_SRC = fs.readFileSync(path.join(ROOT, "daimon_data.js"), "utf8");
+function parseDaimonSrc(src) {
+  const m = src.match(/const DAIMON_DATA = (\[[\s\S]*?\]);\r?\nconst DAIMON_IMG_SIZES = (\{[\s\S]*?\});/);
+  if (!m) throw new Error("daimon_data.js の形が読めません");
+  return { data: JSON.parse(m[1]), sizes: JSON.parse(m[2]) };
+}
+const { data: daimonData, sizes: daimonSizes } = parseDaimonSrc(DAIMON_SRC);
+const SYN_AFILE = Object.keys(daimonSizes)[0];
+const afileTarget = daimonData.find(g => !g.paper && g.items.length >= 2 && g.items.length <= 4 && !g.items.some(it => it.aFile));
+if (!afileTarget) throw new Error("合成の aFile を足す先の大問（紙でない・aFile が無い・小問2つ以上）が見つかりません");
+const patchedDaimonData = daimonData.map(g => g !== afileTarget ? g : Object.assign({}, g, {
+  items: g.items.map((it, k) => k !== g.items.length - 1 ? it : Object.assign({}, it, { aFile: SYN_AFILE }))
+}));
+const PATCHED_DAIMON = "const DAIMON_DATA = " + JSON.stringify(patchedDaimonData) + ";\nconst DAIMON_IMG_SIZES = " + JSON.stringify(daimonSizes) + ";\n";
+console.log("（合成の aFile を " + afileTarget.key + " の最後の小問に足して検査します。本物の daimon_data.js は書きません）");
 const cut = (src, needle, rep, what) => {
   const n = src.split(needle).length - 1;
   if (n !== 1) throw new Error("偽の実装を作れません（" + what + " が " + n + " 件）");
@@ -51,8 +70,10 @@ const FAKES = {
       "  questionIds = pool.map(i => QA_DATA[i].id);  /* ★偽の実装 */", "create-btn の並び")],
   b: ["うしろの小問まで出す", s => cut(s, "  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonAnswered(box, it, k));",
       "  g.items.forEach((it, k) => { if(k !== dm.pos) addDaimonAnswered(box, it, k); });  /* ★偽の実装 */", "前の小問")],
-  c: ["答えの図を先に出す", s => cut(s, "  if(dm.it.file) els[\"battle-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n",
-      "  if(dm.it.file) els[\"battle-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n  if(dm.it.aFile) els[\"battle-daimon-fig\"].appendChild(daimonImg(dm.it.aFile));  /* ★偽の実装 */\n", "小問の図")],
+  // ★2026-09-28: b0dadd9 で renderBattleDaimon が renderDaimonBlock(prefix, ids, idx) に一般化され、
+  //   "battle-daimon-fig" の決め打ちが els[prefix+"-daimon-fig"] に変わった。needle をそれに合わせる
+  c: ["答えの図を先に出す", s => cut(s, "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n",
+      "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n  if(dm.it.aFile) els[prefix+\"-daimon-afig\"].appendChild(daimonImg(dm.it.aFile));  /* ★偽の実装 */\n", "小問の図")],
   d: ["時間を2倍にしない", s => cut(s, "const DAIMON_TIME_FACTOR = 2;", "const DAIMON_TIME_FACTOR = 1;  /* ★偽の実装 */", "倍率")],
   e: ["小問でもスキップを出す", s => cut(s, "    els[\"skip-btn\"].style.display = isDaimonItemId(d.id) ? \"none\" : \"block\";",
       "    els[\"skip-btn\"].style.display = \"block\";  /* ★偽の実装 */", "スキップ")],
@@ -71,6 +92,7 @@ function withFakeRelay(src) {
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split("?")[0]).replace(/^\/+/, "") || "index.html";
   if (rel === "index.html") { res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-store" }); res.end(Buffer.from(withFakeRelay(SERVED), "utf8")); return; }
+  if (rel === "daimon_data.js") { res.writeHead(200, { "content-type": MIME[".js"], "cache-control": "no-store" }); res.end(Buffer.from(PATCHED_DAIMON, "utf8")); return; }
   const file = path.join(ROOT, rel);
   if (!file.startsWith(ROOT + path.sep)) { res.writeHead(403).end(); return; }
   fs.readFile(file, (e, b) => e ? res.writeHead(404).end()
@@ -85,11 +107,19 @@ const SEED_HOST = () => {
   const now = Date.now();
   const u3 = QA_DATA.find(d => d.subj === "理科" && /^第3回\./.test(d.u) && d.kind !== "daimon").u;
   const qa3 = QA_DATA.filter(d => d.u === u3 && d.kind !== "daimon" && d.kind !== "calc");
-  const G = DAIMON_DATA.filter(g => g.kai === 3);
-  const g1 = G.find(g => g.items.length >= 3 && !g.items.some(it => it.aFile));
-  const g5 = G.find(g => g.items.some((it, k) => it.aFile && k >= 1));
+  // ★2026-09-28: paper:true の大問（紙で出す）は QA_DATA/DAIMON_ITEM に入らないので候補から外す
+  const G = DAIMON_DATA.filter(g => g.kai === 3 && !g.paper);
+  // ★2026-09-28: 小問の q が重複する大問（同じ設問文を複数の空欄で共有する形。実データにある）は
+  //   「うしろの小問が画面に無い」を文字列一致で見る自己テストと相性が悪い。q が全部ちがう大問だけを候補にする
+  const uniqueQ = g => new Set(g.items.map(it => it.q)).size === g.items.length;
+  const g1 = G.find(g => g.items.length >= 3 && g.items.length <= 6 && uniqueQ(g) && !g.items.some(it => it.aFile));
+  // ★aFile を持つ大問が「紙で出す」に回り、非紙の中に1つも残らないことがある。
+  //   その場合は代わりの大問で埋め、B4（aFile の表示タイミング）だけ省略する
+  let g5 = G.find(g => g !== g1 && g.items.some((it, k) => it.aFile && k >= 1));
+  if (!g5) g5 = G.find(g => g !== g1 && g.items.length >= 2 && uniqueQ(g));
   if (!g1 || !g5) return { err: "条件に合う大問がありません" };
-  const af = g5.items.findIndex(it => it.aFile);
+  let af = g5.items.findIndex((it, k) => it.aFile && k >= 1);
+  if (af < 0) af = g5.items.length - 1;
   const st = {};
   qa3.slice(1).forEach(d => { st[d.id] = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }; });
   const known = { correct: 1, wrong: 0, box: 1, lastCorrectAt: now - 5e8, lastAnswered: now - 5e8 };
@@ -102,9 +132,13 @@ const SEED_HOST = () => {
   localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
   localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 }));
   localStorage.setItem("kq_battle_daimon_merged_v1", "1");
-  const plan = [qa3[0].id].concat(g1.items.slice(0, -1).map(it => it.id), g5.items.filter((it, k) => k !== af - 1).map(it => it.id));
+  // ★2026-09-28: G1・G5 の出る順は DAIMON_DATA（＝QA_DATA）の並び順で決まる。決め打ちしない
+  const g1First = G.indexOf(g1) < G.indexOf(g5);
+  const g1Ids = g1.items.slice(0, -1).map(it => it.id);
+  const g5Ids = g5.items.filter((it, k) => k !== af - 1).map(it => it.id);
+  const plan = [qa3[0].id].concat(g1First ? g1Ids.concat(g5Ids) : g5Ids.concat(g1Ids));
   return { u3: u3, x: qa3[0].id, g1: g1.items.map(it => it.id), g5: g5.items.map(it => it.id), af: af,
-           aFile: g5.items[af].aFile, plan: plan, g1Lead: g1.lead || "" };
+           aFile: g5.items[af].aFile || null, plan: plan, g1Lead: g1.lead || "" };
 };
 const SETTINGS = ({ u3, n }) => {
   localStorage.setItem("kq_battle_settings_v1", JSON.stringify({
@@ -140,6 +174,7 @@ async function run(label, src) {
   try {
     S = await host.page.evaluate(SEED_HOST);
     if (S.err) throw new Error(S.err);
+    if (!S.aFile) console.log("  （このデータには aFile 付きの非紙の大問が無いため、B4 は省略）");
     await host.page.evaluate(SETTINGS, { u3: S.u3, n: S.plan.length });
     await guest.page.evaluate(() => { localStorage.clear(); localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 })); });
     await host.page.reload(); await guest.page.reload(); await host.page.waitForTimeout(800); await guest.page.waitForTimeout(600);
@@ -198,7 +233,7 @@ async function run(label, src) {
           check("★B2 " + who + " " + id + ": 答える前に、うしろの小問が画面に無い", leak.length === 0, leak.join(","));
           const prevMissing = earlier(id).filter(x => !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
           if (earlier(id).length) check("B3 " + who + " " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
-          if (S.g5[S.af] === id) check("★B4 " + who + " 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
+          if (S.aFile && S.g5[S.af] === id) check("★B4 " + who + " 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
         }
         if (S.g1.indexOf(id) === S.g1.length - 2) await shot(guest.page, "guest_before_last_g1");
       }
@@ -209,7 +244,7 @@ async function run(label, src) {
       else if (S.g1.indexOf(id) === 0) check("★B5 答える時間: 小問は3.5秒たってから開く（2倍・2秒×2）", took >= 3500, took + "ms");
       if (isItem) {
         const html = await screenHtml(host.page), tx = await screenText(host.page);
-        if (S.g5[S.af] === id) check("★B4 答えを開いたら、答えの図が出る", html.includes(S.aFile));
+        if (S.aFile && S.g5[S.af] === id) check("★B4 答えを開いたら、答えの図が出る", html.includes(S.aFile));
         if (S.g1.indexOf(id) === S.g1.length - 2) {
           const tail = S.g1[S.g1.length - 1];
           check("★B3 大問の最後の手の答えを開くと、うしろの前回○の小問が答えつきで出る", tx.includes(texts[tail].q) && tx.includes(texts[tail].a), tail);
