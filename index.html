@@ -6952,14 +6952,13 @@ function startSoloCard(){
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
-  // ★「ひとつ前の判定をやり直す」は、直前が大問の小問だったときは出さない
-  //   （大問の中の判定を1つずつ戻す道は作らない。承認ずみの案の4節）。review モードは記録を動かさないので対象外
-  const prevWasDaimonItem = !reviewMode && quizPos > 0 && isDaimonItemId(quizQueue[quizPos - 1]);
+  // ★2026-09-30（bug0930 ③・ユーザー判断）: 直前が大問の小問でも「ひとつ前の判定をやり直す」を出す
+  //   （2026-09-28 は出さなかった。小問の押しまちがいが直せなかったため変更）。直せるのは直前の小問1つだけ
   // ★2026-09-28: チェックのみのときは「一つ進む」も同じ行に出す（依頼:「特定の場所の問題のチェックをしたいので」）。
   //   ★記録は動かさない（quizPos を動かして startSoloCard を呼ぶだけ）
   els["solo-forward-link"].style.display = reviewMode ? "inline" : "none";
-  els["solo-undo-row"].style.display = (reviewMode || (quizPos > 0 && !prevWasDaimonItem)) ? "block" : "none";
-  els["solo-undo-link"].style.display = (reviewMode ? quizPos > 0 : (quizPos > 0 && !prevWasDaimonItem)) ? "inline" : "none";
+  els["solo-undo-row"].style.display = (reviewMode || quizPos > 0) ? "block" : "none";
+  els["solo-undo-link"].style.display = (quizPos > 0) ? "inline" : "none";
   // ★「何問目」ジャンプもチェックのみのときだけ。ふつうの一人モードは順番どおり答える作りを変えない
   els["solo-review-jump-row"].style.display = reviewMode ? "flex" : "none";
   if(reviewMode){
@@ -7033,13 +7032,18 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     quizPos--;
   }else{
     if(quizResults.length === 0) return;
-    // ★直前が大問の小問なら、undo-row 自体を出していない（表示側で防いでいる）。ここは念のための保険
-    if(isDaimonItemId(quizQueue[quizPos - 1])) return;
     const last = quizResults.pop();
     const qid = last.id;
-    // 実際の正誤ではなく「記録した側」を戻す（やり直しラウンドでは食いちがう）
-    const recorded = last.recorded !== undefined ? last.recorded : last.correct;
-    adjustStat(qid, recorded ? "correct" : "wrong", -1);
+    if(isDaimonItemId(qid) && last.before !== undefined){
+      // ★大問の小問（2026-09-30）: 記録する前の stats にまるごと戻す（box・正解日も元どおり）
+      if(last.before === null) delete stats[qid];
+      else stats[qid] = JSON.parse(last.before);
+      saveStats();
+    }else{
+      // 実際の正誤ではなく「記録した側」を戻す（やり直しラウンドでは食いちがう）
+      const recorded = last.recorded !== undefined ? last.recorded : last.correct;
+      adjustStat(qid, recorded ? "correct" : "wrong", -1);
+    }
     quizPos = Math.max(0, quizPos - 1);
   }
   startSoloCard();
