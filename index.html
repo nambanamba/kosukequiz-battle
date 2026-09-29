@@ -4246,7 +4246,9 @@ function saveSoloSession(){
       v: SOLO_SESSION_VERSION,
       quizIds: ids,
       quizPos: quizPos,
-      quizResults: quizResults.map(r => ({ id: r.id, correct: r.correct, recorded: r.recorded })),
+      // ★before … 記録する前の stats（JSON 文字列。無かったら null）。大問の途中から再開して
+      //   (1)に戻すとき・大問の小問の「ひとつ前をやり直す」で、記録をその前にまるごと戻すのに使う（2026-09-30）
+      quizResults: quizResults.map(r => ({ id: r.id, correct: r.correct, recorded: r.recorded, before: r.before })),
       reviewMode: reviewMode,
       inSoloRetryRound: inSoloRetryRound
     }));
@@ -4261,7 +4263,9 @@ function loadSoloSession(){
 // ---- 保存されている id から復元する。データから消えた問題（isKnownId で判定。
 //      一問一答も大問の小問もこれで見る）は取りのぞく ----
 // ★大問の途中でやめたときは、その大問の(1)からやり直しにする（2026-09-28 承認ずみの案・4節⑤）。
-//   先に答えた小問は2回記録されることがあるが、まれなので単純なほうを取る
+// ★2026-09-30（bug0930 ②・ユーザー判断）: 戻した小問の結果は quizResults から外して dropped に返す
+//   （×リスト・「前回まちがえた問題」に残さない）。記録（stats）を戻すのは、実際に再開したとき
+//   だけ（applySoloRewind）。ここは「再開する」ボタンの数を出すときにも呼ばれるので、stats は触らない
 function restoreSoloSession(session){
   if(!session || session.v !== SOLO_SESSION_VERSION || !Array.isArray(session.quizIds)) return null;
   const savedPos = session.quizPos || 0;
@@ -4274,6 +4278,7 @@ function restoreSoloSession(session){
   });
   if(queue.length === 0) return null;
   // ★次に出す問題が大問の途中（(1)以外）なら、その大問の頭まで戻す
+  const posBeforeRewind = pos;
   while(pos > 0){
     const cur = DAIMON_ITEM.get(queue[pos]);
     const prev = DAIMON_ITEM.get(queue[pos - 1]);
@@ -4281,15 +4286,36 @@ function restoreSoloSession(session){
   }
   const results = (session.quizResults || []).map(r=>{
     if(!r || !isKnownId(r.id)) return null;
-    return {id: r.id, correct: r.correct, recorded: r.recorded};
+    return {id: r.id, correct: r.correct, recorded: r.recorded, before: r.before};
   }).filter(r => r);
+  // ★戻した小問（queue の pos〜posBeforeRewind-1）の結果を、うしろから外す（新しい順）
+  const rewound = queue.slice(pos, posBeforeRewind);
+  const dropped = [];
+  for(let k = rewound.length - 1; k >= 0; k--){
+    const last = results[results.length - 1];
+    if(!last || last.id !== rewound[k]) break;   // 並びが合わないときは外さない（別の問題の結果を消さない）
+    dropped.push(results.pop());
+  }
   return {
     quizQueue: queue,
     quizPos: Math.min(pos, queue.length),
     quizResults: results,
+    dropped: dropped,
     reviewMode: !!session.reviewMode,
     inSoloRetryRound: !!session.inSoloRetryRound
   };
+}
+// ★再開したときだけ呼ぶ。外した結果の記録を「記録する前」に戻す（新しい順に戻すので、最後は一番古い前の状態）。
+//   ★before が無い（2026-09-30 より前に保存された）結果は戻せないので、記録はそのまま（二重に付くことがある）
+function applySoloRewind(dropped){
+  let changed = false;
+  (dropped || []).forEach(r => {
+    if(r.before === undefined) return;
+    if(r.before === null) delete stats[r.id];
+    else{ try{ stats[r.id] = JSON.parse(r.before); }catch(e){ return; } }
+    changed = true;
+  });
+  if(changed) saveStats();
 }
 function clearSoloSession(){
   try{ window.localStorage.removeItem(SOLO_SESSION_KEY); }catch(e){}
@@ -6988,8 +7014,9 @@ function judgeSolo(correct){
   // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
   // 今回のミスリストから外すかどうかは、これまで通り実際の正誤で判定する
   const recorded = inSoloRetryRound ? false : correct;
+  const before = stats[qid] ? JSON.stringify(stats[qid]) : null;   // ★記録する前（戻すとき用）
   recordResult(qid, recorded);
-  quizResults.push({id: qid, correct, recorded});
+  quizResults.push({id: qid, correct, recorded, before});
   quizPos++;
   if(quizPos >= quizQueue.length){
     finishSoloQuiz();
@@ -7101,6 +7128,7 @@ els["retry-last-miss-btn"].addEventListener("click", ()=>{
 els["resume-solo-btn"].addEventListener("click", ()=>{
   const session = restoreSoloSession(loadSoloSession());
   if(!session) return;
+  applySoloRewind(session.dropped);   // ★(1)に戻した小問の記録を、答える前に戻す（二重に付けない）
   quizQueue = session.quizQueue;
   quizPos = session.quizPos;
   quizResults = session.quizResults;
