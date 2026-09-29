@@ -7227,8 +7227,35 @@ function buildCheeseTrack(){
 //   設定の行は増やさない。倍率はここ1か所
 const DAIMON_TIME_FACTOR = 2;
 function timeFactorAt(idx){ return isDaimonItemId(questionIds[idx]) ? DAIMON_TIME_FACTOR : 1; }
+// ★2026-09-30（bug0930 ④・司令塔承認）: 大問の小問では、ゲストもホストの秒数（答える・判定）を使う。
+//   秒数は端末ごとの設定なので、ゲストの設定が短いとゲストだけ先に答えが開き、判定の時間切れで
+//   ホストが自動〇になっていた。ホストは開始の合図（startAction）に自分の秒数を載せて送る（battleTimesPayload）。
+//   ★一問一答はこれまでどおり自分の端末の設定（挙動を変えない）。判定の時間も大問では2倍にする
+let hostBattleTimes = null;   // ゲストだけ: ホストから届いた {answer, judge}
+function battleTimesPayload(){ return {answer: answerTimeSec, judge: judgeTimeSec}; }
+function battleSecAt(kind, idx){
+  const own = kind === "answer" ? answerTimeSec : judgeTimeSec;
+  if(!isDaimonItemId(questionIds[idx])) return own;
+  const h = role === "guest" && hostBattleTimes ? hostBattleTimes[kind] : null;
+  return (typeof h === "number" && h > 0 ? h : own) * DAIMON_TIME_FACTOR;
+}
+// ★大問の小問が出たら、その小問の見出しまで画面を送る（2026-09-30・bug0930 ④）。
+//   スマホ（390×844）では、リード文・図・前の小問で「こたえを見る」・判定ボタン・時計が画面の外に出ていた。
+//   見出しを上に置き、それでもボタンが下にはみ出すときはボタンが見えるところまで送る（ボタンを優先）。
+//   ★一問一答では何もしない
+function scrollBattleDaimonTo(targetKey){
+  if(!isDaimonItemId(questionIds[currentIndex])) return;
+  const cur = els["battle-daimon"].querySelector(".battle-daimon-cur");
+  const t = els[targetKey];
+  if(!cur || !t || t.offsetParent === null) return;
+  const curTop = cur.getBoundingClientRect().top + window.scrollY;
+  const tBottom = t.getBoundingClientRect().bottom + window.scrollY;
+  let y = curTop - 8;
+  if(tBottom - y > window.innerHeight) y = tBottom - window.innerHeight + 12;
+  window.scrollTo(0, Math.max(0, y));
+}
 function startAnswerCountdown(){
-  const answerSec = answerTimeSec * timeFactorAt(currentIndex);
+  const answerSec = battleSecAt("answer", currentIndex);
   buildCheeseTrack();
   clearInterval(cheeseInterval);
   clearTimeout(cheeseTimeout);
@@ -7330,7 +7357,7 @@ function stopFillCountdown(groupKey, buttonKeys){
 //      "correct" so a slow-to-press kid never gets penalized for someone
 //      else's hesitation ----
 function startJudgeCountdown(){
-  startFillCountdown("judge", ["judge-ok","judge-ng"], judgeTimeSec, ()=>{
+  startFillCountdown("judge", ["judge-ok","judge-ng"], battleSecAt("judge", currentIndex), ()=>{
     if(myVerdictOfOpponent === null){
       els["judge-ok"].classList.add("auto-press");
       judgeOpponent(true);
@@ -7621,6 +7648,7 @@ function setupActions(){
     if(role !== "guest") return;
     questionIds = data.ids;
     inMissRetryRound = !!data.isRetryRound;
+    hostBattleTimes = (data.times && typeof data.times === "object") ? data.times : null;
     myMissesThisRound = [];
     resetAvatars();
     setupAvatarLabels();
@@ -8047,6 +8075,7 @@ function showQuestion(idx, hostPrivate){
   // or a reconnecting peer is being resynced to it) -- skip straight to the
   // answering phase instead of waiting for a separate "ready" tap
   if(!hostPrivate) enterAnsweringPhase();
+  else scrollBattleDaimonTo("advance-btn");   // ★大問の小問だけ。答える前の「わかった！」が見えるように
 }
 
 // ---- host-only: look at a question privately before either skipping it or
@@ -8088,7 +8117,7 @@ function hostResyncQuestion(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    if(idx === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound});
+    if(idx === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
     else nextAction.send({index: idx, id: questionIds[idx]});
   }
 }
@@ -8103,7 +8132,7 @@ function hostResyncForReconnect(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    startAction.send({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound});
+    startAction.send({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
   }
 }
 
@@ -8115,7 +8144,7 @@ function doAdvance(){
   els["advance-btn"].style.display = "none";
   saveBattleSession();
   if(room){
-    if(currentIndex === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound});
+    if(currentIndex === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
     else nextAction.send({index: currentIndex, id: questionIds[currentIndex]});
   }
   enterAnsweringPhase();
@@ -8203,6 +8232,7 @@ function enterAnsweringPhase(){
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "それぞれ声に出してこたえを言いましょう！";
   startAnswerCountdown();
+  scrollBattleDaimonTo("answer-reveal-btn");   // ★大問の小問だけ。「こたえを見る」と時計が見えるように
 }
 
 // ★判定ボタンは0.3秒遅れて出す（2026-09-16 ユーザー原文「わかったを押した瞬間に画面が切り替わって、
@@ -8289,6 +8319,7 @@ function revealAnswer(){
     // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
     if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
     els["judge-row"].style.display = "flex";
+    scrollBattleDaimonTo("judge-row");   // ★大問の小問だけ。判定ボタンが画面の外に出ないように
     startJudgeCountdown();
   }, JUDGE_SHOW_DELAY_MS);
 }
