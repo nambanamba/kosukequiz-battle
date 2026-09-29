@@ -9,7 +9,8 @@
 //   S4 前の小問（前回○をふくむ）は答えつきで上に出ている
 //   S5 ★答えの図（aFile）は「こたえを見る」の前は画面に無く、あとに出る
 //   S6 記録: 小問の記録が stats に小問の id で入り、★ほかの一問一答の記録は1文字も変わらない
-//   S7 ★「ひとつ前の判定をやり直す」は、直前が大問の小問のときは出ない
+//   S7 ★「ひとつ前の判定をやり直す」は、直前が大問の小問のときも出る
+//      （★2026-09-30 bug0930 ③ ユーザー判断で逆にした。2026-09-28 は「出さない」だった）
 //   S8 ★大問の途中でやめて再開すると、その大問の(1)からやり直しになる
 //   S9 画面のエラー0・横のはみ出し0（390px）
 //
@@ -67,9 +68,9 @@ const FAKES = {
   d: ["記録を古い別の入れ物に書く", s => cut(s,
       "  recordResult(qid, recorded);",
       "  { const o = daimonStats[qid] || {correct:0, wrong:0}; if(recorded) o.correct++; else o.wrong++; daimonStats[qid] = o; saveDaimonStats(); }  /* ★偽の実装 */", "judgeSolo の記録の行")],
-  e: ["直前が大問でも「一個前を直す」を出す", s => cut(s,
-      "  const prevWasDaimonItem = !reviewMode && quizPos > 0 && isDaimonItemId(quizQueue[quizPos - 1]);",
-      "  const prevWasDaimonItem = false;  /* ★偽の実装 */", "solo-undo-row の表示")],
+  e: ["直前が大問なら「一個前を直す」を出さない（2026-09-28 の版）", s => cut(s,
+      "  els[\"solo-undo-row\"].style.display = (reviewMode || quizPos > 0) ? \"block\" : \"none\";",
+      "  els[\"solo-undo-row\"].style.display = (reviewMode || (quizPos > 0 && !isDaimonItemId(quizQueue[quizPos - 1]))) ? \"block\" : \"none\";  /* ★偽の実装 */", "solo-undo-row の表示")],
   f: ["対照 " + BASE_COMMIT + "（この作業の前）", () => BASELINE]
 };
 
@@ -189,8 +190,8 @@ async function run(label, src) {
         const prevMissing = earlier(id).filter(x => !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
         if (earlier(id).length) check("S4 " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
         if (S.aFile && S.g5[S.af] === id) check("★S5 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
-        // ★S7: 直前が大問の小問のとき、「一個前を直す」を出さない
-        if (t > 0 && texts[seq[t - 1]]) check("★S7 直前が大問の小問（" + seq[t - 1] + "）のとき、undo が出ない", !(await visible("#solo-undo-row")));
+        // ★S7: 直前が大問の小問のときも、「一個前を直す」を出す（2026-09-30 bug0930 ③）
+        if (t > 0 && texts[seq[t - 1]]) check("★S7 直前が大問の小問（" + seq[t - 1] + "）のときも、undo が出る", await visible("#solo-undo-row"));
       }
       await tap("#solo-reveal-btn"); await page.waitForTimeout(60);
       if (isItem) {

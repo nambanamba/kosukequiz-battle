@@ -18,7 +18,7 @@
 //   B4 ★答えの図（aFile）は「こたえを見る」の前は画面に無く、あとに出る
 //   B5 ★時間2倍: 答える時間（2秒）で、一問一答は3秒未満、小問は3.5秒以上たってから答えが開く
 //      考える時間（3秒）が切れた小問は、末尾に回らずにそのまま出る（6秒たってから・同じ小問）
-//   B6 ホストの小問ではスキップが出ない（一問一答では出る）
+//   B6 ホストの小問でもスキップが出る（★2026-09-30 bug0930 ⑤ で逆にした。2026-09-27 は「出ない」）
 //   B7 待ち画面（ゲストの「準備中」）に、前の大問のリード文が残っていない
 //   B8 ホストの記録: 小問の記録が stats に入り、★ほかの一問一答の記録は1文字も変わらない
 //   B9 まちがえた小問だけのもう一勝負: G5 の1つめの答える小問を✕にすると、もう一勝負の手はその小問だけ
@@ -75,8 +75,8 @@ const FAKES = {
   c: ["答えの図を先に出す", s => cut(s, "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n",
       "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n  if(dm.it.aFile) els[prefix+\"-daimon-afig\"].appendChild(daimonImg(dm.it.aFile));  /* ★偽の実装 */\n", "小問の図")],
   d: ["時間を2倍にしない", s => cut(s, "const DAIMON_TIME_FACTOR = 2;", "const DAIMON_TIME_FACTOR = 1;  /* ★偽の実装 */", "倍率")],
-  e: ["小問でもスキップを出す", s => cut(s, "    els[\"skip-btn\"].style.display = isDaimonItemId(d.id) ? \"none\" : \"block\";",
-      "    els[\"skip-btn\"].style.display = \"block\";  /* ★偽の実装 */", "スキップ")],
+  e: ["小問ではスキップを出さない（2026-09-27 の版）", s => cut(s, "    els[\"skip-btn\"].style.display = \"block\";",
+      "    els[\"skip-btn\"].style.display = isDaimonItemId(d.id) ? \"none\" : \"block\";  /* ★偽の実装 */", "スキップ")],
   f: ["対照 " + BASE_COMMIT + "（大問を対戦に出す前）", () => BASELINE]
 };
 
@@ -202,7 +202,7 @@ async function run(label, src) {
       const isItem = !!texts[id];
       const skipVis = await visible(host.page, "#skip-btn");
       if (t === 0) check("B6 一問一答ではスキップが出る（下じき）", skipVis && !isItem, id);
-      else if (isItem) check("★B6 小問 " + id + " ではスキップが出ない", !skipVis);
+      else if (isItem) check("★B6 小問 " + id + " でもスキップが出る", skipVis);
       // ★B7 待ち画面: ゲストの前の手の大問が残っていない
       if (t > 0) {
         const waitVis = await visible(guest.page, "#guest-wait-status");
