@@ -7624,7 +7624,9 @@ function setupActions(){
     // happened just now -- if it was really answered correctly, it shouldn't
     // show up as something to retry
     const qid = questionIds[currentIndex];
-    const forcedWrong = inMissRetryRound || (role === "host" && hostSkippedIds.has(qid));
+    // ★2026-09-30: 「正解でも✕で記録」はホストだけ。もう一勝負はホストのまちがいだけで作るので、
+    //   ゲストにとっては1回目に〇だった問題が混ざる。ゲストの〇は〇で記録する（司令塔承認・bug0930 ①）
+    const forcedWrong = role === "host" && (inMissRetryRound || hostSkippedIds.has(qid));
     const finalCorrect = forcedWrong ? false : data.correct;
     // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
     //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
