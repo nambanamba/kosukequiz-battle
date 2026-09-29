@@ -2115,6 +2115,9 @@
 
     <div class="solo-retry-note" id="solo-retry-note" style="display:none;">まちがえた問題のやり直し中です。ここで正解しても、記録は苦手のまま残ります。</div>
     <button class="reveal-btn" id="solo-reveal-btn">こたえを見る</button>
+    <!-- ★2026-09-30（bug0930 ⑤）: 大問の小問だけのスキップ。こたえを見せて✕で記録し、末尾に回さず次の小問へ -->
+    <button class="skip-btn" id="solo-skip-btn" style="display:none;">スキップ（こたえを見て✕）</button>
+    <button class="reveal-btn" id="solo-skip-next-btn" style="display:none;">つぎへ</button>
     <div class="judge-row" id="solo-judge-row" style="display:none;">
       <button class="judge-btn ng" id="solo-judge-ng">✕ まちがえた</button>
       <button class="judge-btn ok" id="solo-judge-ok">〇 わかった</button>
@@ -3135,7 +3138,7 @@ const els = {};
  "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a","solo-sol-block","solo-sol",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
- "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn","solo-retry-note",
+ "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn","solo-retry-note","solo-skip-btn","solo-skip-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","battle-source-tag","guest-wait-status",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
@@ -6949,6 +6952,9 @@ function startSoloCard(){
     els["solo-review-next-btn"].style.display = "none";
     els["solo-count-row"].style.display = "none";
   }
+  // ★大問の小問だけスキップを出す（チェックのみでは出さない）。「つぎへ」はスキップしたあとだけ
+  els["solo-skip-btn"].style.display = (!reviewMode && isDaimonItemId(id)) ? "block" : "none";
+  els["solo-skip-next-btn"].style.display = "none";
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
@@ -6981,6 +6987,7 @@ els["solo-reveal-btn"].addEventListener("click", ()=>{
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
   els["solo-a-block"].classList.add("show");
   els["solo-reveal-btn"].style.display = "none";
+  els["solo-skip-btn"].style.display = "none";
   if(reviewMode){
     els["solo-review-next-btn"].style.display = "block";
   }else{
@@ -7008,7 +7015,8 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
   });
 });
 
-function judgeSolo(correct){
+// 判定を記録して quizPos を1つ進める（画面は動かさない）。judgeSolo とスキップで共通
+function recordSoloAnswer(correct){
   const qid = quizQueue[quizPos];
   // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
   // 今回のミスリストから外すかどうかは、これまで通り実際の正誤で判定する
@@ -7017,12 +7025,37 @@ function judgeSolo(correct){
   recordResult(qid, recorded);
   quizResults.push({id: qid, correct, recorded, before});
   quizPos++;
+}
+function advanceSolo(){
   if(quizPos >= quizQueue.length){
     finishSoloQuiz();
   }else{
     startSoloCard();
   }
 }
+function judgeSolo(correct){
+  recordSoloAnswer(correct);
+  advanceSolo();
+}
+// ★大問の小問のスキップ（2026-09-30・bug0930 ⑤・ユーザー判断 (a)）: こたえを見せて✕で記録し、
+//   末尾に回さずに次の小問へ（「つぎへ」で進む）。二人の対戦のスキップ（performDaimonSkip）と同じ決まり。
+//   ★記録と quizPos はこの時点で進めて保存する（途中で閉じても、スキップが消えたり二重に付いたりしない）
+els["solo-skip-btn"].addEventListener("click", ()=>{
+  if(reviewMode || !isDaimonItemId(quizQueue[quizPos])) return;
+  revealDaimonAnswerFig("solo", quizQueue, quizPos);
+  els["solo-a-block"].classList.add("show");
+  els["solo-reveal-btn"].style.display = "none";
+  els["solo-skip-btn"].style.display = "none";
+  els["solo-judge-row"].style.display = "none";
+  els["solo-undo-row"].style.display = "none";
+  recordSoloAnswer(false);
+  saveSoloSession();
+  els["solo-skip-next-btn"].style.display = "block";
+});
+els["solo-skip-next-btn"].addEventListener("click", ()=>{
+  els["solo-skip-next-btn"].style.display = "none";
+  advanceSolo();
+});
 els["solo-judge-ok"].addEventListener("click", ()=>judgeSolo(true));
 els["solo-judge-ng"].addEventListener("click", ()=>judgeSolo(false));
 
@@ -7389,7 +7422,7 @@ function startSkipContinueCountdown(){
     els["skip-continue-btn"].classList.add("auto-press");
     els["skip-encourage"].style.display = "none";
     els["skip-continue-btn"].style.display = "none";
-    hostAdvanceAndArm(currentIndex);
+    continueAfterSkip();
   });
 }
 function stopSkipContinueCountdown(){
@@ -7537,9 +7570,12 @@ function leaveRoom(){
   myMissesThisRound = [];
   hostRecordedIdx = -1;
   hostScoredIdx = -1;
+  daimonSkipPending = false;
+  startNotSentYet = false;
   clearJudgeFix();
   missesUnknown = false;
   gameStarted = false;
+  hostBattleTimes = null;
   joinFairUnits = new Set();
   els["join-fair-units"].style.display = "none";
 }
@@ -7665,7 +7701,8 @@ function setupActions(){
       playAdvanceCue();
       scores = {host:0, guest:0};
       clearJudgeFix();   // ★新しいラウンド。前のラウンドの判定は直せない（つなぎ直しの resync では消さない）
-      showQuestion(0);
+      // ★ホストが1問目（大問の小問）をスキップしたときは、2問目以降から始まる（index つき・2026-09-30）
+      showQuestion(typeof data.index === "number" ? data.index : 0);
     }
   };
 
@@ -8045,8 +8082,8 @@ function showQuestion(idx, hostPrivate){
   if(hostPrivate){
     // host is looking at this question alone; nothing has been sent to the
     // guest yet, so わかった makes no sense until スキップ or わかった itself is tapped
-    // ★大問の小問ではスキップを出さない（スキップは問題を末尾に回すので、大問がばらける）
-    els["skip-btn"].style.display = isDaimonItemId(d.id) ? "none" : "block";
+    // ★2026-09-30（bug0930 ⑤）: 大問の小問にもスキップを出す。小問は末尾に回さない（performDaimonSkip）
+    els["skip-btn"].style.display = "block";
     els["advance-btn"].style.display = "block";
   }else{
     els["skip-btn"].style.display = "none";
@@ -8144,8 +8181,10 @@ function doAdvance(){
   els["advance-btn"].style.display = "none";
   saveBattleSession();
   if(room){
-    if(currentIndex === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
+    // ★1問目（大問の小問）をスキップしたときは、ゲストはまだ始まっていないので startAction で始める（index つき）
+    if(currentIndex === 0 || startNotSentYet) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), index: currentIndex});
     else nextAction.send({index: currentIndex, id: questionIds[currentIndex]});
+    startNotSentYet = false;
   }
   enterAnsweringPhase();
 }
@@ -8163,7 +8202,51 @@ function moveCurrentToEndOfRound(){
 }
 
 // ---- スキップを「自分で押した」とき: 答えを見せて、誤答として記録する ----
+// ★大問の小問のスキップ（2026-09-30・bug0930 ⑤・ユーザー判断 (a) 小問だけ飛ばす）。
+//   一問一答のスキップは末尾に回して後でもう一度出すが、小問を回すと大問がばらけるので回さない。
+//   こたえを見せて、ホストの記録は✕（答えを見たので「覚えていた」にはしない）、もう一勝負にも入れる。
+//   ゲストにはこの小問を出さない（ゲストの記録は付かない）。「つぎの問題へ」で次の小問へ進む
+let daimonSkipPending = false;   // ホストだけ: 「つぎの問題へ」で次の添字に進むか
+let startNotSentYet = false;     // ホストだけ: 1問目をスキップしたので、まだゲストに startAction を送っていない
+function performDaimonSkip(){
+  clearTimeout(pendingSendTimer);
+  stopCountdown();
+  els["skip-btn"].style.display = "none";
+  els["advance-btn"].style.display = "none";
+  const id = questionIds[currentIndex];
+  if(hostRecordedIdx !== currentIndex){
+    recordResult(id, false);
+    if(myMissesThisRound.indexOf(id) < 0) myMissesThisRound.push(id);
+    hostRecordedIdx = currentIndex;
+  }
+  hostSkippedIds.add(id);
+  if(currentIndex === 0) startNotSentYet = true;
+  daimonSkipPending = true;
+  revealDaimonAnswerFig("battle", questionIds, currentIndex);
+  els["battle-a-block"].classList.add("show");
+  els["skip-encourage"].textContent = "この小問はスキップしました（まちがいとして記録します）。つぎの小問へ進みます。";
+  els["skip-encourage"].style.display = "block";
+  els["skip-continue-btn"].style.display = "block";
+  saveBattleSession();
+  startSkipContinueCountdown();
+  if(room){
+    try{ statusAction.send({type: "skipped", q: getQById(id).q}); }catch(e){}
+  }
+}
+// スキップのあと「つぎの問題へ」: 一問一答は同じ添字（末尾に回したので次の問題が来ている）、小問は次の添字
+function continueAfterSkip(){
+  if(!daimonSkipPending){ hostAdvanceAndArm(currentIndex); return; }
+  daimonSkipPending = false;
+  const n = currentIndex + 1;
+  if(n >= questionIds.length){
+    try{ nextAction.send({index: n}); }catch(e){}
+    endGame();
+    return;
+  }
+  hostAdvanceAndArm(n);
+}
 function performSkip(){
+  if(isDaimonItemId(questionIds[currentIndex])){ performDaimonSkip(); return; }
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
@@ -8222,7 +8305,7 @@ els["skip-continue-btn"].addEventListener("click", ()=>{
   stopSkipContinueCountdown();
   els["skip-encourage"].style.display = "none";
   els["skip-continue-btn"].style.display = "none";
-  hostAdvanceAndArm(currentIndex);
+  continueAfterSkip();
 });
 
 function enterAnsweringPhase(){
@@ -8630,6 +8713,8 @@ function startMissRetryRound(){
   missesUnknown = false;
   hostRecordedIdx = -1;
   hostScoredIdx = -1;
+  daimonSkipPending = false;
+  startNotSentYet = false;
   clearJudgeFix();   // ★ラウンドが変わったら、前のラウンドの判定は直せない
   resetAvatars();
   setupAvatarLabels();
@@ -8702,6 +8787,8 @@ function startBattleNow(){
   missesUnknown = false;
   hostRecordedIdx = -1;
   hostScoredIdx = -1;
+  daimonSkipPending = false;
+  startNotSentYet = false;
   clearJudgeFix();
   resetAvatars();
   setupAvatarLabels();
