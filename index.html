@@ -1636,6 +1636,8 @@
   #screen-daimon{ padding-bottom:80px; }
   .daimon-list-name{ font-weight:700; color:var(--navy-deep); margin:4px 0; }
   .daimon-list-tiers{ font-size:12px; color:var(--ink-soft); margin-top:6px; }
+  .daimon-sub{ margin-top:10px; padding-top:8px; border-top:1px dashed var(--paper-line); }
+  .daimon-sub-label{ font-weight:700; color:var(--navy-deep); font-size:13px; }
   /* 対戦で大問の小問を出すとき（2026-09-27）。★battle-view の中に置く（待ち画面で一緒に隠れる） */
   .battle-daimon-title{ font-size:13px; font-weight:700; color:var(--gold); margin-bottom:6px; }
   .battle-daimon-prev{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:10px; font-size:14px; }
@@ -5841,6 +5843,23 @@ function buildDaimonListRow(d){
   item.querySelector(".daimon-list-tiers").textContent = w === 0
     ? "全部○（0問・対戦には出ません）"
     : TIER_NAMES[tier] + "（答える小問 " + w + "問・前回○ " + (g.items.length - w) + "問）";
+  // ★小問ごとの行（2026-10-02 ユーザー「理科の大問、一覧から正誤の切り替えができません」）。
+  //   記録は小問の id に付く（大問そのものには書かない）。部品も押したときの処理も一問一答と同じ（listStatControlsHtml・setupListDelegation）
+  g.items.forEach(it => {
+    const sub = document.createElement("div");
+    sub.className = "daimon-sub";
+    sub.dataset.qid = it.id;
+    const done = (stats[it.id] && stats[it.id].box || 0) > 0;
+    sub.innerHTML =
+      '<div class="daimon-sub-label"></div>'+
+      '<div class="list-q"></div>'+
+      '<div class="list-a"></div>'+
+      listStatControlsHtml(it.id, tierOfStat(stats[it.id]));
+    sub.querySelector(".daimon-sub-label").textContent = (it.label || "") + (done ? "　（前回○）" : "");
+    sub.querySelector(".list-q").textContent = it.q;
+    sub.querySelector(".list-a").textContent = "こたえ：" + it.a;
+    item.appendChild(sub);
+  });
   return item;
 }
 
@@ -5889,12 +5908,66 @@ function buildPaperDaimonListRow(g){
 //   ★絞りこみ（未実施のみ など）の条件から外れた行も、その場では消さない。
 //   押した指の下から行が消えると、次に押す行がずれるため。絞りこみを押し直すと反映される
 function renderListRow(qid){
+  const dm = DAIMON_ITEM.get(qid);
+  if(dm){   // 大問の小問: 記録が変わると大問の行の数・段の表示も変わるので、大問の行ごと描き直す
+    const old = els["list-items"].querySelector('.list-item[data-daimon-key="'+CSS.escape(dm.g.key)+'"]');
+    if(!old) return;
+    old.replaceWith(buildDaimonListRow(dm.entry));
+    els["list-count"].textContent = sumWeight(listShownIndices)+"問";   // ★答える小問の数が変わるので件数も合わせる
+    return;
+  }
   const sel = '.list-item[data-qid="'+CSS.escape(qid)+'"], .list-item[data-edit-qid="'+CSS.escape(qid)+'"]';
   const old = els["list-items"].querySelector(sel);
   if(!old) return;   // まだ描いていない行（続きを足す途中）なら、足すときに新しい状態で描かれる
   const i = QA_DATA.findIndex(d => d.id === qid);
   if(i < 0) return;
   old.replaceWith(buildListRow(i));
+}
+
+// ★一覧の「日付・段ボタン・正解数/誤答数」の部品。一問一答の行と大問の小問の行で同じものを使う（2か所に書かない）。
+//   押したときの処理は setupListDelegation の1か所（setStatus / adjustStat / setStatDate を id で呼ぶ）
+function listStatControlsHtml(id, tier){
+  const s = stats[id] || {correct:0, wrong:0};
+  return (
+      '<div class="list-stat-dates">'+
+        '<label class="list-stat-date"><span class="list-stat-date-label">最後に正解した日<em>苦手な問題の出題順に使います</em></span>'+
+          '<input type="date" data-date-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'"></label>'+
+        '<label class="list-stat-date"><span class="list-stat-date-label">最後に解いた日<em>上の日付での絞りこみに使います</em></span>'+
+          '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
+      '</div>'+
+      '<div class="status-toggle">'+
+        // ★★ 2026-09-26: ボタンは2つだけ。「苦手な問題」のボタンは置かない。
+        //   ★理由: 2段目の定義は「一度は正解した ∧ まちがえたことがある」なので、
+        //   手でそこに入れるには**実際には無かった「正解」の記録を書く**ことになる。
+        //   ★書きません（確認ポイント 0-1・1-6「推測で埋めない」・依頼書の失敗 14）。
+        //   苦手にしたいときは、下の「正解数＋1・誤答数＋1」で作ってもらう（2手かかる）。
+        // ⚠★以前の「✕ 不正解」は {correct:0, wrong:1} を書いており、
+        //   できる問題は**1段目に落ちていた**（ボタンの名前と並びが食いちがっていた）。
+        '<div class="status-btn unseen'+(tier===0?" active":"")+'" data-status="unseen">'+TIER_NAMES[0]+'</div>'+
+        '<div class="status-btn ok'+(tier===2?" active":"")+'" data-status="mastered">'+TIER_NAMES[2]+'</div>'+
+      '</div>'+
+      // ★行の上でそのまま直す（2026-09-13 ユーザー原文「一覧画面で、正答数、誤答数の修正、正答日、実施日の修正がしたいです」）。
+      //   いちど「記録を直す」の画面にしたが、意図と違ったので元の＋−と日付の欄に戻した。
+      //   「正解数」は連続正解数（box）。＋−は adjustStat（まちがいを＋すると連続が0に切れる）
+      '<div class="count-row-list">'+
+        '<div class="count-stepper ok">'+
+          '<span class="count-label">正解数（連続）</span>'+
+          '<span class="count-controls">'+
+            '<span class="count-btn" data-field="correct" data-delta="-1">－</span>'+
+            '<span class="count-num">'+(s.box||0)+'</span>'+
+            '<span class="count-btn" data-field="correct" data-delta="1">＋</span>'+
+          '</span>'+
+        '</div>'+
+        '<div class="count-stepper ng">'+
+          '<span class="count-label">誤答数</span>'+
+          '<span class="count-controls">'+
+            '<span class="count-btn" data-field="wrong" data-delta="-1">－</span>'+
+            '<span class="count-num">'+(s.wrong||0)+'</span>'+
+            '<span class="count-btn" data-field="wrong" data-delta="1">＋</span>'+
+          '</span>'+
+        '</div>'+
+      '</div>'
+  );
 }
 
 function buildListRow(i){
@@ -5969,44 +6042,7 @@ function buildListRow(i){
       '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
-      '<div class="list-stat-dates">'+
-        '<label class="list-stat-date"><span class="list-stat-date-label">最後に正解した日<em>苦手な問題の出題順に使います</em></span>'+
-          '<input type="date" data-date-field="lastCorrectAt" value="'+(s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "")+'"></label>'+
-        '<label class="list-stat-date"><span class="list-stat-date-label">最後に解いた日<em>上の日付での絞りこみに使います</em></span>'+
-          '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
-      '</div>'+
-      '<div class="status-toggle">'+
-        // ★★ 2026-09-26: ボタンは2つだけ。「苦手な問題」のボタンは置かない。
-        //   ★理由: 2段目の定義は「一度は正解した ∧ まちがえたことがある」なので、
-        //   手でそこに入れるには**実際には無かった「正解」の記録を書く**ことになる。
-        //   ★書きません（確認ポイント 0-1・1-6「推測で埋めない」・依頼書の失敗 14）。
-        //   苦手にしたいときは、下の「正解数＋1・誤答数＋1」で作ってもらう（2手かかる）。
-        // ⚠★以前の「✕ 不正解」は {correct:0, wrong:1} を書いており、
-        //   できる問題は**1段目に落ちていた**（ボタンの名前と並びが食いちがっていた）。
-        '<div class="status-btn unseen'+(tier===0?" active":"")+'" data-status="unseen">'+TIER_NAMES[0]+'</div>'+
-        '<div class="status-btn ok'+(tier===2?" active":"")+'" data-status="mastered">'+TIER_NAMES[2]+'</div>'+
-      '</div>'+
-      // ★行の上でそのまま直す（2026-09-13 ユーザー原文「一覧画面で、正答数、誤答数の修正、正答日、実施日の修正がしたいです」）。
-      //   いちど「記録を直す」の画面にしたが、意図と違ったので元の＋−と日付の欄に戻した。
-      //   「正解数」は連続正解数（box）。＋−は adjustStat（まちがいを＋すると連続が0に切れる）
-      '<div class="count-row-list">'+
-        '<div class="count-stepper ok">'+
-          '<span class="count-label">正解数（連続）</span>'+
-          '<span class="count-controls">'+
-            '<span class="count-btn" data-field="correct" data-delta="-1">－</span>'+
-            '<span class="count-num">'+(s.box||0)+'</span>'+
-            '<span class="count-btn" data-field="correct" data-delta="1">＋</span>'+
-          '</span>'+
-        '</div>'+
-        '<div class="count-stepper ng">'+
-          '<span class="count-label">誤答数</span>'+
-          '<span class="count-controls">'+
-            '<span class="count-btn" data-field="wrong" data-delta="-1">－</span>'+
-            '<span class="count-num">'+(s.wrong||0)+'</span>'+
-            '<span class="count-btn" data-field="wrong" data-delta="1">＋</span>'+
-          '</span>'+
-        '</div>'+
-      '</div>'+
+      listStatControlsHtml(base.id, tier)+
       '<div class="list-item-footer">'+
         '<span class="edit-link">✎ 文章を直す</span>'+
         (isEdited ? '<span class="revert-link">元にもどす</span>' : '')+
@@ -6027,8 +6063,8 @@ function buildListRow(i){
 function setupListDelegation(){
   const box = els["list-items"];
   box.addEventListener("click", (e)=>{
-    const item = e.target.closest(".list-item");
-    if(!item || !item.dataset.qid) return; // 編集中の行は自前のリスナーで動く
+    const item = e.target.closest("[data-qid]");   // 一問一答の行、または大問の小問の行
+    if(!item || !box.contains(item)) return; // 編集中の行は自前のリスナーで動く
     const qid = item.dataset.qid;
     const img = e.target.closest(".list-img-wrap img");
     if(img){ openLightbox(img.src); return; }
@@ -6067,8 +6103,8 @@ function setupListDelegation(){
     }
   });
   box.addEventListener("change", (e)=>{
-    const item = e.target.closest(".list-item");
-    if(!item || !item.dataset.qid) return;
+    const item = e.target.closest("[data-qid]");
+    if(!item || !box.contains(item)) return;
     const qid = item.dataset.qid;
     const dateInput = e.target.closest("[data-date-field]");
     if(dateInput){ setStatDate(qid, dateInput.dataset.dateField, dateInput.value); renderListRow(qid); return; }
