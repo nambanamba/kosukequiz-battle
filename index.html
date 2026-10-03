@@ -5671,6 +5671,8 @@ els["create-cancel"].addEventListener("click", ()=>{
   els["home-waiting"].style.display = "none";
 });
 els["result-home-btn"].addEventListener("click", ()=>{
+  // ★2026-10-03 ゲストは部屋を出ずに次の対戦を待つ（出るとホストに「接続が切れました」が出て、連続で遊べない）
+  if(role === "guest" && room && enterGuestWaitNext()) return;
   leaveRoom();
   renderHome();
   showScreen("screen-home");
@@ -7270,6 +7272,14 @@ let gameStarted = false; // host-only: distinguishes the first peer join (start 
 // ★対戦の始まりだけは、二人とも「開始」を押してから（2026-09-19 ユーザー依頼）。
 //   ホスト・ゲストの両方で同じ2つを持ち、両方そろったらホストが startBattleNow() を呼ぶ
 let iAmReadyToStart = false;
+// ★2026-10-03 ゲストが「つながったまま次の対戦を待っている」とき true（結果画面のあと screen-join に出す待ち画面）。
+//   ユーザー「社会が終わってすぐ理科をいつもやってる…ゲスト側が元の画面に戻るを押すと切れちゃう。連続でできれば何でもいい」
+//   原因: ホストは「はじめの画面にもどる」で部屋を出て、同じ番号で部屋を作り直す。ゲストの部屋はまだ生きているので
+//   二人はそのまま出会える（ホストには「相手が参加しました」が出る）。ところがゲストの画面は結果のままで「開始する」が無く、
+//   ゲストが「はじめの画面にもどる」を押すと leaveRoom() で部屋を出る → ホストに「接続が切れました」。
+//   直し方: ゲストは部屋を出ずに待ち画面へ。ホストが作り直した部屋から合図（peerReady）が来たら、
+//   結果画面にいても自動でその待ち画面に移って「開始する」を出す。待っているあいだにホストが部屋を出ても切らない
+let guestWaitingNext = false;
 let peerReadyToStart = false;
 let pendingSendTimer = null; // host-only: auto-advances a question if 進める/スキップ isn't tapped in time
 let countdownInterval = null; // host-only: drives the visible think-time countdown
@@ -7636,6 +7646,35 @@ function leaveRoom(){
   hostBattleTimes = null;
   joinFairUnits = new Set();
   els["join-fair-units"].style.display = "none";
+  guestWaitingNext = false;
+}
+
+// ★2026-10-03 ゲスト: 部屋を出ずに「次の対戦を待つ」画面へ（上の guestWaitingNext の説明を参照）。
+//   記録・得点・問題の並びは、次の対戦の最初の合図（startAction／statusAction）がいつもどおり入れ直す
+function enterGuestWaitNext(){
+  if(role !== "guest" || !room) return false;
+  guestWaitingNext = true;
+  clearInterval(countdownInterval);
+  stopJudgeCountdown();
+  stopAnswerCountdown();
+  stopNextCountdown();
+  stopSkipContinueCountdown();
+  hideGuestRetryCountdown();
+  hideGuestStartCountdown();
+  hideBigVerdict();
+  clearJudgeFix();
+  resetStartTogether();   // ★前の対戦で押した「開始」が残っていると、ホストの合図だけで始まった扱いになる
+  joinFairUnits = new Set();
+  els["join-fair-units"].style.display = "none";
+  els["join-setup"].style.display = "none";
+  els["join-waiting"].style.display = "block";
+  els["join-start-together-btn"].style.display = "none";
+  els["join-error"].classList.remove("show");
+  els["join-diag"].classList.remove("show");
+  els["join-retry-btn"].style.display = "none";
+  els["join-waiting-note"].innerHTML = '<span class="spinner"></span>つながったまま、相手が次の対戦を始めるのを待っています…<br><small>やめるときは左上の「← もどる」</small>';
+  showScreen("screen-join");
+  return true;
 }
 
 function setupActions(){
@@ -7699,6 +7738,8 @@ function setupActions(){
     if(data.type === "peerReady"){
       // ホストがこちらの参加に気づいた合図。screen-join のまま「開始する」を出す。
       // ★room.onPeerJoin でも出しているが、どちらが先に届いても困らないようにここでも出す
+      // ★2026-10-03 結果画面のままホストが次の対戦の部屋を作り直したときも、ここに来る。待ち画面へ移ってから出す
+      if(currentScreenName === "screen-result") enterGuestWaitNext();
       showJoinStartButton();
       if(data.fairMode && Array.isArray(data.units)) renderJoinFairUnits(data.units);
       return;
@@ -7731,6 +7772,7 @@ function setupActions(){
       els["battle-counter"].textContent =
         (data && typeof data.position === "number" && typeof data.total === "number")
           ? data.position+" / "+data.total : "";
+      guestWaitingNext = false;
       showScreen("screen-battle");
     }
     showGuestWaitStatus(data);
@@ -7744,6 +7786,7 @@ function setupActions(){
     inMissRetryRound = !!data.isRetryRound;
     hostBattleTimes = (data.times && typeof data.times === "object") ? data.times : null;
     myMissesThisRound = [];
+    guestWaitingNext = false;
     resetAvatars();
     setupAvatarLabels();
     showScreen("screen-battle");
@@ -7859,6 +7902,13 @@ function setupActions(){
   };
 
   room.onPeerLeave = ()=>{
+    // ★2026-10-03 次の対戦を待っているゲスト: ホストは部屋を出て作り直すので、ここで切らない。待ち続ける
+    if(role === "guest" && guestWaitingNext && currentScreenName === "screen-join"){
+      resetStartTogether();
+      els["join-start-together-btn"].style.display = "none";
+      els["join-waiting-note"].innerHTML = '<span class="spinner"></span>相手が次の対戦を用意しています…（このまま待ってください）<br><small>やめるときは左上の「← もどる」</small>';
+      return;
+    }
     if(els["screen-battle"].classList.contains("active") || els["home-waiting"].style.display === "block" || els["screen-join"].classList.contains("active")){
       alert("相手との接続が切れました。ホーム画面にもどります。");
       leaveRoom();
@@ -8769,6 +8819,8 @@ function endGame(){
   clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
   const my = role === "host" ? scores.host : scores.guest;
   const opp = role === "host" ? scores.guest : scores.host;
+  // ★2026-10-03 ゲストのボタンは部屋を出ない（次の対戦を待つ）ので、文字もそれに合わせる
+  els["result-home-btn"].textContent = (role === "guest" && room) ? "つぎの対戦を待つ（つながったまま）" : "はじめの画面にもどる";
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
   if(!missesUnknown) saveLastMiss(myMissesThisRound);
