@@ -1653,6 +1653,9 @@
   .battle-daimon-cur{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:12px; }
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
+  .host-seen-badge{ margin:10px 0 4px; padding:6px 12px; border-radius:999px; font-size:13px; text-align:center;
+    background:#f2f4f5; color:var(--ink-soft); border:1px solid #d9dee0; }
+  .host-seen-badge.seen{ background:#fff4e0; color:#8a5a00; border-color:#e8c27a; font-weight:700; }
   .daimon-later{ padding:8px 2px; font-size:14px; color:var(--ink-soft); }
   .daimon-fold-head{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; background:none; border:0;
     padding:8px 2px; font-size:14px; color:var(--ink-soft); cursor:pointer; -webkit-tap-highlight-color:transparent; }
@@ -2320,6 +2323,8 @@
     <div class="cheese-countdown" id="answer-countdown" style="display:none;">
       <div class="cheese-countdown-track" id="answer-countdown-track"></div>
     </div>
+    <!-- ★2026-10-03 ゲストにだけ出す。ホスト（子ども）の画面で答えが開いたかどうか -->
+    <div class="host-seen-badge" id="host-seen-badge" style="display:none;"></div>
     <button class="reveal-btn" id="answer-reveal-btn" style="display:none;">答えを見る</button>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng fill-btn" id="judge-ng" data-label="✕ 相手はまちがい"><span class="fill-label">✕ 相手はまちがい</span></button>
@@ -3208,7 +3213,7 @@ const els = {};
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
  "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
- "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn",
+ "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn","host-seen-badge",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
 
@@ -7517,11 +7522,47 @@ function requestReveal(){
   iAskedRevealIdx = currentIndex;
   if(!room){ revealAnswer(); return; } // ひとりで見ているときは待たない
   try{ revealAction.send({idx: currentIndex}); }catch(e){}
+  // ★2026-10-03 ゲスト（親）は、相手（子ども）を待たずに自分の画面だけで答えを開く（guestPeek）。
+  //   合図はこれまでどおり送るので、ホストは「二人そろった」かどうかを今までどおり数えられる（ホストの画面は待つ）
+  if(role === "guest"){ guestPeek(); maybeReveal(); return; }
   const btn = els["answer-reveal-btn"];
   btn.disabled = true;
   btn.classList.remove("peer-ready");
   btn.textContent = peerAskedRevealIdx === currentIndex ? "ひらきます…" : "相手を待っています…";
   maybeReveal();
+}
+// ★2026-10-03 ゲストの「先に見る」（ユーザー「答えを子供が読み上げてるときに覚えてられないので、私（ゲスト）が
+//   答えを見るを押したら、子供が答えを見るを押してなくても見たいです。でも子供側が答えをいつ見たのかは
+//   ゲストがわかるようにしたいです」）。
+//   ・ゲストの画面だけで答えを開く。ホストの画面・判定・記録・時間には触らない
+//   ・判定ボタンはすぐ出す（親が早めに判定してよい）。★判定の時計（時間切れの自動「せいかい」）は
+//     今までと同じとき（二人そろったとき／チーズの時間切れ＝revealAnswer）に始める。先に開いたせいで、
+//     子どもが答える前に自動〇になることはない
+//   ・チーズの時計も止めない（revealAnswer の合図に使う）。ボタンだけ隠す
+let guestPeekIdx = -1;
+function guestPeek(){
+  if(guestPeekIdx === currentIndex) return;
+  guestPeekIdx = currentIndex;
+  revealDaimonAnswerFig("battle", questionIds, currentIndex);
+  els["answer-reveal-btn"].style.display = "none";
+  els["battle-a-block"].classList.add("show");
+  if(myVerdictOfOpponent === null){
+    els["judge-row"].style.display = "flex";
+    scrollBattleDaimonTo("judge-row");
+  }
+}
+// ★ホスト（子ども）の画面で答えが開いたか。ゲストにだけ出す。秒は問題が出てから数える
+let hostOpenedIdx = -1;
+let guestShownAt = 0;
+let hostOpenedSec = 0;
+function updateHostSeenBadge(){
+  const el = els["host-seen-badge"];
+  if(role !== "guest" || !room){ el.style.display = "none"; return; }
+  const seen = hostOpenedIdx === currentIndex;
+  el.style.display = "block";
+  el.classList.toggle("seen", seen);
+  el.textContent = seen ? "子ども（ホスト）が答えを見ました（" + hostOpenedSec + "秒後）"
+                        : "子ども（ホスト）：まだ答えを見ていません";
 }
 function maybeReveal(){
   if(iAskedRevealIdx === currentIndex && peerAskedRevealIdx === currentIndex) revealAnswer();
@@ -7618,6 +7659,7 @@ function showGuestWaitStatus(data){
   el.classList.add("show","info");
   els["battle-view"].style.display = "none";
   els["battle-img-wrap"].style.display = "none";
+  els["host-seen-badge"].style.display = "none";   // ★2026-10-03 次の問題の準備中は出さない
   // ★★ 2026-09-26: 単元名・No.・出典も一緒に引っこめる。
   //   この3つは battle-view の**外**にあるので、battle-view を隠しても残り、
   //   「つぎの問題の準備中…」のあいだ **1つ前の問題のものが見えていた**。
@@ -7811,6 +7853,15 @@ function setupActions(){
   // 相手が「こたえを見る」を押した合図。同じ問題のときだけ受ける
   revealAction.onMessage = (data)=>{
     if(!data || typeof data.idx !== "number") return;
+    // ★2026-10-03 「ホストの画面で答えが開いた」の知らせ。ゲストのふだを変えるだけ（開く・開かないの数えには使わない）
+    if(data.opened){
+      if(role === "guest" && data.idx === currentIndex){
+        hostOpenedIdx = data.idx;
+        hostOpenedSec = Math.max(0, Math.round((Date.now() - guestShownAt) / 1000));
+        updateHostSeenBadge();
+      }
+      return;
+    }
     peerAskedRevealIdx = data.idx;
     if(data.idx === currentIndex && iAskedRevealIdx !== currentIndex){
       els["answer-reveal-btn"].textContent = "相手は準備OK！ こたえを見る";
@@ -8329,6 +8380,11 @@ function showQuestion(idx, hostPrivate){
   // ここは両方の端末が問題ごとに必ず通る。1問目はラウンドの始まりなので全部消す
   // （このタイミングではまだ、この問題に対する合図はどちらからも出ていない）
   resetRevealSync(idx === 0);
+  // ★2026-10-03 先に見る・子どもが見たかのふだも、問題ごとに戻す
+  guestPeekIdx = -1;
+  hostOpenedIdx = -1;
+  guestShownAt = Date.now();
+  updateHostSeenBadge();
 
   updateScoreUI();
 
@@ -8688,6 +8744,8 @@ function revealDaimonAnswerFig(prefix, ids, idx){
   return dmR;
 }
 function revealAnswer(){
+  // ★2026-10-03 ホストの画面で答えが開いたことを、ゲストに知らせる（押して開いたときも、時間切れで開いたときも）
+  if(role === "host" && room && revealAction){ try{ revealAction.send({idx: currentIndex, opened: true}); }catch(e){} }
   // ★大問の小問の答えの図は、ここで初めて作る（押す前は画面に無い）
   revealDaimonAnswerFig("battle", questionIds, currentIndex);
   stopAnswerCountdown();

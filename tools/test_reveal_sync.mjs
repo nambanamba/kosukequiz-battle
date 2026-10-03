@@ -54,6 +54,13 @@ function newDevice(name){
     revealed: 0,            // revealAnswer が呼ばれた回数
     sent: [],               // 相手に送った合図
     revealAnswer(){ ctx.revealed++; },
+    // ★2026-10-03 ゲストの「先に見る」。ゲストの画面だけで開く（revealAnswer とは別）。ここでは回数だけ数える
+    role: name,
+    peeked: 0,
+    guestPeek(){ ctx.peeked++; },
+    hostOpenedIdx: -1, hostOpenedSec: 0, guestShownAt: Date.now(),
+    badge: 0,
+    updateHostSeenBadge(){ ctx.badge++; },
     _btn: btn
   };
   const src = REAL + "\n;return {resetRevealSync, requestReveal, maybeReveal, revealAction,"
@@ -112,7 +119,8 @@ console.log("\n【3】ゲストが先に押しても同じように開く");
   const host = newDevice("host"), guest = newDevice("guest");
   host.resetRevealSync(); guest.resetRevealSync();
   guest.requestReveal(); deliver(guest, host);
-  check("ゲストが押しただけでは開かない", [host.revealed, guest.revealed], [0, 0]);
+  // ★2026-10-03 ゲストは自分の画面だけで先に見る（peeked）。ホストは開かない。二人そろいの revealAnswer はまだ（判定の時計はまだ）
+  check("ゲストが押しただけでは、ホストは開かない・ゲストは自分の画面だけで先に見る", [host.revealed, guest.revealed, guest.peeked, host.peeked], [0, 0, 1, 0]);
   host.requestReveal(); deliver(host, guest);
   check("そろって両方で開いた", [host.revealed, guest.revealed], [1, 1]);
 }
@@ -184,6 +192,20 @@ console.log("\n【8】次の問題に進むと、ボタンの見た目がもと�
   host.resetRevealSync(); guest.resetRevealSync();
   check("ホストのボタンが戻った", [host._btn.disabled, host._btn.textContent], [false, "こたえを見る"]);
   check("ゲストの強調も消えた", [guest._btn.classList.contains("peer-ready"), guest._btn.textContent], [false, "こたえを見る"]);
+}
+
+// ============ 9. ★ホストの画面で開いた知らせ（2026-10-03）============
+console.log("\n【9】★ホストの画面で答えが開いた知らせは、ゲストのふだを変えるだけ（開く数えには使わない）");
+{
+  const host = newDevice("host"), guest = newDevice("guest");
+  host.resetRevealSync(); guest.resetRevealSync();
+  host.revealAction.onMessage({idx: 0, opened: true});   // ホストに届いても何もしない
+  check("ホストに届いても何も変わらない", [host.hostOpenedIdx, host.badge, host.peek().p], [-1, 0, -1]);
+  guest.revealAction.onMessage({idx: 0, opened: true});
+  check("ゲストはふだを「見ました」に", [guest.hostOpenedIdx, guest.badge], [0, 1]);
+  check("開く数え（相手が押した）には入らない・ゲストの画面も開かない", [guest.peek().p, guest.revealed, guest.peeked], [-1, 0, 0]);
+  guest.revealAction.onMessage({idx: 5, opened: true});   // 別の問題の知らせは使わない
+  check("別の問題の知らせは使わない", guest.hostOpenedIdx, 0);
 }
 
 console.log("\n===== 合計: " + pass + " 件成功 / " + fail + " 件失敗 =====");
