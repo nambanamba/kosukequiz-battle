@@ -1171,6 +1171,10 @@
   .q-star-btn.on{background:#fff4d6; border-color:#e0a800; color:#a86b00;}
   .star-bulk-row{display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin:8px 0 4px; font-size:13px;}
   .star-bulk-row .back-link{margin:0; display:inline;}
+  /* ★2026-10-03 部屋の番号を変える「別のコードにする」をもう少し小さく（ユーザー）。
+     もとは画面の横いっぱいが押せる帯（358x20px）で、文字も 12px。文字を 11px にし、押せる範囲を文字のまわりだけにする。
+     押しにくくなりすぎないよう、上下の余白で高さは 24px ほど残す */
+  .back-link.room-code-change{ display:table; margin:14px auto 0; padding:4px 8px; font-size:10.5px; }
 .list-item .list-img-wrap{
     margin-bottom:8px;
     text-align:center;
@@ -1921,7 +1925,7 @@
         <pre class="diag-text" id="create-diag-text"></pre>
         <button class="btn-secondary diag-copy" id="create-diag-copy">この内容をコピー</button>
       </div>
-      <div class="back-link" id="room-code-change">別のコードにする</div>
+      <div class="back-link room-code-change" id="room-code-change">別のコードにする</div>
       <div class="back-link" id="create-cancel">✕ やめる</div>
     </div>
   </section>
