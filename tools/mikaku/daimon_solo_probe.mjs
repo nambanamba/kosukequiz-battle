@@ -60,8 +60,8 @@ const FAKES = {
       "  quizQueue = expandDaimonIds(pool.map(i => QA_DATA[i].id));",
       "  quizQueue = pool.filter(i => !isDaimonEntry(QA_DATA[i])).map(i => QA_DATA[i].id);  /* ★偽の実装 */", "solo-start-btn の並び")],
   b: ["うしろの小問まで出す", s => cut(s,
-      "  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonAnswered(box, it, k));",
-      "  g.items.forEach((it, k) => { if(k !== dm.pos) addDaimonAnswered(box, it, k); });  /* ★偽の実装 */", "前の小問")],
+      "  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonFolded(box, it, k));",
+      "  g.items.forEach((it, k) => { if(k !== dm.pos) addDaimonFolded(box, it, k); });  /* ★偽の実装 */", "前の小問")],
   c: ["答えの図を先に出す", s => cut(s,
       "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));",
       "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n  if(dm.it.aFile) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.aFile));  /* ★偽の実装 */", "小問の図")],
@@ -158,7 +158,7 @@ async function run(label, src) {
   const visible = sel => page.evaluate(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel);
   const waitVisible = (sel, ms) => page.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 20000 });
   const shown = () => page.evaluate(() => (document.getElementById("solo-q-id").textContent || "").replace(/^No\./, ""));
-  const screenText = () => page.evaluate(() => document.getElementById("screen-solo").innerText);
+  const screenText = () => page.evaluate(() => document.getElementById("screen-solo").textContent);
   const screenHtml = () => page.evaluate(() => document.getElementById("screen-solo").innerHTML);
   let S = null;
   try {

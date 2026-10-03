@@ -952,32 +952,36 @@
      いつまでも子供が答えなくて、時間切れで正解になっちゃうのを直したいです」
      ★判定ボタン（judge-row）から**いちばん遠い画面の下**に置く。近くに置くと押しまちがえる
      （2026-09-16 に「わかった！」の真下の判定ボタンを押しまちがえた前例があるため） */
+  /* ★2026-10-02 小さく目立たない形にして、判定ボタンからも離した（ホストの〇が×になった件の有力原因:
+     大きな枠のボタンが判定ボタンの約70px下にあり、押しまちがえた）。機能はそのまま。文字だけの小さなリンク */
   .judge-fix-row{
-    margin-top:26px;
-    padding-top:14px;
-    border-top:1px dashed #d6cfc2;
+    margin-top:150px;
+    padding-top:10px;
+    text-align:center;
   }
   .judge-fix-note{
-    font-size:11.5px;
+    font-size:10.5px;
     color:var(--ink-soft);
     text-align:center;
-    margin-bottom:8px;
+    margin-bottom:2px;
     word-break:break-word;
   }
   .judge-fix-btn{
-    width:100%;
-    padding:12px 8px;
-    border-radius:10px;
-    font-size:13.5px;
-    font-weight:700;
+    width:auto;
+    padding:4px 8px;
+    border:0;
+    border-radius:6px;
+    font-size:11px;
+    font-weight:400;
+    text-decoration:underline;
     cursor:pointer;
-    background:#fff;
+    background:none;
     -webkit-tap-highlight-color:transparent;
   }
-  .judge-fix-btn.ng{ border:1.5px solid var(--ng); color:var(--ng); }
-  .judge-fix-btn.ok{ border:1.5px solid var(--ok); color:var(--ok); }
+  .judge-fix-btn.ng{ border:0; color:#8a6a6a; }
+  .judge-fix-btn.ok{ border:0; color:#6a8a7a; }
   .judge-fix-btn:active{transform:translateY(1px);}
-  .judge-fix-btn:disabled{background:#f2f4f5; border-color:#c2c9cc; color:#6b7478; cursor:default; transform:none;}
+  .judge-fix-btn:disabled{background:none; border:0; color:#9aa2a6; cursor:default; transform:none; text-decoration:none;}
   .judge-fix-status{
     margin-top:8px;
     font-size:12px;
@@ -1643,6 +1647,18 @@
   .battle-daimon-prev{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:10px; font-size:14px; }
   .battle-daimon-prev .a-text{ font-size:15px; }
   .battle-daimon-cur{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:12px; }
+  /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
+  .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
+  .daimon-fold-head{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; background:none; border:0;
+    padding:8px 2px; font-size:14px; color:var(--ink-soft); cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .daimon-fold-head .t{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .daimon-fold-head .m{ font-weight:700; }
+  .daimon-fold-head .m.ok{ color:var(--ok); } .daimon-fold-head .m.ng{ color:var(--ng); }
+  .daimon-fold-head .c{ font-size:11px; }
+  .daimon-fold .battle-daimon-prev{ border-top:0; margin-top:0; padding-top:2px; display:none; }
+  .daimon-fold.open .battle-daimon-prev{ display:block; }
+  .daimon-fig-btn{ margin:6px 0 4px; padding:8px 14px; border:1.5px solid var(--navy-deep); background:#fff; color:var(--navy-deep);
+    border-radius:10px; font-size:13.5px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent; }
   .daimon-lead-float{ position:fixed; left:12px; bottom:12px; z-index:40; padding:10px 14px;
     border-radius:999px; border:1.5px solid var(--gold); background:#fffaf0; color:var(--navy-deep);
     font-weight:700; font-size:14px; box-shadow:var(--card-shadow); }
@@ -3471,8 +3487,10 @@ function recordResult(id, correct){
   s.lastAnswered = Date.now();
   scheduleNext(s, correct);
   stats[id] = s;
+  if(typeof DAIMON_ITEM !== "undefined" && DAIMON_ITEM.has(id)) daimonMark[id] = !!correct;   // たたんだ行の〇✕に使う（画面の中だけ）
   saveStats();
 }
+const daimonMark = {};   // 小問id → 直近の判定（true=〇）。たたんだ小問の行の表示用
 // ★ 2026-09-26: 「苦手な問題」にする枝は無くなりました。
 //   実際には無かった「正解」の記録を書かないため（依頼書の失敗 14）。
 function setStatus(id, status){
@@ -8380,6 +8398,30 @@ function addDaimonAnswered(parent, it, pos){
   if(it.sol) add("sol-text", it.sol);
   parent.appendChild(wrap);
 }
+// たたんだ1行（「(1) イ・カ 〇」）。押すと下に答えつきの小問が開く
+function addDaimonFolded(parent, it, pos){
+  const wrap = document.createElement("div");
+  wrap.className = "daimon-fold";
+  const head = document.createElement("button");
+  head.type = "button"; head.className = "daimon-fold-head"; head.setAttribute("aria-expanded", "false");
+  const t = document.createElement("span"); t.className = "t";
+  const a = String(it.a || ""); 
+  t.textContent = (it.label || ("(" + (pos + 1) + ")")) + " " + (a.length > 24 ? a.slice(0, 24) + "…" : a);
+  const m = document.createElement("span");
+  const mk = daimonMark[it.id];
+  m.className = "m " + (mk === true ? "ok" : mk === false ? "ng" : "");
+  m.textContent = mk === true ? "〇" : mk === false ? "✕" : "";
+  const c = document.createElement("span"); c.className = "c"; c.textContent = "▼";
+  head.appendChild(t); head.appendChild(m); head.appendChild(c);
+  head.addEventListener("click", () => {
+    const open = wrap.classList.toggle("open");
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+    c.textContent = open ? "▲" : "▼";
+  });
+  wrap.appendChild(head);
+  addDaimonAnswered(wrap, it, pos);
+  parent.appendChild(wrap);
+}
 // ★対戦・ひとりで解く、共通の大問の描画。prefix は "battle" か "solo"、ids はその画面の並び。
 //   ★2つの画面に同じ条件を書かないよう、ここ1か所だけに大問の描き方を置く（2026-09-28）
 function renderDaimonBlock(prefix, ids, idx){
@@ -8404,10 +8446,19 @@ function renderDaimonBlock(prefix, ids, idx){
   // 前の小問: 大問の中で、いまの小問より前の小問は全部こたえつきで出す
   //   （もう答えた小問と、★前回○で最初から答えを出しておく小問。どちらも答えが出てよいもの）。
   //   ★並びは大問の中の順のまま・続けて並んでいるので、いまより前の小問に「まだ答えていない手」は無い
-  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonAnswered(box, it, k));
+  //   ★2026-10-02 ただし1行にたたむ（例「(1) イ・カ 〇」）。タップで開く。中身は addDaimonAnswered と同じ
+  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonFolded(box, it, k));
   const cur = add("battle-daimon-cur", "");
   add("daimon-item-label", dm.it.label || ("(" + (dm.pos + 1) + ")"), cur);
   if(dm.it.file) els[prefix+"-daimon-fig"].appendChild(daimonImg(dm.it.file));
+  // ★「図を見る」: 小問に自分の図があればそれ、無ければ大問の図。画面いっぱい（lightbox）に出し、閉じると戻る。答えの図（aFile）は出さない
+  const figName = dm.it.file || g.file;
+  if(figName){
+    const fb = document.createElement("button");
+    fb.type = "button"; fb.className = "daimon-fig-btn"; fb.textContent = "図を見る";
+    fb.addEventListener("click", () => openLightbox("images/" + figName));
+    cur.appendChild(fb);
+  }
 }
 function renderBattleDaimon(idx){ renderDaimonBlock("battle", questionIds, idx); }
 // ★答えの図（aFile）は「こたえを見る」のときに初めて作る。大問の最後の手なら、うしろに

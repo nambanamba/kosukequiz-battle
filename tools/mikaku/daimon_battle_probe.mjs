@@ -68,8 +68,8 @@ const cut = (src, needle, rep, what) => {
 const FAKES = {
   a: ["大問を小問に開かない", s => cut(s, "  questionIds = expandDaimonIds(pool.map(i => QA_DATA[i].id));",
       "  questionIds = pool.map(i => QA_DATA[i].id);  /* ★偽の実装 */", "create-btn の並び")],
-  b: ["うしろの小問まで出す", s => cut(s, "  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonAnswered(box, it, k));",
-      "  g.items.forEach((it, k) => { if(k !== dm.pos) addDaimonAnswered(box, it, k); });  /* ★偽の実装 */", "前の小問")],
+  b: ["うしろの小問まで出す", s => cut(s, "  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonFolded(box, it, k));",
+      "  g.items.forEach((it, k) => { if(k !== dm.pos) addDaimonFolded(box, it, k); });  /* ★偽の実装 */", "前の小問")],
   // ★2026-09-28: b0dadd9 で renderBattleDaimon が renderDaimonBlock(prefix, ids, idx) に一般化され、
   //   "battle-daimon-fig" の決め打ちが els[prefix+"-daimon-fig"] に変わった。needle をそれに合わせる
   c: ["答えの図を先に出す", s => cut(s, "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n",
@@ -166,7 +166,7 @@ async function run(label, src) {
   const visible = (pg, sel) => pg.evaluate(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel);
   const waitVisible = (pg, sel, ms) => pg.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 25000 });
   const shown = pg => pg.evaluate(() => (document.getElementById("battle-q-id").textContent || "").replace(/^No\./, ""));
-  const screenText = pg => pg.evaluate(() => document.getElementById("screen-battle").innerText);
+  const screenText = pg => pg.evaluate(() => document.getElementById("screen-battle").textContent);
   const screenHtml = pg => pg.evaluate(() => document.getElementById("screen-battle").innerHTML);
   const aShown = pg => pg.evaluate(() => document.getElementById("battle-a-block").classList.contains("show"));
   const host = await mk(), guest = await mk();
