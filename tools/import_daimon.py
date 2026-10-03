@@ -64,6 +64,9 @@ FILES = {
     ("基本問題", 4): "基本問題_第4回.json",
     ("練習問題", 3): "練習問題_第3回.json",
     ("練習問題", 4): "練習問題_第4回.json",
+    ("要点チェック", 6): "要点チェック_第6回.json",   # 2026-10-03 追加（第5回は無い・週テスト第6回も無い）
+    ("基本問題", 6): "基本問題_第6回.json",
+    ("練習問題", 6): "練習問題_第6回.json",
     ("週テスト", 3): "週テスト_第3回_bc.json",
     ("週テスト", 4): "週テスト_第4回_bc.json",
 }
@@ -111,10 +114,12 @@ def main():
         die("data.js の id が読めていません（" + str(len(qa_ids)) + "件）。読み方を疑うこと")
 
     groups, seen_ids, images, srcinfo = [], set(), {}, []
-    for kai in (3, 4):
+    for kai in (3, 4, 6):
         for book in BOOKS:
             if book == "週テスト" and kai not in args.weekly:
                 continue
+            if (book, kai) not in FILES:   # ★第6回は週テストが無い。名指しされても無いものは止める
+                die("元データの登録がありません: %s 第%d回" % (book, kai))
             fn = FILES[(book, kai)]
             path = os.path.join(SRC, fn)
             if not os.path.exists(path):

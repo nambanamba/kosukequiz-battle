@@ -62,7 +62,18 @@ import shutil
 import sys
 
 BATTLE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv_理科")
+def _find_src():
+    # ★2026-10-03 git worktree（kosukequiz-battle/_wt/xxx）から動かしても元データを見つけられるよう、上へたどる
+    #   （import_daimon.py・import_g.py と同じやり方。前は1つ上だけを見ていて、worktree からは元データが見えなかった）
+    d = BATTLE
+    while True:
+        cand = os.path.join(os.path.dirname(d), "5年下", "quiz_csv_理科")
+        if os.path.isdir(cand):
+            return cand
+        if os.path.dirname(d) == d:
+            return os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv_理科")
+        d = os.path.dirname(d)
+SRC = _find_src()
 DATA_JS = os.path.join(BATTLE, "data.js")
 
 FILES = {
@@ -70,6 +81,7 @@ FILES = {
     2: "第2回_てこ滑車輪軸.json",
     3: "第3回_水溶液の中和.json",
     4: "第4回_ヒトと動物の消化吸収.json",
+    6: "第6回_ヒトと動物の呼吸循環.json",   # 2026-10-03 追加（第5回は作っていない）
 }
 
 # data.js に出力するキーと、その順番（既存の理科の行と同じ並び）
