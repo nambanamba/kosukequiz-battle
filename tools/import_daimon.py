@@ -23,6 +23,10 @@
     python tools/import_daimon.py            # 調べるだけ（書きこまない）
     python tools/import_daimon.py --apply    # daimon_data.js を書き、画像を images/ に置く
     python tools/import_daimon.py --apply --weekly 3   # 週テスト 第3回も載せる（名指しされたときだけ）
+    ★2026-10-03 いま公開中の daimon_data.js には週テスト 第3・4回が入っている。
+      書き直すときは必ず --weekly 3 --weekly 4 を付けること。付けないと週テストの大問が黙って消える
+      （第6回の取り込みで1回やった。前後を node で比べて気づいた）。
+      → python tools/import_daimon.py --apply --weekly 3 --weekly 4
 """
 import argparse
 import hashlib
