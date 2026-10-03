@@ -8,17 +8,19 @@
 //   L1 問題一覧の 第6回 基本問題 大問3 の行に、大問の図（r6k_3.jpg）が出て、読み込めている
 //   L2 図を押すと画面いっぱいに開く
 //   L3 図を持つ大問の行には、全部その図が出る（第3・4・6回）。答えの図（aFile）は出さない
-//   T1 対戦で小問の考える時間が切れたら、ホストの記録は✕（correct 0・wrong 1）
-//   T2 ホストの画面に「時間切れ…✕…また出てきます」、ゲストにも時間切れの知らせ
-//   T3 「つぎの問題へ」で次の小問へ進む（大問がばらけない）
-//   T4 ゲストの記録は付かない（ゲストはこの小問を答えていない）
+//   ★2026-10-03 夜 ユーザー「時間切れはスキップして答えも出さずにあとで出し直しじゃないんでしたっけ？」→ 一問一答の時間切れと同じ扱いに
+//   T1 対戦で小問の考える時間が切れても、その場では記録が付かない
+//   T2 ホスト・ゲストに「時間切れ…あとでもう一度出てきます」。答えは見せない
+//   T5 次の小問の画面で、後ろに回った小問は答えを出さない（前の小問の欄に「あとでもう一度出ます」）
+//   T3 出し直しは同じ大問の残りの小問のあと（大問がばらけない）。ゲストも同じ並び
+//   T4 出し直しで答えたときに、ふつうに1回だけ記録が付く
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_daimon_fix1003"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "c19f09b";
+const BASE_COMMIT = "6a35823";   // 直す前＝時間切れを✕で記録していた版（図の直しは入っている）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -147,18 +149,51 @@ async function run(label, src) {
     const first = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
     // ホストは何も押さない（考える時間 1秒×2 が切れるのを待つ）。直す前は「わかった」扱い→判定の自動〇まで進む
     await host.page.waitForTimeout(9000);
-    const hs = await host.page.evaluate(id => (JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}"))[id] || null, first);
-    const gs = await guest.page.evaluate(id => (JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}"))[id] || null, first);
-    check("T1 小問 " + first + " の考える時間が切れたら、ホストの記録は✕", !!hs && (hs.correct || 0) === 0 && (hs.wrong || 0) === 1, JSON.stringify(hs));
-    const msgs = await Promise.all([host.page.evaluate(() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; }),
-      guest.page.evaluate(() => document.getElementById("screen-battle").innerText)]);
-    check("T2 ホストに「時間切れ…✕…また出てきます」、ゲストにも時間切れの知らせ", /時間切れ/.test(msgs[0]) && /✕/.test(msgs[0]) && /時間切れ/.test(msgs[1]), msgs[0] + " ／ ゲスト: " + (msgs[1].match(/[^\n]*時間切れ[^\n]*/) || [""])[0]);
-    check("T4 ゲストの記録は付かない", gs === null, JSON.stringify(gs));
+    const statOf = (pg, id) => pg.evaluate(i => (JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}"))[i] || null, id);
+    const hs = await statOf(host.page, first), gs = await statOf(guest.page, first);
+    check("T1 小問 " + first + " の考える時間が切れても、その場では記録が付かない（ホスト・ゲストとも）", hs === null && gs === null, JSON.stringify(hs) + " / " + JSON.stringify(gs));
+    const hView = await host.page.evaluate(() => ({ msg: (() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; })(),
+      aShown: document.getElementById("battle-a-block").classList.contains("show") }));
+    const gText = await guest.page.evaluate(() => document.getElementById("screen-battle").innerText);
+    check("T2 ホストに「時間切れ…あとでもう一度出てきます」・答えは見せない／ゲストにも同じ知らせ",
+      /時間切れ/.test(hView.msg) && /あとでもう一度/.test(hView.msg) && !hView.aShown && /時間切れ/.test(gText) && /あとでもう一度/.test(gText),
+      hView.msg + " / 答え表示=" + hView.aShown + " ／ ゲスト: " + (gText.match(/[^\n]*時間切れ[^\n]*/) || [""])[0]);
     await shot(host.page, "T2_host_timeup"); await shot(guest.page, "T2_guest_timeup");
     const canGo = await host.page.evaluate(() => { const e = document.getElementById("skip-continue-btn"); return !!(e && getComputedStyle(e).display !== "none"); });
-    if (canGo) { await tap(host.page, "#skip-continue-btn"); await host.page.waitForTimeout(1500); }
-    const second = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-    check("T3 「つぎの問題へ」で次の小問 " + S.ids[1] + " へ進む", first === S.ids[0] && second === S.ids[1], first + " → " + second);
+    if (canGo) { await tap(host.page, "#skip-continue-btn"); await host.page.waitForTimeout(800); }
+    // 残りを全部まわす。出た順を両方で記録する
+    const seqH = [first], seqG = [];
+    const ans0 = await host.page.evaluate(id => { for (const g of DAIMON_DATA) for (const it of g.items) if (it.id === id) return it.a; return ""; }, first);
+    let leak = null;
+    for (let k = 0; k < S.ids.length + 2; k++) {
+      const ok = await waitVis(host.page, "#advance-btn", 15000).then(() => true, () => false);
+      if (!ok) break;
+      const id = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
+      seqH.push(id);
+      await tap(host.page, "#advance-btn");
+      await guest.page.waitForFunction(i => (document.getElementById("battle-q-id").textContent || "") === "No." + i
+        && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
+      seqG.push(id);
+      if (k === 0) {
+        // T5: 次の小問の画面で、後ろに回った小問の答えが前の小問の欄に出ていない（両方）
+        const look = async pg => pg.evaluate(() => { const b = document.getElementById("battle-daimon"); return { later: !!b.querySelector(".daimon-later"), html: b.innerHTML }; });
+        const lh = await look(host.page), lg = await look(guest.page);
+        const shortAns = ans0.length < 2;
+        leak = { host: lh.later && (shortAns || !lh.html.includes(ans0)), guest: lg.later && (shortAns || !lg.html.includes(ans0)) };
+        await shot(host.page, "T5_host_next"); await shot(guest.page, "T5_guest_next");
+      }
+      await waitVis(host.page, "#judge-row", 30000); await waitVis(guest.page, "#judge-row", 30000);
+      await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+      await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+      await tap(host.page, "#next-btn"); await host.page.waitForTimeout(400);
+      if (await host.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"))) break;
+    }
+    check("T5 次の小問の画面で、後ろに回った小問は「あとでもう一度出ます」だけ・答えは出ない（ホスト・ゲスト）", !!leak && leak.host && leak.guest, JSON.stringify(leak));
+    const want = [S.ids[0]].concat(S.ids.slice(1), [S.ids[0]]);
+    check("T3 出し直しは同じ大問の残りの小問のあと（並び: " + seqH.join(" ") + "）", JSON.stringify(seqH) === JSON.stringify(want), "期待 " + want.join(" "));
+    check("T3 ゲストも同じ並びで出る", JSON.stringify(seqG) === JSON.stringify(want.slice(1)), seqG.join(" "));
+    const hs2 = await statOf(host.page, first), gs2 = await statOf(guest.page, first);
+    check("T4 出し直しで答えたときに、ふつうに1回だけ記録が付く（ホスト・ゲストとも〇1）", hs2 && hs2.correct === 1 && (hs2.wrong || 0) === 0 && gs2 && gs2.correct === 1 && (gs2.wrong || 0) === 0, JSON.stringify(hs2) + " / " + JSON.stringify(gs2));
     check("画面のエラー 0", a.errs.length + host.errs.length + guest.errs.length === 0, [].concat(a.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
   finally { await a.ctx.close(); await host.ctx.close(); await guest.ctx.close(); }

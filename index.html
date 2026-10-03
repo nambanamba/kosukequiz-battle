@@ -1653,6 +1653,7 @@
   .battle-daimon-cur{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:12px; }
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
+  .daimon-later{ padding:8px 2px; font-size:14px; color:var(--ink-soft); }
   .daimon-fold-head{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; background:none; border:0;
     padding:8px 2px; font-size:14px; color:var(--ink-soft); cursor:pointer; -webkit-tap-highlight-color:transparent; }
   .daimon-fold-head .t{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -7641,8 +7642,8 @@ function showGuestWaitStatus(data){
   }else if(data.type === "timeup"){
     // ★時間切れ。スキップと違って記録は何も変わらないので、そう伝える。
     //   問題文は出さない（この問題はあとでもう一度出てくるため）
-    // ★2026-10-03 大問の小問の時間切れは、相手（ホスト）の記録が✕になり、次の小問へ進む
-    el.innerHTML = data.daimon ? "相手が時間切れになりました（この小問は相手の記録が✕になります）。つぎの小問へ進みます。"
+    // ★2026-10-03 大問の小問の時間切れも同じ（記録は付かない・あとでもう一度出る）
+    el.innerHTML = data.daimon ? "時間切れになりました。この小問は、あとでもう一度出てきます。"
                                : "時間切れになりました。この問題は、あとでもう一度出てきます。";
   }else{
     el.innerHTML = "つぎの問題の準備中…（"+data.position+" / "+data.total+"問目）";
@@ -7839,6 +7840,8 @@ function setupActions(){
 
   statusAction.onMessage = (data)=>{
     if(role !== "guest") return;
+    // ★2026-10-03 小問の時間切れ: ホストの並び（小問を後ろに回したあと）をそのまま持つ
+    if(data && data.type === "timeup" && Array.isArray(data.ids)) questionIds = data.ids.slice();
     if(data.type === "retryCountdown"){
       // host is about to auto-start a "まちがえた問題だけもう一勝負" round --
       // stays on screen-result, just shows a matching countdown there
@@ -8429,7 +8432,7 @@ function moveCurrentToEndOfRound(){
 //   ゲストにはこの小問を出さない（ゲストの記録は付かない）。「つぎの問題へ」で次の小問へ進む
 let daimonSkipPending = false;   // ホストだけ: 「つぎの問題へ」で次の添字に進むか
 let startNotSentYet = false;     // ホストだけ: 1問目をスキップしたので、まだゲストに startAction を送っていない
-function performDaimonSkip(isTimeUp){
+function performDaimonSkip(){
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
@@ -8445,16 +8448,13 @@ function performDaimonSkip(isTimeUp){
   daimonSkipPending = true;
   revealDaimonAnswerFig("battle", questionIds, currentIndex);
   els["battle-a-block"].classList.add("show");
-  els["skip-encourage"].textContent = isTimeUp
-    ? "時間切れです。この小問は✕で記録したので、あとでまた出てきます。つぎの小問へ進みます。"
-    : "この小問はスキップしました（まちがいとして記録します）。つぎの小問へ進みます。";
+  els["skip-encourage"].textContent = "この小問はスキップしました（まちがいとして記録します）。つぎの小問へ進みます。";
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
   saveBattleSession();
   startSkipContinueCountdown();
   if(room){
-    // ★時間切れのときはゲストにも「時間切れ」と伝える（問題文も答えも送らない）
-    try{ statusAction.send(isTimeUp ? {type: "timeup", daimon: true} : {type: "skipped", q: getQById(id).q}); }catch(e){}
+    try{ statusAction.send({type: "skipped", q: getQById(id).q}); }catch(e){}
   }
 }
 // スキップのあと「つぎの問題へ」: 一問一答は同じ添字（末尾に回したので次の問題が来ている）、小問は次の添字
@@ -8508,25 +8508,49 @@ els["skip-btn"].addEventListener("click", performSkip);
 //      ★「まちがえた問題だけもう一勝負」にも入らない。myMissesThisRound は判定の
 //        ときだけ積むので、判定を通らないこの経路では何も積まれない
 function performTimeUp(){
-  // ★大問の小問は末尾に回さない（回すと大問がばらける）。
-  // ★2026-10-03 ユーザー「大問で時間切れになると、またでるよ、ってならなくて、わかったと同じ扱いになる。直してほしい」。
-  //   前はここで doAdvance()（＝「わかった！」を押したのと同じ）を呼んでいて、そのあと判定の時間切れの自動〇で
-  //   ○が付いていた。いまは小問のスキップ（09-30・bug0930 ⑤）と同じく、こたえを見せて✕で記録し、次の小問へ進む。
-  //   ✕で記録するので、あとの回でまた出てくる（「またでるよ」）
-  if(isDaimonItemId(questionIds[currentIndex])){ performDaimonSkip(true); return; }
+  // ★2026-10-03 大問の小問も、一問一答の時間切れと同じ扱いにする（ユーザー「時間切れはスキップして答えも出さずに
+  //   あとで出し直しじゃないんでしたっけ？」）。答えを見せない・記録を付けない・あとで出し直す。
+  //   （前は doAdvance＝「わかった！」と同じになり、判定の自動〇で○が付いていた。その日のうちに一度「✕で記録」に
+  //    直したが、ユーザーの言う決まりは「一問一答と同じ」だったので、こちらにそろえた）
+  //   出し直す位置: 同じ大問の残りの小問のあと（大問はばらけない）。残りが無い（大問の最後の手）ときは
+  //   一問一答と同じくラウンドの末尾（すぐ同じ小問をもう一度出しても意味がないため）
+  const isItem = isDaimonItemId(questionIds[currentIndex]);
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
-  moveCurrentToEndOfRound();   // ★hostSkippedIds には入れない（ここが performSkip との違い）
-  els["skip-encourage"].textContent = "時間切れです。この問題は、あとでもう一度出てきます。";
+  if(isItem) moveCurrentDaimonItemLater(); else moveCurrentToEndOfRound();   // ★hostSkippedIds には入れない（ここが performSkip との違い）
+  saveBattleSession();
+  els["skip-encourage"].textContent = isItem ? "時間切れです。この小問は、あとでもう一度出てきます。"
+                                             : "時間切れです。この問題は、あとでもう一度出てきます。";
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
   startSkipContinueCountdown();
   if(room){
     // ゲストにも「スキップ」ではなく「時間切れ」と伝える。問題文も答えも送らない
-    try{ statusAction.send({type: "timeup"}); }catch(e){}
+    // ★小問のときは並び（ids）も送る。ゲストは前の小問の欄に「あとで出る小問」の答えを出さないために、
+    //   ホストと同じ並びを持っている必要がある（つぎの合図は添字1つの差分しか送らないため）
+    try{ statusAction.send(isItem ? {type: "timeup", daimon: true, ids: questionIds} : {type: "timeup"}); }catch(e){}
   }
+}
+// ★小問の時間切れ: 同じ大問の、いまより後ろに続いている小問のうしろへ回す。続きが無ければラウンドの末尾へ
+function moveCurrentDaimonItemLater(){
+  const id = questionIds[currentIndex];
+  const g = DAIMON_ITEM.get(id).g;
+  let end = currentIndex;
+  while(end + 1 < questionIds.length){
+    const nx = DAIMON_ITEM.get(questionIds[end + 1]);
+    if(!nx || nx.g !== g) break;
+    end++;
+  }
+  questionIds.splice(currentIndex, 1);
+  if(end === currentIndex) questionIds.push(id);          // 大問の最後の手 → 末尾
+  else questionIds.splice(end, 0, id);                    // 残りの小問のうしろ（1つ抜いたので end の位置がそのうしろ）
+  return id;
+}
+// ★この小問は、この並びで idx より後ろにまだ出てくるか（＝時間切れで後ろに回った・まだ答えていない）
+function daimonItemComesLater(ids, idx, itemId){
+  return ids.indexOf(itemId, idx + 1) >= 0;
 }
 
 els["skip-continue-btn"].addEventListener("click", ()=>{
@@ -8571,6 +8595,13 @@ function addDaimonAnswered(parent, it, pos){
   if(it.aFile) wrap.appendChild(daimonImg(it.aFile));
   if(it.sol) add("sol-text", it.sol);
   parent.appendChild(wrap);
+}
+// 時間切れで後ろに回った小問の1行（答えは出さない）
+function addDaimonLater(parent, it, pos){
+  const el = document.createElement("div");
+  el.className = "daimon-fold daimon-later";
+  el.textContent = (it.label || ("(" + (pos + 1) + ")")) + "　…あとでもう一度出ます";
+  parent.appendChild(el);
 }
 // たたんだ1行（「(1) イ・カ 〇」）。押すと下に答えつきの小問が開く
 function addDaimonFolded(parent, it, pos){
@@ -8621,7 +8652,11 @@ function renderDaimonBlock(prefix, ids, idx){
   //   （もう答えた小問と、★前回○で最初から答えを出しておく小問。どちらも答えが出てよいもの）。
   //   ★並びは大問の中の順のまま・続けて並んでいるので、いまより前の小問に「まだ答えていない手」は無い
   //   ★2026-10-02 ただし1行にたたむ（例「(1) イ・カ 〇」）。タップで開く。中身は addDaimonAnswered と同じ
-  g.items.slice(0, dm.pos).forEach((it, k) => addDaimonFolded(box, it, k));
+  g.items.slice(0, dm.pos).forEach((it, k) => {
+    // ★2026-10-03 時間切れで後ろに回った小問（まだ出てくる）は、答えを出さずに「あとで出ます」とだけ書く
+    if(daimonItemComesLater(ids, idx, it.id)) addDaimonLater(box, it, k);
+    else addDaimonFolded(box, it, k);
+  });
   const cur = add("battle-daimon-cur", "");
   add("daimon-item-label", dm.it.label || ("(" + (dm.pos + 1) + ")"), cur);
   if(dm.it.file) els[prefix+"-daimon-fig"].appendChild(daimonImg(dm.it.file));
@@ -8645,7 +8680,8 @@ function revealDaimonAnswerFig(prefix, ids, idx){
     const nx = DAIMON_ITEM.get(ids[idx + 1]);
     if(!nx || nx.g !== dmR.g){
       const tail = document.createElement("div");
-      dmR.g.items.slice(dmR.pos + 1).forEach((it, k) => addDaimonAnswered(tail, it, dmR.pos + 1 + k));
+      // ★時間切れで後ろに回った小問（まだ出てくる）は、ここでも答えを出さない（2026-10-03）
+      dmR.g.items.slice(dmR.pos + 1).forEach((it, k) => { if(!daimonItemComesLater(ids, idx, it.id)) addDaimonAnswered(tail, it, dmR.pos + 1 + k); });
       if(tail.firstChild) afig.appendChild(tail);
     }
   }
