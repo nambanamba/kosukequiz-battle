@@ -17,7 +17,7 @@
 //   B3 前の小問・前回○の小問は、答えつきで上に出ている。★うしろに残った前回○の小問は、最後の手の答えを開いたときに出る
 //   B4 ★答えの図（aFile）は「こたえを見る」の前は画面に無く、あとに出る
 //   B5 ★時間2倍: 答える時間（2秒）で、一問一答は3秒未満、小問は3.5秒以上たってから答えが開く
-//      考える時間（3秒）が切れた小問は、末尾に回らずにそのまま出る（6秒たってから・同じ小問）
+//      考える時間（3秒）は小問だと4.5秒たっても切れない（2倍）。切れたあとの扱いは daimon_fix1003_probe（2026-10-03）
 //   B6 ホストの小問でもスキップが出る（★2026-09-30 bug0930 ⑤ で逆にした。2026-09-27 は「出ない」）
 //   B7 待ち画面（ゲストの「準備中」）に、前の大問のリード文が残っていない
 //   B8 ホストの記録: 小問の記録が stats に入り、★ほかの一問一答の記録は1文字も変わらない
@@ -215,8 +215,9 @@ async function run(label, src) {
       if (waitThink) {
         await host.page.waitForTimeout(4500);
         check("★B5 考える時間: 小問は4.5秒たってもまだ相手に出ていない（2倍・3秒×2）", await visible(host.page, "#advance-btn"));
-        await host.page.waitForFunction(() => { const e = document.getElementById("advance-btn"); return getComputedStyle(e).display === "none"; }, null, { timeout: 8000 });
-        check("★B5 考える時間が切れた小問は、末尾に回らずにそのまま出る", (await shown(host.page)) === id, await shown(host.page));
+        // ★2026-10-03: 考える時間が切れたあとは「✕で記録して次の小問へ」に変わった（ユーザー「時間切れが、わかったと同じ扱いになる」）。
+        //   その確かめは daimon_fix1003_probe.mjs に移し、ここでは切れる前に「わかった！」を押して流れを保つ
+        await tap(host.page, "#advance-btn");
       } else {
         await tap(host.page, "#advance-btn");
       }
