@@ -5880,6 +5880,12 @@ function renderListItems(){
   if(pos < indices.length) setTimeout(step, 0);
 }
 let listRenderGen = 0;
+// 一覧の大問の図（一問一答の行と同じ形。寸法は DAIMON_IMG_SIZES）
+function daimonListImgHtml(file){
+  const sz = DAIMON_SIZES[file];
+  const tall = !!sz && sz[0] / sz[1] < 1;   // isTallImg と同じ決まり（あちらは IMG_SIZES しか見ないので別に書く）
+  return '<div class="list-img-wrap"><img class="'+(tall?'tall':'')+'" src="images/'+escapeHtml(file)+'" alt="資料"'+(sz ? ' width="'+sz[0]+'" height="'+sz[1]+'"' : '')+'></div>';
+}
 // ★大問の行（2026-09-27 ユーザー「一覧とホームの数をずらさない」）。大問1つ＝1行。
 //   ★〇✕の数・状態・★・文章を直す は付けない（記録は小問にある。data-qid を付けないので、押しても何も起きない）
 function buildDaimonListRow(d){
@@ -5897,7 +5903,10 @@ function buildDaimonListRow(d){
   item.querySelector(".daimon-list-name").textContent =
     "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問" + g.items.length + "）";
   item.querySelector(".list-q").textContent = d.q;
-  // ★数は「答える小問」だけ（前回○の小問は数えない）。全部○なら 0問
+  // ★2026-10-03 ユーザー「（図4）は…この問題ですが図がなくないですか？」。
+  //   一問一答の行は図を出しているのに、大問の行は図を1枚も出していなかった。大問の図をリード文の下に出す
+  //   （押すと拡大＝一問一答と同じ .list-img-wrap。答えの図 aFile は出さない）
+  if(g.file) item.querySelector(".list-q").insertAdjacentHTML("afterend", daimonListImgHtml(g.file));
   item.querySelector(".daimon-list-tiers").textContent = w === 0
     ? "全部○（0問・対戦には出ません）"
     : TIER_NAMES[tier] + "（答える小問 " + w + "問・前回○ " + (g.items.length - w) + "問）";
@@ -5916,6 +5925,8 @@ function buildDaimonListRow(d){
     sub.querySelector(".daimon-sub-label").textContent = (it.label || "") + (done ? "　（前回○）" : "");
     sub.querySelector(".list-q").textContent = it.q;
     sub.querySelector(".list-a").textContent = "こたえ：" + it.a;
+    // ★小問に自分の図があれば、その小問の文の下に出す（大問の図と同じなら重ねない＝取り込みで消してある）
+    if(it.file) sub.querySelector(".list-q").insertAdjacentHTML("afterend", daimonListImgHtml(it.file));
     item.appendChild(sub);
   });
   return item;
@@ -6121,11 +6132,12 @@ function buildListRow(i){
 function setupListDelegation(){
   const box = els["list-items"];
   box.addEventListener("click", (e)=>{
+    // ★図は先に見る（2026-10-03）。大問の図は大問の行（data-qid なし）に置くので、下の qid の判定より前で開く
+    const img = e.target.closest(".list-img-wrap img");
+    if(img && box.contains(img)){ openLightbox(img.src); return; }
     const item = e.target.closest("[data-qid]");   // 一問一答の行、または大問の小問の行
     if(!item || !box.contains(item)) return; // 編集中の行は自前のリスナーで動く
     const qid = item.dataset.qid;
-    const img = e.target.closest(".list-img-wrap img");
-    if(img){ openLightbox(img.src); return; }
     // ★最優先の付け外し（2026-09-22）。押した行だけ描き直す。記録（stats）には触らない
     if(e.target.closest(".q-star-btn")){
       if(priorityIds.has(qid)) priorityIds.delete(qid); else priorityIds.add(qid);
@@ -7629,7 +7641,9 @@ function showGuestWaitStatus(data){
   }else if(data.type === "timeup"){
     // ★時間切れ。スキップと違って記録は何も変わらないので、そう伝える。
     //   問題文は出さない（この問題はあとでもう一度出てくるため）
-    el.innerHTML = "時間切れになりました。この問題は、あとでもう一度出てきます。";
+    // ★2026-10-03 大問の小問の時間切れは、相手（ホスト）の記録が✕になり、次の小問へ進む
+    el.innerHTML = data.daimon ? "相手が時間切れになりました（この小問は相手の記録が✕になります）。つぎの小問へ進みます。"
+                               : "時間切れになりました。この問題は、あとでもう一度出てきます。";
   }else{
     el.innerHTML = "つぎの問題の準備中…（"+data.position+" / "+data.total+"問目）";
   }
@@ -8415,7 +8429,7 @@ function moveCurrentToEndOfRound(){
 //   ゲストにはこの小問を出さない（ゲストの記録は付かない）。「つぎの問題へ」で次の小問へ進む
 let daimonSkipPending = false;   // ホストだけ: 「つぎの問題へ」で次の添字に進むか
 let startNotSentYet = false;     // ホストだけ: 1問目をスキップしたので、まだゲストに startAction を送っていない
-function performDaimonSkip(){
+function performDaimonSkip(isTimeUp){
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
@@ -8431,13 +8445,16 @@ function performDaimonSkip(){
   daimonSkipPending = true;
   revealDaimonAnswerFig("battle", questionIds, currentIndex);
   els["battle-a-block"].classList.add("show");
-  els["skip-encourage"].textContent = "この小問はスキップしました（まちがいとして記録します）。つぎの小問へ進みます。";
+  els["skip-encourage"].textContent = isTimeUp
+    ? "時間切れです。この小問は✕で記録したので、あとでまた出てきます。つぎの小問へ進みます。"
+    : "この小問はスキップしました（まちがいとして記録します）。つぎの小問へ進みます。";
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
   saveBattleSession();
   startSkipContinueCountdown();
   if(room){
-    try{ statusAction.send({type: "skipped", q: getQById(id).q}); }catch(e){}
+    // ★時間切れのときはゲストにも「時間切れ」と伝える（問題文も答えも送らない）
+    try{ statusAction.send(isTimeUp ? {type: "timeup", daimon: true} : {type: "skipped", q: getQById(id).q}); }catch(e){}
   }
 }
 // スキップのあと「つぎの問題へ」: 一問一答は同じ添字（末尾に回したので次の問題が来ている）、小問は次の添字
@@ -8491,8 +8508,12 @@ els["skip-btn"].addEventListener("click", performSkip);
 //      ★「まちがえた問題だけもう一勝負」にも入らない。myMissesThisRound は判定の
 //        ときだけ積むので、判定を通らないこの経路では何も積まれない
 function performTimeUp(){
-  // ★大問の小問は末尾に回さない（回すと大問がばらける）。考える時間が切れたら、そのまま相手に出す
-  if(isDaimonItemId(questionIds[currentIndex])){ doAdvance(); return; }
+  // ★大問の小問は末尾に回さない（回すと大問がばらける）。
+  // ★2026-10-03 ユーザー「大問で時間切れになると、またでるよ、ってならなくて、わかったと同じ扱いになる。直してほしい」。
+  //   前はここで doAdvance()（＝「わかった！」を押したのと同じ）を呼んでいて、そのあと判定の時間切れの自動〇で
+  //   ○が付いていた。いまは小問のスキップ（09-30・bug0930 ⑤）と同じく、こたえを見せて✕で記録し、次の小問へ進む。
+  //   ✕で記録するので、あとの回でまた出てくる（「またでるよ」）
+  if(isDaimonItemId(questionIds[currentIndex])){ performDaimonSkip(true); return; }
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
