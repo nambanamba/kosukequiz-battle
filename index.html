@@ -7975,6 +7975,9 @@ els["create-btn"].addEventListener("click", ()=>{
 });
 
 els["room-code-change"].addEventListener("click", ()=>{
+  // ★2026-10-03 確認を出す（ユーザー「別のコードにするのボタンに確認をつけてください。普通変更しないので。」）。
+  //   キャンセルなら何も変えない（部屋も番号もそのまま）
+  if(!confirm("部屋の番号を変えますか？\n相手は新しい番号を入れ直す必要があります。")) return;
   // leave the old room but keep the already-built question set/settings --
   // only the code itself changes
   if(room){ try{ room.leave(); }catch(e){} }

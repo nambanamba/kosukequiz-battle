@@ -5,13 +5,15 @@
 //   R2 押せる高さは 24px 以上（押しにくくなりすぎない）
 //   R3 押すと番号が変わる（機能は残る）
 //   R4 押せる範囲が横いっぱいの帯ではない（もとは幅 358px。うっかり触れて番号が変わらないように）
-// 自己テスト: 直す前（4363c8a）で R1 が鳴る
+//   R5 ★押すと確認が出る。キャンセルなら番号も部屋も変わらない（2026-10-03 ユーザー「確認をつけてください。普通変更しないので」）
+//   R3 確認で OK なら番号が変わる（機能は残る）
+// 自己テスト: 直す前（1cfa5b0＝確認なし）で R5 が鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_roomcode"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "4363c8a";
+const BASE_COMMIT = "1cfa5b0";
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -37,6 +39,8 @@ async function run(label, src) {
   const check = (name, ok, extra) => out.push({ name, ok: !!ok, extra: extra == null ? "" : String(extra) });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await ctx.newPage(); const errs = []; page.on("pageerror", e => errs.push(String(e)));
+  let answer = "dismiss"; const dialogs = [];
+  page.on("dialog", d => { dialogs.push(d.type() + ":" + d.message()); (answer === "accept" ? d.accept() : d.dismiss()).catch(() => {}); });
   try {
     await page.goto(PAGE_URL); await page.waitForTimeout(500);
     await page.$eval("#create-btn", e => e.click());
@@ -48,6 +52,17 @@ async function run(label, src) {
     check("R2 押せる高さ 24px 以上（" + Math.round(m.h) + "px）", m.h >= 24, m.h);
     check("R4 押せる範囲が文字のまわりだけ（幅 " + Math.round(m.w) + "px ≤ 160）", m.w <= 160, m.w);
     const c0 = await page.$eval("#room-code-display", e => e.textContent);
+    // R5: キャンセル
+    answer = "dismiss";
+    await page.$eval("#room-code-change", e => e.click());
+    await page.waitForTimeout(2500);
+    const cK = await page.$eval("#room-code-display", e => e.textContent);
+    const conf = dialogs.filter(x => x.startsWith("confirm:"));
+    check("R5 押すと確認が出る（" + (conf[0] || "出ない").split(String.fromCharCode(10)).join(" ") + "）", conf.length === 1 && /番号/.test(conf[0]));
+    check("R5 キャンセルなら番号が変わらない（" + c0 + "→" + cK + "）", cK === c0);
+    await page.screenshot({ path: path.join(SHOTS, label + "_after_cancel.png") });
+    // R3: OK
+    answer = "accept";
     await page.$eval("#room-code-change", e => e.click());
     await page.waitForFunction(c => { const t = document.getElementById("room-code-display").textContent; return /^\d{4}$/.test(t) && t !== c; }, c0, { timeout: 15000 }).catch(() => {});
     const c1 = await page.$eval("#room-code-display", e => e.textContent);
