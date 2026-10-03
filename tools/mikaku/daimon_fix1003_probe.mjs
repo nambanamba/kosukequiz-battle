@@ -116,6 +116,22 @@ async function run(label, src) {
     });
     check("L3 図を持つ大問 " + all.n + " 題の行に全部図が出る・答えの図は出ない", all.miss.length === 0 && all.aImg.length === 0, JSON.stringify(all));
 
+    // ===== L4: 消えた小問（2026-10-03 その3 で42個）の記録が端末に残っていても壊れない =====
+    await pg.evaluate(mig => {
+      const old = { correct: 1, wrong: 1, box: 0, lastAnswered: Date.now() - 864e5 };
+      localStorage.setItem("kq_battle_stats_v1", JSON.stringify({ r4k102: old, r4r410: old, r6k313: old, r6r504: old }));
+    }, MIG);
+    await pg.reload(); await pg.waitForTimeout(800);
+    await tap(pg, "#subject-science"); await pg.waitForTimeout(300);
+    await tap(pg, "#list-btn"); await pg.waitForTimeout(500);
+    await pg.click('#list-kind-row .toggle[data-list-kind="daimon"]').catch(() => {}); await pg.waitForTimeout(300);
+    await pg.$eval('.list-filter-toggle[data-tier="0"]', e => e.click()); await pg.waitForTimeout(1200);
+    await pg.$eval("#list-back", e => e.click()).catch(() => {}); await pg.waitForTimeout(300);
+    await pg.$eval("#export-link", e => e.click()).catch(() => {}); await pg.waitForTimeout(500);
+    await pg.$eval("#daimon-open-btn", e => e.click()).catch(() => {}); await pg.waitForTimeout(500);
+    const l4 = await pg.evaluate(() => ({ scr: (document.querySelector(".screen.active") || {}).id, rows: document.querySelectorAll("#daimon-list-body .daimon-row").length }));
+    check("L4 消えた小問の記録が残っていても、ホーム・一覧・書き出し・大問の一覧でエラーが出ない（" + l4.rows + "題）", a.errs.length === 0 && l4.scr === "screen-daimon-list" && l4.rows > 0, a.errs.join(" | ") + " " + JSON.stringify(l4));
+
     // ===== 2) 対戦の時間切れ =====
     const S = await host.page.evaluate(SEED, MIG);
     if (S.err) throw new Error(S.err);
