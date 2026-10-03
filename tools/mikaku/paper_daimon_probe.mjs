@@ -183,7 +183,10 @@ if (!only || only === "now") {
     const rowKeys = await p.evaluate(() => [...document.querySelectorAll("#paper-list-body .paper-row")].map(e => e.dataset.key));
     check("紙の一覧に印の付いた大問が両方出る", PAPER_KEYS.every(k => rowKeys.includes(k)), rowKeys.join(","));
     for (const k of PAPER_KEYS) {
-      await p.click('.paper-row[data-key="' + k + '"]'); await p.waitForTimeout(300);
+      // ★2026-10-03 一覧は「押して選ぶ → 印刷用に表示」になった。その1題だけを選んで開く
+      await p.click("#paper-pick-none"); await p.waitForTimeout(150);
+      await p.click('.paper-row[data-key="' + k + '"]'); await p.waitForTimeout(150);
+      await p.click("#paper-pick-go"); await p.waitForTimeout(300);
       const info = await p.evaluate((key) => {
         const g = DAIMON_DATA.find(x => x.key === key);
         const sheets = [...document.querySelectorAll("#paper-print-body .paper-sheet")];

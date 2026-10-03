@@ -37,7 +37,9 @@ console.log("紙の大問:", keys.length, "件");
 
 for (const key of keys) {
   // ★screen メディアのまま操作する（print メディアだと .screen が全部隠れてクリックできない）
-  await page.click('.paper-row[data-key="' + key + '"]'); await page.waitForTimeout(300);
+  await page.click("#paper-pick-none"); await page.waitForTimeout(150);   // 2026-10-03 選んでから開く形に
+  await page.click('.paper-row[data-key="' + key + '"]'); await page.waitForTimeout(150);
+  await page.click("#paper-pick-go"); await page.waitForTimeout(300);
   // ★印刷と同じ条件: PDF を書き出す直前だけ @media print を適用する
   //   （page.pdf は既定で print を適用するが、ここでも明示しておく。
   //   CSS 側の @page で A4 縦・余白14mmを指定ずみ）

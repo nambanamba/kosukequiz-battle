@@ -1681,6 +1681,17 @@
   .paper-row{ display:block; width:100%; text-align:left; background:#fff; border:1px solid var(--paper-line);
     border-radius:12px; padding:12px 14px; margin-bottom:8px; font-size:15px; color:inherit; }
   .paper-row .name{ font-weight:700; }
+  /* ★2026-10-03 選んで印刷。選んだ行は枠を太く・左に✓ */
+  .paper-row{ position:relative; padding-left:46px; }
+  .paper-row .pick{ position:absolute; left:12px; top:14px; width:24px; height:24px; border:2px solid var(--paper-line);
+    border-radius:6px; background:#fff; font-size:16px; line-height:20px; text-align:center; color:#fff; font-weight:700; }
+  .paper-row.on{ border:2.5px solid var(--navy-deep); background:#f6f8fb; }
+  .paper-row.on .pick{ background:var(--navy-deep); border-color:var(--navy-deep); }
+  .paper-pick-tools{ display:flex; gap:8px; margin:8px 0 4px; }
+  .paper-pick-tool{ padding:6px 12px; border:1px solid var(--paper-line); border-radius:999px; background:#fff;
+    color:var(--navy-deep); font-size:13px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .paper-pick-bar{ position:sticky; bottom:0; padding:10px 0 12px; background:linear-gradient(rgba(246,241,231,0), var(--bg, #f6f1e7) 30%); }
+  .paper-pick-bar .start-btn:disabled{ opacity:.5; cursor:default; }
   .paper-row .reason{ display:block; font-size:13px; color:var(--gold); margin-top:4px; }
   .paper-row .gist{ display:block; font-size:13px; color:var(--ink-soft); margin-top:4px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -2207,8 +2218,16 @@
       <div class="counter"></div>
     </div>
     <div class="section-title">紙で出す（大問）</div>
-    <div class="stat-note">アプリの画面と〇✕では解けない・答え合わせできない大問です。ここから選んで印刷してください。</div>
+    <div class="stat-note">アプリの画面と〇✕では解けない・答え合わせできない大問です。印刷したい大問を押して選び、下の「印刷用に表示」を押してください。</div>
+    <!-- ★2026-10-03 選んで印刷（ユーザー「これとこれみたいな感じで選択させたい」）。選んだ状態は端末に残す。記録は変えない -->
+    <div class="paper-pick-tools">
+      <button type="button" class="paper-pick-tool" id="paper-pick-all">全部えらぶ</button>
+      <button type="button" class="paper-pick-tool" id="paper-pick-none">全部はずす</button>
+    </div>
     <div id="paper-list-body"></div>
+    <div class="paper-pick-bar">
+      <button type="button" class="start-btn" id="paper-pick-go" disabled>印刷する大問を選んでください</button>
+    </div>
   </section>
 
   <!-- ★問題の紙・答えの紙のプレビュー（2026-09-28）。答えは問題の紙に1文字も出さない -->
@@ -3155,6 +3174,7 @@ const els = {};
  "subject-social","subject-science",
  "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
  "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
+ "paper-pick-all","paper-pick-none","paper-pick-go",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
  "daimon-reveal-btn","daimon-judge-row","daimon-judge-ng","daimon-judge-ok","daimon-finish","daimon-finish-score","daimon-finish-btn",
  "daimon-lead-btn","daimon-lead-overlay","daimon-lead-overlay-body","daimon-lead-close",
@@ -6708,17 +6728,55 @@ function renderPaperList(){
     }
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "paper-row";
+    row.className = "paper-row" + (paperPicked.has(g.key) ? " on" : "");
     row.dataset.key = g.key;
-    row.innerHTML = '<span class="name"></span><span class="reason"></span><span class="gist"></span>';
+    row.setAttribute("aria-pressed", paperPicked.has(g.key) ? "true" : "false");
+    row.innerHTML = '<span class="pick"></span><span class="name"></span><span class="reason"></span><span class="gist"></span>';
+    row.querySelector(".pick").textContent = paperPicked.has(g.key) ? "✓" : "";
     row.querySelector(".name").textContent = daimonName(g) + "（小問" + g.items.length + "）";
     row.querySelector(".reason").textContent = g.paperReason ? "紙の理由：" + g.paperReason : "";
     row.querySelector(".gist").textContent = (g.lead || g.items[0].q || "").replace(/\s+/g, " ");
-    row.addEventListener("click", ()=> openPaperPrint(g.key));
+    // ★2026-10-03 押すと選ぶ／はずす（前は押すとその1題の紙をすぐ開いていた）
+    row.addEventListener("click", ()=> togglePaperPick(g.key));
     body.appendChild(row);
   });
+  refreshPaperPickBar();
+}
+// ★2026-10-03 選んで印刷（ユーザー「理科の紙の大問ですが、これとこれみたいな感じで選択させたいです」）。
+//   ・既定は全部はずした状態（印刷するのはふつう数題だけ。全部は「全部えらぶ」で1押し）
+//   ・選んだ大問は端末に残す（次に開いたときもそのまま）。消えた大問の key は読むときに捨てる
+//   ・記録（正誤）は一切変えない。紙の大問は出題・記録につながっていない
+const PAPER_PICK_KEY = "kq_battle_paper_pick_v1";
+let paperPicked = new Set();
+function loadPaperPick(){
+  let arr = [];
+  try{ arr = JSON.parse(localStorage.getItem(PAPER_PICK_KEY) || "[]"); }catch(e){ arr = []; }
+  const known = new Set(PAPER_DAIMON.map(g => g.key));
+  paperPicked = new Set((Array.isArray(arr) ? arr : []).filter(k => known.has(k)));
+}
+function savePaperPick(){
+  try{ localStorage.setItem(PAPER_PICK_KEY, JSON.stringify([...paperPicked])); }catch(e){}
+}
+function togglePaperPick(key){
+  if(paperPicked.has(key)) paperPicked.delete(key); else paperPicked.add(key);
+  savePaperPick();
+  const row = els["paper-list-body"].querySelector('.paper-row[data-key="' + key + '"]');
+  if(row){
+    const on = paperPicked.has(key);
+    row.classList.toggle("on", on);
+    row.setAttribute("aria-pressed", on ? "true" : "false");
+    row.querySelector(".pick").textContent = on ? "✓" : "";
+  }
+  refreshPaperPickBar();
+}
+function refreshPaperPickBar(){
+  const n = PAPER_DAIMON.filter(g => paperPicked.has(g.key)).length;
+  const btn = els["paper-pick-go"];
+  btn.disabled = n === 0;
+  btn.textContent = n === 0 ? "印刷する大問を選んでください" : "選んだ " + n + " 題を印刷用に表示";
 }
 function openPaperList(){
+  loadPaperPick();
   renderPaperList();
   showScreen("screen-paper-list");
 }
@@ -6741,15 +6799,27 @@ function paperSheetHead(g, label){
   wrap.textContent = "第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（" + label + "）";
   return wrap;
 }
-function openPaperPrint(key){
-  const g = PAPER_DAIMON.find(x => x.key === key);
-  if(!g) return;
+// ★2026-10-03 選んだ大問をまとめて出す。並びは一覧の順。
+//   問題の紙を全部（1題ずつ改ページ）→ 答えの紙を全部（1題ずつ改ページ）。1題だけのときは前と同じ紙になる
+function openPaperPrint(keys){
+  if(!Array.isArray(keys)) keys = [keys];
+  const groups = PAPER_DAIMON.filter(x => keys.includes(x.key));
+  if(groups.length === 0) return;
   const body = els["paper-print-body"];
   body.innerHTML = "";
-
+  const qSheets = groups.map(g => buildPaperQuestionSheet(g));
+  const aSheets = groups.map(g => buildPaperAnswerSheet(g));
+  const all = qSheets.concat(aSheets);
+  all.forEach((sh, i) => {
+    if(i < all.length - 1) sh.classList.add("paper-page-break");   // ★最後の紙のあとには改ページを入れない（白紙が1枚出る）
+    body.appendChild(sh);
+  });
+  showScreen("screen-paper-print");
+}
+function buildPaperQuestionSheet(g){
   // ---- 問題の紙。★答え（a・aFile）は1文字も、どの図も入れない ----
   const qSheet = document.createElement("div");
-  qSheet.className = "paper-sheet paper-page-break";
+  qSheet.className = "paper-sheet";
   qSheet.appendChild(paperSheetHead(g, "問題"));
   const sub = document.createElement("div");
   sub.className = "paper-sheet-sub";
@@ -6782,8 +6852,9 @@ function openPaperPrint(key){
     card.appendChild(box);
     qSheet.appendChild(card);
   });
-  body.appendChild(qSheet);
-
+  return qSheet;
+}
+function buildPaperAnswerSheet(g){
   // ---- 答えの紙。別ページ（改ページ）。小問ごとの答え・aFile はここだけ ----
   const aSheet = document.createElement("div");
   aSheet.className = "paper-sheet";
@@ -6808,9 +6879,7 @@ function openPaperPrint(key){
     }
     aSheet.appendChild(card);
   });
-  body.appendChild(aSheet);
-
-  showScreen("screen-paper-print");
+  return aSheet;
 }
 function renderDaimonList(){
   const body = els["daimon-list-body"];
@@ -6939,6 +7008,19 @@ els["paper-open-btn"].addEventListener("click", openPaperList);
 els["paper-list-back"].addEventListener("click", ()=>{ showScreen("screen-home"); renderHome(); });
 els["paper-print-back"].addEventListener("click", ()=> showScreen("screen-paper-list"));
 els["paper-print-btn"].addEventListener("click", ()=> window.print());
+els["paper-pick-go"].addEventListener("click", ()=>{
+  const keys = PAPER_DAIMON.filter(g => paperPicked.has(g.key)).map(g => g.key);
+  if(keys.length === 0) return;   // ★0題では開かない（ボタンも押せない）
+  openPaperPrint(keys);
+});
+els["paper-pick-all"].addEventListener("click", ()=>{
+  PAPER_DAIMON.forEach(g => paperPicked.add(g.key));
+  savePaperPick(); renderPaperList();
+});
+els["paper-pick-none"].addEventListener("click", ()=>{
+  paperPicked = new Set();
+  savePaperPick(); renderPaperList();
+});
 els["daimon-reveal-btn"].addEventListener("click", revealDaimon);
 els["daimon-judge-ok"].addEventListener("click", ()=> judgeDaimon(true));
 els["daimon-judge-ng"].addEventListener("click", ()=> judgeDaimon(false));

@@ -35,7 +35,9 @@ const keys = await page.evaluate(() => [...document.querySelectorAll("#paper-lis
 console.log("紙の大問:", keys.length, "件");
 
 for (const key of keys) {
-  await page.click('.paper-row[data-key="' + key + '"]');
+  await page.click("#paper-pick-none"); await page.waitForTimeout(150);   // 2026-10-03 選んでから開く形に
+  await page.click('.paper-row[data-key="' + key + '"]'); await page.waitForTimeout(150);
+  await page.click("#paper-pick-go");
   await page.waitForTimeout(300);
   // 問題の紙だけ（1枚目の .paper-sheet）を撮る
   const el = await page.$("#paper-print-body .paper-sheet");
