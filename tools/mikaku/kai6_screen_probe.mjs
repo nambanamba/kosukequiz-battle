@@ -35,7 +35,7 @@ try {
   await tap("#subject-social"); await page.waitForTimeout(300);
   const us = await unitText();
   const s6 = us.find(t => t.includes("第6回.鎌倉時代"));
-  check("S1 社会の単元に 第6回.鎌倉時代（68問＝一問一答47＋大問の小問21）", s6 && /68問/.test(s6), s6);
+  check("S1 社会の単元に 第6回.鎌倉時代（82問＝一問一答61＋大問の小問21）", s6 && /82問/.test(s6), s6);   // 2026-10-04 その3 で一問一答 47→61
   await shot("S1_social_units");
   await tap("#subject-science"); await page.waitForTimeout(300);
   const ur = await unitText();
