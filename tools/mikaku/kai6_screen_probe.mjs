@@ -41,11 +41,11 @@ try {
   const ur = await unitText();
   const r6 = ur.find(t => t.includes("第6回.ヒトと動物の呼吸・循環"));
   const expect = await page.evaluate(() => QA_DATA.filter(q => q.subj === "理科" && q.u === "第6回.ヒトと動物の呼吸・循環" && q.kind !== "calc" && q.kind !== "daimon").length
-    + DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && !g.paper).reduce((a, g) => a + g.items.length, 0));   // 一問一答49＋大問の小問38＝87（2026-10-04 その4 で 35→49。前: 一問一答35＋大問の小問38＝73（2026-10-03 夜: その2 で一問一答 29→35、その3 で小問をまとめて 59→38）
+    + DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && !g.paper).reduce((a, g) => a + g.items.length, 0));   // 一問一答60＋大問の小問38＝98（2026-10-04 その5 で 49→60。その4: 一問一答49＋小問38＝87（前: 一問一答35＋大問の小問38＝73（2026-10-03 夜: その2 で一問一答 29→35、その3 で小問をまとめて 59→38）
   check("S2 理科の単元に 第6回.ヒトと動物の呼吸・循環（" + expect + "問）", r6 && r6.includes(String(expect)), r6);
   await shot("S2_science_units");
   const m = await page.evaluate(() => ({ visible: DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && !g.paper).map(g => g.key), paper: DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && g.paper).map(g => g.key + ":" + g.items.length) }));
-  check("S3 アプリに出る第6回の大問 7題・紙は3題", m.visible.length === 7 && m.paper.length === 3 && expect === 87, JSON.stringify(m) + " ／ 単元の問数 " + expect);
+  check("S3 アプリに出る第6回の大問 7題・紙は3題", m.visible.length === 7 && m.paper.length === 3 && expect === 98, JSON.stringify(m) + " ／ 単元の問数 " + expect);
   await tap("#daimon-open-btn"); await page.waitForTimeout(500);
   const dl = await page.evaluate(() => document.getElementById("daimon-list-body").innerText);
   check("S3 大問の一覧に第6回が出る", /第6回/.test(dl), dl.slice(0, 80));
