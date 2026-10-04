@@ -5142,7 +5142,7 @@ function orderByTiers(indices, starTie, firstKind){
   indices.forEach(i => tiers[tierOf(i)].push(i));
   const star = i => (starTie && isPriority(QA_DATA[i].id)) ? 0 : 1;
   // ★firstKind（2026-10-05）: 同じ段の中で、年表（社会）・表（理科）の問を先に。段はまたがない
-  const fk = i => (firstKind && isFirstKind(QA_DATA[i])) ? 0 : 1;
+  const fk = i => firstKind ? firstKindRank(QA_DATA[i]) : 0;
   tiers.forEach(t => t.sort((a, b) => (fk(a) - fk(b)) || (lastCorrectOf(a) - lastCorrectOf(b)) || (star(a) - star(b))));
   return tiers[0].concat(tiers[1], tiers[2]);
 }
@@ -5156,21 +5156,24 @@ function orderByTiers(indices, starTie, firstKind){
 //   ・段を絞っているとき（3段の並び）は、同じ段の中で先に。絞っていないときは、選んだ単元の中で先に
 //   ・★最優先（★）はこれまでどおり、さらにその前（親の指定が勝つ）
 //   ・大問は今までどおりの位置（年表・表には入れない）
-//   ・判定はデータの問題文の頭で決める（印の欄は作らない）:
-//       社会 … 「【演習年表」で始まる問
-//       理科 … 「【〜表〜】」で始まる問（【消化の表】【血管の特ちょうの表】【表】【消化の表⑤】など）
-function isFirstKind(d){
-  if(!d || isDaimonEntry(d)) return false;
+//   ・判定はデータの問題文の頭で決める（印の欄は作らない）。並びは 年表 → 表 → 残り:
+//       年表 … 社会の「【演習年表」で始まる問
+//       表   … 「【〜表〜】」で始まる問（社会も理科も。2026-10-05 ユーザー「表も先頭でお願いします」）
+//              例 【縄文と弥生の比較の表】【元寇の表】【鎌倉仏教の表】【消化の表】【血管の特ちょうの表】【表】【消化の表⑤】
+// 0＝年表 1＝表 2＝それ以外（大問・計算は 2）
+function firstKindRank(d){
+  if(!d || isDaimonEntry(d) || d.kind === "calc") return 2;
   const q = d.q || "";
-  if(d.subj === "社会") return /^【演習年表/.test(q);
-  if(d.subj === "理科") return d.kind !== "calc" && /^【[^】]*表[^】]*】/.test(q);
-  return false;
+  if(d.subj === "社会" && /^【演習年表/.test(q)) return 0;
+  if((d.subj === "社会" || d.subj === "理科") && /^【[^】]*表[^】]*】/.test(q)) return 1;
+  return 2;
 }
-// 年表・表を前に、それ以外を後ろに。どちらも渡された並びの順を保つ（安定）
+function isFirstKind(d){ return firstKindRank(d) < 2; }
+// 年表 → 表 → それ以外。同じ組の中は渡された並びの順を保つ（安定）
 function firstKindFirst(pool){
-  const head = [], rest = [];
-  pool.forEach(i => (isFirstKind(QA_DATA[i]) ? head : rest).push(i));
-  return head.length ? head.concat(rest) : pool;
+  const g = [[], [], []];
+  pool.forEach(i => g[firstKindRank(QA_DATA[i])].push(i));
+  return (g[0].length || g[1].length) ? g[0].concat(g[1], g[2]) : pool;
 }
 // ★★ fillFromRest（選んだ単元の残りから補う）は **2026-09-26 に廃止しました**。
 //   依頼書: 司令塔\回答\対戦_合計を決めて足りない分を復習で埋める_依頼_2026-09-26.md

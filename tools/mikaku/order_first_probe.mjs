@@ -12,7 +12,7 @@ import http from "node:http"; import fs from "node:fs"; import path from "node:p
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
-const BASE_COMMIT = "86ba415";
+const BASE_COMMIT = "2d744ab";   // 2026-10-05 夜: 社会の表も先頭に（直す前＝年表だけ先の版）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -34,6 +34,10 @@ const MIG = { "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 };
 // 判定（アプリと同じ式。検査の側でも独立に書く）
 const NEN = q => q.subj === "社会" && /^【演習年表/.test(q.q || "");
 const HYO = q => q.subj === "理科" && q.kind !== "calc" && /^【[^】]*表[^】]*】/.test(q.q || "");
+// ★社会の表（年表ではない【〜表〜】）。並びは 年表 → 表 → 残り（2026-10-05 ユーザー「表も先頭でお願いします」）
+const SHYO = q => q.subj === "社会" && q.kind !== "calc" && !NEN(q) && /^【[^】]*表[^】]*】/.test(q.q || "");
+const RANK = q => NEN(q) ? 0 : (SHYO(q) || HYO(q)) ? 1 : 2;
+const groupedOk = arr => { for (let k = 1; k < arr.length; k++) if (RANK(arr[k]) < RANK(arr[k - 1])) return false; return true; };
 const SETTINGS = (subj, unit, shuffle, tiers, star) => ({ subj, unit, shuffle, tiers, star });
 const seed = (arg) => {
   const [mig, o] = arg;
@@ -78,7 +82,11 @@ async function run(label, src, base) {
     const restSame = (arr, pred, baseArr) => JSON.stringify(arr.filter(x => !pred(x)).map(x => x.id)) === JSON.stringify(baseArr.filter(x => !pred(x)).map(x => x.id));
     const s1 = await orderOf(page, SETTINGS("社会", "第6回.鎌倉時代", false)); res.s1 = s1;
     const h1 = headOk(s1, NEN);
-    check("O1 社会 第6回・出題順どおり: 年表 " + h1.n + "問が先頭（" + s1.slice(0, 3).map(x => x.id).join(" ") + " …）・残りは前と同じ順", h1.ok && (!base || restSame(s1, NEN, base.s1)), s1.slice(0, 18).map(x => x.id).join(" "));
+    const nT = s1.filter(SHYO).length;
+    check("O1 社会 第6回・出題順どおり: 年表 " + h1.n + "問 → 表 " + nT + "問 → 残り（残りは前と同じ順）", h1.ok && nT > 0 && groupedOk(s1) && (!base || restSame(s1, x => RANK(x) < 2, base.s1)),
+      s1.slice(0, 28).map(x => x.id).join(" "));
+    const s7 = await orderOf(page, SETTINGS("社会", "第1回.旧石器時代・縄文時代・弥生時代", false));
+    check("O7 社会 第1回: 年表 " + s7.filter(NEN).length + "問 → 縄文と弥生の比較の表 " + s7.filter(SHYO).length + "問 → 残り", s7.filter(SHYO).length > 0 && groupedOk(s7) && NEN(s7[0]), s7.slice(0, 14).map(x => x.id).join(" "));
     const s2 = await orderOf(page, SETTINGS("社会", "第3回.奈良時代", false, [0]));
     const h2 = headOk(s2, NEN);
     check("O2 社会 第3回・「まだ正解していない」だけ: 年表 " + h2.n + "問が先頭", h2.ok, s2.slice(0, 18).map(x => x.id).join(" "));
