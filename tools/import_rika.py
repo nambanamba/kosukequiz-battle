@@ -86,7 +86,7 @@ FILES = {
 
 # data.js に出力するキーと、その順番（既存の理科の行と同じ並び）
 OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "kai", "kind",
-            "priority", "level", "sol"]
+            "priority", "level", "sol", "hint"]   # ★hint（2026-10-04）: 図・表の問のヒント。文字の配列（1手ずつ出す）
 # 元データのキー名 -> data.js のキー名
 RENAME = {"subject": "subj", "genre": "u", "file": "img"}
 # 取り込まないキー

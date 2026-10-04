@@ -72,7 +72,7 @@ FILES = {
 #   社会の解説は data.js に1件も入っておらず、画面にも出ていなかった。
 #   第1〜3回は元データに sol が0問なので、この変更で増える差分は無い（第4回の7問だけ）。
 #   並びは理科（import_rika.py）と同じく最後に置く。
-OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "priority", "level", "sol"]
+OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "priority", "level", "sol", "hint"]   # ★hint（2026-10-04）: 図・表の問のヒント（文字の配列）
 RENAME = {"subject": "subj", "genre": "u", "file": "img"}
 DROP = {"no", "unit", "folder", "figureNote"}
 

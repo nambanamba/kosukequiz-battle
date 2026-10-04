@@ -189,7 +189,8 @@ def main():
                 for it in its:
                     x = {"id": it["id"], "label": it.get("label", ""), "q": it["q"], "a": it["a"],
                          "form": it.get("form", ""), "file": it.get("file", ""),
-                         "aFile": it.get("aFile", ""), "sol": it.get("sol", ""), "note": it.get("note", "")}
+                         "aFile": it.get("aFile", ""), "sol": it.get("sol", ""), "note": it.get("note", ""),
+                         "hint": it.get("hint") or ""}   # ★hint（2026-10-04）: 図のある小問のヒント（文字の配列）。無ければ書かない
                     # ★大問と同じ図は小問に重ねて出さない
                     if x["file"] and x["file"] == g["file"]:
                         x["file"] = ""

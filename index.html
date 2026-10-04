@@ -1653,6 +1653,14 @@
   .battle-daimon-cur{ border-top:1px dashed var(--paper-line); padding-top:8px; margin-top:12px; }
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
+  .hint-box{ margin:10px 0 6px; }
+  .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
+    background:#fffaf0; color:var(--navy-deep); font-size:14px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .hint-btn:disabled{ opacity:.55; cursor:default; }
+  .hint-list{ margin:10px 0 0; padding:10px 14px 10px 34px; background:#fffaf0; border:1px dashed var(--gold); border-radius:10px;
+    font-size:14.5px; line-height:1.7; color:var(--ink); }
+  .hint-list:empty{ display:none; }
+  .hint-guest-note{ margin:4px 0; font-size:12.5px; text-align:center; color:#8a5a00; }
   .host-seen-badge{ margin:10px 0 4px; padding:6px 12px; border-radius:999px; font-size:13px; text-align:center;
     background:#f2f4f5; color:var(--ink-soft); border:1px solid #d9dee0; }
   .host-seen-badge.seen{ background:#fff4e0; color:#8a5a00; border-color:#e8c27a; font-weight:700; }
@@ -2151,6 +2159,11 @@
     </div>
 
     <div class="solo-retry-note" id="solo-retry-note" style="display:none;">まちがえた問題のやり直し中です。ここで正解しても、記録は苦手のまま残ります。</div>
+    <!-- ★2026-10-04 ヒント（図・表のある問題だけ。答えを見る前に1手ずつ）。ユーザー「ヒントボタンは欲しいです」 -->
+    <div class="hint-box" id="solo-hint-box" style="display:none;">
+      <button type="button" class="hint-btn" id="solo-hint-btn">💡 ヒント</button>
+      <ol class="hint-list" id="solo-hint-list"></ol>
+    </div>
     <button class="reveal-btn" id="solo-reveal-btn">こたえを見る</button>
     <!-- ★2026-09-30（bug0930 ⑤）: 大問の小問だけのスキップ。こたえを見せて✕で記録し、末尾に回さず次の小問へ -->
     <button class="skip-btn" id="solo-skip-btn" style="display:none;">スキップ（こたえを見て✕）</button>
@@ -2324,7 +2337,13 @@
       <div class="cheese-countdown-track" id="answer-countdown-track"></div>
     </div>
     <!-- ★2026-10-03 ゲストにだけ出す。ホスト（子ども）の画面で答えが開いたかどうか -->
+    <!-- ★2026-10-04 ヒント（図・表のある問題だけ。答えを見る前に1手ずつ）。ユーザー「ヒントボタンは欲しいです」 -->
+    <div class="hint-box" id="battle-hint-box" style="display:none;">
+      <button type="button" class="hint-btn" id="battle-hint-btn">💡 ヒント</button>
+      <ol class="hint-list" id="battle-hint-list"></ol>
+    </div>
     <div class="host-seen-badge" id="host-seen-badge" style="display:none;"></div>
+    <div class="hint-guest-note" id="hint-guest-note" style="display:none;"></div>
     <button class="reveal-btn" id="answer-reveal-btn" style="display:none;">答えを見る</button>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng fill-btn" id="judge-ng" data-label="✕ 相手はまちがい"><span class="fill-label">✕ 相手はまちがい</span></button>
@@ -3219,6 +3238,7 @@ const els = {};
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
  "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
  "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn","host-seen-badge",
+ "solo-hint-box","solo-hint-btn","solo-hint-list","battle-hint-box","battle-hint-btn","battle-hint-list","hint-guest-note",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
 
@@ -5897,6 +5917,68 @@ function daimonListImgHtml(file){
   const tall = !!sz && sz[0] / sz[1] < 1;   // isTallImg と同じ決まり（あちらは IMG_SIZES しか見ないので別に書く）
   return '<div class="list-img-wrap"><img class="'+(tall?'tall':'')+'" src="images/'+escapeHtml(file)+'" alt="資料"'+(sz ? ' width="'+sz[0]+'" height="'+sz[1]+'"' : '')+'></div>';
 }
+// ============================================================
+// ★ヒント（2026-10-04 ユーザー「ヒントボタンは欲しいです」）
+//   見たことのない図で止まってしまうときの「最初の3手」を、答えを見る前に1手ずつ出す。
+//   ・出すのは図・表のある問題だけ（一問一答の img／大問の小問で、小問か大問に図があるもの）
+//   ・データの "hint"（文字の配列。1つだけなら文字でもよい）があればそれを、無ければ下の共通の3手を出す
+//   ・記録（stats）・時間・判定には一切さわらない。使ったかどうかは別の入れ物（kq_battle_hint_use_v1）に残すだけ
+//   ・二人では、ヒントはホスト（子ども）の画面だけ。ゲストには「ヒントを何手目まで見たか」だけを知らせる
+const HINT_DEFAULT = [
+  "まず、図の中で名前が書いてあるもの（ことば・記号・数）を探そう。",
+  "その中から、問題文に出てくるものを1つ決めよう。",
+  "知っている表やまとめに書き直して、あいているところを埋めてみよう。"
+];
+const HINT_USE_KEY = "kq_battle_hint_use_v1";
+function hintFigOf(id){
+  const dm = DAIMON_ITEM.get(id);
+  if(dm) return !!(dm.it.file || dm.g.file);
+  const d = getQById(id);
+  return !!(d && d.img);
+}
+function hintStepsOf(id){
+  const dm = DAIMON_ITEM.get(id);
+  const src = dm ? dm.it.hint : (getQById(id) || {}).hint;
+  const arr = Array.isArray(src) ? src : (typeof src === "string" ? [src] : []);
+  const ok = arr.filter(x => typeof x === "string" && x.trim());
+  return ok.length ? ok : HINT_DEFAULT;
+}
+const hintState = { solo: {id: null, n: 0}, battle: {id: null, n: 0} };
+function resetHint(prefix, id, show){
+  hintState[prefix] = { id: id, n: 0 };
+  els[prefix+"-hint-list"].innerHTML = "";
+  const btn = els[prefix+"-hint-btn"];
+  btn.disabled = false;
+  btn.style.display = "";
+  btn.textContent = "💡 ヒント";
+  els[prefix+"-hint-box"].style.display = (show && id && hintFigOf(id)) ? "" : "none";
+}
+function hideHintBtn(prefix){ els[prefix+"-hint-btn"].style.display = "none"; }
+function saveHintUse(id, n){
+  try{
+    const all = JSON.parse(localStorage.getItem(HINT_USE_KEY) || "{}");
+    const cur = all[id] || {};
+    all[id] = { max: Math.max(cur.max || 0, n), times: (cur.times || 0) + (n === 1 ? 1 : 0), last: Date.now() };
+    localStorage.setItem(HINT_USE_KEY, JSON.stringify(all));
+  }catch(e){}
+}
+function nextHint(prefix){
+  const st = hintState[prefix];
+  if(!st.id) return;
+  const steps = hintStepsOf(st.id);
+  if(st.n >= steps.length) return;
+  const li = document.createElement("li");
+  li.textContent = steps[st.n];
+  els[prefix+"-hint-list"].appendChild(li);
+  st.n++;
+  const btn = els[prefix+"-hint-btn"];
+  if(st.n >= steps.length){ btn.disabled = true; btn.textContent = "ヒントはここまで"; }
+  else btn.textContent = "💡 つぎのヒント";
+  saveHintUse(st.id, st.n);
+  if(prefix === "battle" && room && role === "host" && revealAction){
+    try{ revealAction.send({idx: currentIndex, hint: st.n, of: steps.length}); }catch(e){}
+  }
+}
 // ★大問の行（2026-09-27 ユーザー「一覧とホームの数をずらさない」）。大問1つ＝1行。
 //   ★〇✕の数・状態・★・文章を直す は付けない（記録は小問にある。data-qid を付けないので、押しても何も起きない）
 function buildDaimonListRow(d){
@@ -7138,6 +7220,7 @@ function startSoloCard(){
   els["solo-skip-next-btn"].style.display = "none";
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
+  resetHint("solo", id, !reviewMode);   // ★チェックのみ（答えが最初から出ている）では出さない
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
   // ★2026-09-30（bug0930 ③・ユーザー判断）: 直前が大問の小問でも「ひとつ前の判定をやり直す」を出す
   //   （2026-09-28 は出さなかった。小問の押しまちがいが直せなかったため変更）。直せるのは直前の小問1つだけ
@@ -7163,7 +7246,10 @@ function refreshSoloCountRow(){
   els["solo-count-wrong"].textContent = s.wrong||0;
 }
 
+els["solo-hint-btn"].addEventListener("click", ()=> nextHint("solo"));
+els["battle-hint-btn"].addEventListener("click", ()=> nextHint("battle"));
 els["solo-reveal-btn"].addEventListener("click", ()=>{
+  hideHintBtn("solo");   // ★答えを見たら、もうヒントは要らない（出したヒントは残す）
   // ★大問の小問の答えの図は、ここで初めて作る（battle と同じ）
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
   els["solo-a-block"].classList.add("show");
@@ -7223,6 +7309,7 @@ function judgeSolo(correct){
 //   ★記録と quizPos はこの時点で進めて保存する（途中で閉じても、スキップが消えたり二重に付いたりしない）
 els["solo-skip-btn"].addEventListener("click", ()=>{
   if(reviewMode || !isDaimonItemId(quizQueue[quizPos])) return;
+  hideHintBtn("solo");
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
   els["solo-a-block"].classList.add("show");
   els["solo-reveal-btn"].style.display = "none";
@@ -7667,6 +7754,8 @@ function showGuestWaitStatus(data){
   els["battle-view"].style.display = "none";
   els["battle-img-wrap"].style.display = "none";
   els["host-seen-badge"].style.display = "none";   // ★2026-10-03 次の問題の準備中は出さない
+  els["battle-hint-box"].style.display = "none";    // ★2026-10-04 ヒントも同じ
+  els["hint-guest-note"].style.display = "none";
   // ★★ 2026-09-26: 単元名・No.・出典も一緒に引っこめる。
   //   この3つは battle-view の**外**にあるので、battle-view を隠しても残り、
   //   「つぎの問題の準備中…」のあいだ **1つ前の問題のものが見えていた**。
@@ -7860,6 +7949,14 @@ function setupActions(){
   // 相手が「こたえを見る」を押した合図。同じ問題のときだけ受ける
   revealAction.onMessage = (data)=>{
     if(!data || typeof data.idx !== "number") return;
+    // ★2026-10-04 「子どもがヒントを何手目まで見たか」の知らせ。ゲストに1行出すだけ
+    if(typeof data.hint === "number"){
+      if(role === "guest" && data.idx === currentIndex){
+        els["hint-guest-note"].textContent = "子ども（ホスト）がヒントを見ました（" + data.hint + " / " + (data.of || 3) + "）";
+        els["hint-guest-note"].style.display = "block";
+      }
+      return;
+    }
     // ★2026-10-03 「ホストの画面で答えが開いた」の知らせ。ゲストのふだを変えるだけ（開く・開かないの数えには使わない）
     if(data.opened){
       if(role === "guest" && data.idx === currentIndex){
@@ -8392,6 +8489,9 @@ function showQuestion(idx, hostPrivate){
   hostOpenedIdx = -1;
   guestShownAt = Date.now();
   updateHostSeenBadge();
+  // ★2026-10-04 ヒントはホストの画面だけ（ひとりで対戦画面を見ているとき＝相手なし、も出す）
+  resetHint("battle", questionIds[idx], role !== "guest");
+  els["hint-guest-note"].style.display = "none";
 
   updateScoreUI();
 
@@ -8751,6 +8851,7 @@ function revealDaimonAnswerFig(prefix, ids, idx){
   return dmR;
 }
 function revealAnswer(){
+  hideHintBtn("battle");   // ★答えが開いたら、もうヒントは出さない（出したヒントは残す）
   // ★2026-10-03 ホストの画面で答えが開いたことを、ゲストに知らせる（押して開いたときも、時間切れで開いたときも）
   if(role === "host" && room && revealAction){ try{ revealAction.send({idx: currentIndex, opened: true}); }catch(e){} }
   // ★大問の小問の答えの図は、ここで初めて作る（押す前は画面に無い）

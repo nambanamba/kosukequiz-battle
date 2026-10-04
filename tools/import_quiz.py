@@ -45,7 +45,7 @@ HEADER = "const QA_DATA = [\r\n"
 FOOTER = "];\r\n"
 
 # data.js に出力するキーと、その順番
-OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "priority", "level", "sol"]
+OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "priority", "level", "sol", "hint"]   # ★hint（2026-10-04）: 図・表の問のヒント（文字の配列）
 # JSONのキー名 -> data.js のキー名
 RENAME = {"genre": "u", "subject": "subj", "file": "img"}
 # 取り込まないキー
