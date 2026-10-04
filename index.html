@@ -1661,6 +1661,13 @@
     font-size:14.5px; line-height:1.7; color:var(--ink); }
   .hint-list:empty{ display:none; }
   .hint-guest-note{ margin:4px 0; font-size:12.5px; text-align:center; color:#8a5a00; }
+  .speed-row{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0 10px; }
+  .speed-row .speed-label{ font-size:12px; color:var(--ink-soft); margin-right:2px; }
+  .speed-row .speed-choice{ padding:4px 8px; font-size:12px; white-space:nowrap; flex:0 0 auto; }
+  .host-judge-note{ margin-top:14px; font-size:12.5px; text-align:center; color:var(--ink-soft); }
+  /* ★2026-10-05 ホスト（子ども）がゲスト（親）を判定する場面: ✕を大きく、〇は小さく目立たなく（押さなくても時間が来れば〇） */
+  .judge-row.host-judge .judge-btn.ng{ flex:3; }
+  .judge-row.host-judge .judge-btn.ok{ flex:1; opacity:.55; font-size:12px; padding:17px 2px; }
   .host-seen-badge{ margin:10px 0 4px; padding:6px 12px; border-radius:999px; font-size:13px; text-align:center;
     background:#f2f4f5; color:var(--ink-soft); border:1px solid #d9dee0; }
   .host-seen-badge.seen{ background:#fff4e0; color:#8a5a00; border-color:#e8c27a; font-weight:700; }
@@ -1869,7 +1876,17 @@
            ★各「time-setting-row」のすぐ次に、その「自由入力」の欄を置くこと（nextElementSibling で探している） -->
       <button type="button" class="setup-filter-open" id="battle-settings-open" aria-expanded="false" aria-controls="battle-settings-panel">二人対戦の時間・出題順 ▾</button>
       <div id="battle-settings-panel" hidden>
-      <div class="section-title">二人対戦用: 考える時間（時間が来ると自動でスキップします／公平モードでは使いません）</div>
+      <!-- ★2026-10-05 考える時間の速さ（5段階）。一人・二人とも効く。考える時間は問題ごとに自動で決まり、その倍率 -->
+      <div class="section-title">考える時間の速さ（一人・二人とも。問題ごとの時間にかける倍率）</div>
+      <div class="speed-row" data-speed-row="home">
+        <span class="speed-label">考える時間</span>
+        <div class="toggle speed-choice" data-speed="0">ゆっくり</div>
+        <div class="toggle speed-choice" data-speed="1">少しゆっくり</div>
+        <div class="toggle speed-choice" data-speed="2">ふつう</div>
+        <div class="toggle speed-choice" data-speed="3">少し早く</div>
+        <div class="toggle speed-choice" data-speed="4">早く</div>
+      </div>
+      <div class="section-title">二人対戦用: 考える時間の基本（答えが1つ・図なし・短い問の秒数。時間が来ると自動でスキップします／公平モードでは使いません）</div>
       <div class="toggle-row time-setting-row" data-time-key="headstart">
         <div class="toggle time-choice" data-value="5">5秒</div>
         <div class="toggle time-choice" data-value="8">8秒</div>
@@ -2164,10 +2181,16 @@
       <button type="button" class="hint-btn" id="solo-hint-btn">💡 ヒント</button>
       <ol class="hint-list" id="solo-hint-list"></ol>
     </div>
+    <!-- ★2026-10-05 一人でも考える時間をはかる（一問一答だけ。時間が来たら答えを見せずに、あとでもう一度） -->
+    <div class="think-timer" id="solo-think-timer" style="display:none;">
+      <div class="think-timer-bar"><div class="think-timer-fill" id="solo-think-timer-fill"></div></div>
+    </div>
+    <div class="skip-encourage" id="solo-timeup-note" style="display:none;"></div>
     <button class="reveal-btn" id="solo-reveal-btn">こたえを見る</button>
     <!-- ★2026-09-30（bug0930 ⑤）: 大問の小問だけのスキップ。こたえを見せて✕で記録し、末尾に回さず次の小問へ -->
     <button class="skip-btn" id="solo-skip-btn" style="display:none;">スキップ（こたえを見て✕）</button>
     <button class="reveal-btn" id="solo-skip-next-btn" style="display:none;">つぎへ</button>
+    <button class="reveal-btn" id="solo-timeup-next-btn" style="display:none;">つぎへ</button>
     <div class="judge-row" id="solo-judge-row" style="display:none;">
       <button class="judge-btn ng" id="solo-judge-ng">✕ まちがえた</button>
       <button class="judge-btn ok" id="solo-judge-ok">〇 わかった</button>
@@ -2180,6 +2203,7 @@
     <div class="result-hero">
       <div class="big" id="solo-result-score">0 / 0</div>
       <div class="sub">正解数 / 出題数</div>
+      <div class="sub" id="solo-result-skipinfo"></div>
     </div>
     <div class="section-title" id="solo-miss-title" style="display:none;">まちがえた問題</div>
     <div class="miss-list" id="solo-miss-list"></div>
@@ -2328,6 +2352,15 @@
     <div class="think-timer" id="think-timer" style="display:none;">
       <div class="think-timer-bar"><div class="think-timer-fill" id="think-timer-fill"></div></div>
     </div>
+    <!-- ★2026-10-05 対戦中も速さを変えられる（ゲストからも。変えた次の問題から） -->
+      <div class="speed-row" data-speed-row="battle">
+        <span class="speed-label">考える時間</span>
+        <div class="toggle speed-choice" data-speed="0">ゆっくり</div>
+        <div class="toggle speed-choice" data-speed="1">少しゆっくり</div>
+        <div class="toggle speed-choice" data-speed="2">ふつう</div>
+        <div class="toggle speed-choice" data-speed="3">少し早く</div>
+        <div class="toggle speed-choice" data-speed="4">早く</div>
+      </div>
     <button class="buzz-btn" id="advance-btn" style="display:none;">わかった！</button>
     <button class="skip-btn" id="skip-btn" style="display:none;">スキップ</button>
     <div class="skip-encourage" id="skip-encourage" style="display:none;">あとでもう一度出てくるよ。がんばって！</div>
@@ -2345,6 +2378,7 @@
     <div class="host-seen-badge" id="host-seen-badge" style="display:none;"></div>
     <div class="hint-guest-note" id="hint-guest-note" style="display:none;"></div>
     <button class="reveal-btn" id="answer-reveal-btn" style="display:none;">答えを見る</button>
+    <div class="host-judge-note" id="host-judge-note" style="display:none;">何もしなければ〇になります。まちがいのときだけ ✕ を押してね</div>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng fill-btn" id="judge-ng" data-label="✕ 相手はまちがい"><span class="fill-label">✕ 相手はまちがい</span></button>
       <button class="judge-btn ok fill-btn" id="judge-ok" data-label="〇 相手はせいかい"><span class="fill-label">〇 相手はせいかい</span></button>
@@ -2366,6 +2400,7 @@
     <div class="result-hero">
       <div class="big" id="result-score">あなた：0問正解</div>
       <div class="sub" id="result-sub">相手：0問正解</div>
+      <div class="sub" id="result-skipinfo"></div>
     </div>
     <div class="result-actions">
       <button class="btn-secondary fill-btn" id="result-retry-battle-btn" data-label="まちがえた問題だけもう一勝負" style="display:none;"><span class="fill-label">まちがえた問題だけもう一勝負</span></button>
@@ -3238,6 +3273,7 @@ const els = {};
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
  "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
  "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn","host-seen-badge",
+ "solo-think-timer","solo-think-timer-fill","solo-timeup-note","solo-timeup-next-btn","solo-result-skipinfo","result-skipinfo","host-judge-note",
  "solo-hint-box","solo-hint-btn","solo-hint-list","battle-hint-box","battle-hint-btn","battle-hint-list","hint-guest-note",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -4644,6 +4680,10 @@ function normPrio(v){ return (v === "普通" || v === "低") ? v : "all"; }
 let currentPriority = "all"; // all | 普通 | 低
 let currentLevel = "all"; // all | 基礎 | 標準 | 発展
 let headStartSec = 3; // host-only think time before a question auto-advances
+// ★2026-10-05 考える時間の速さ（5段階）。0 ゆっくり ×1.6 … 2 ふつう ×1.0 … 4 早く ×0.6。一人・二人とも効く
+const SPEED_FACTORS = [1.6, 1.3, 1.0, 0.8, 0.6];
+const SPEED_NAMES = ["ゆっくり", "少しゆっくり", "ふつう", "少し早く", "早く"];
+let speedLevel = 2;
 let answerTimeSec = 8; // both sides say their answer out loud before it auto-reveals
 let judgeTimeSec = 10; // time to tap 〇/✕ before it auto-defaults to 正解
 let nextTimeSec = 8; // time before 次の問題へ fires itself
@@ -4757,6 +4797,7 @@ function loadSettings(){
     if(typeof s.reviewMode === "boolean") reviewMode = s.reviewMode;
     if(typeof s.fairMode === "boolean") fairMode = s.fairMode;
     if(typeof s.headStartSec === "number") headStartSec = s.headStartSec;
+    if(typeof s.speedLevel === "number" && s.speedLevel >= 0 && s.speedLevel <= 4) speedLevel = s.speedLevel;
     if(typeof s.answerTimeSec === "number") answerTimeSec = s.answerTimeSec;
     if(typeof s.judgeTimeSec === "number") judgeTimeSec = s.judgeTimeSec;
     if(typeof s.nextTimeSec === "number") nextTimeSec = s.nextTimeSec;
@@ -4830,6 +4871,7 @@ function saveSettings(){
       reviewMode: reviewMode,
       fairMode: fairMode,
       headStartSec: headStartSec,
+      speedLevel: speedLevel,
       answerTimeSec: answerTimeSec,
       judgeTimeSec: judgeTimeSec,
       nextTimeSec: nextTimeSec,
@@ -4883,6 +4925,7 @@ function applySettingsUI(){
   });
   renderReviewUnitChoices();
   TIME_SETTINGS.forEach(applyTimeSettingUI);
+  refreshSpeedRows();   // ★2026-10-05 速さの5段階
 }
 
 // ---- subject switch (社会/理科): re-derives the unit list, unit selection
@@ -7196,6 +7239,44 @@ let quizResults = []; // { id, correct（実際の正誤）, recorded（記録�
 //      永続的な正誤記録は「まちがえた」のままにする（元々まちがえた問題なので、
 //      ここで正解しても正解ずみにはしない）。二人対戦の inMissRetryRound と同じ扱い ----
 let inSoloRetryRound = false;
+// ★2026-10-05 一人の考える時間・一問一答のスキップ
+let soloThinkTimer = null, soloThinkInterval = null;
+let soloSkippedIds = new Set();   // スキップして答えを見た一問一答（あとでもう一度出る。そのときは記録しない＝✕のまま）
+let soloTimeupCount = 0;
+function stopSoloThink(){
+  clearTimeout(soloThinkTimer); clearInterval(soloThinkInterval);
+  soloThinkTimer = null; soloThinkInterval = null;
+  els["solo-think-timer"].style.display = "none";
+}
+function startSoloThink(id){
+  stopSoloThink();
+  // ★一問一答だけ（大問の小問は一人ではこれまでどおり時間をはからない）・チェックのみでは出さない
+  if(reviewMode || isDaimonItemId(id)) return;
+  const sec = thinkSecFor(id), ms = sec * 1000, t0 = Date.now();
+  els["solo-think-timer"].style.display = "block";
+  els["solo-think-timer"].dataset.sec = String(sec);
+  els["solo-think-timer-fill"].style.width = "100%";
+  soloThinkInterval = setInterval(()=>{
+    const r = Math.max(0, ms - (Date.now() - t0));
+    els["solo-think-timer-fill"].style.width = (r / ms * 100) + "%";
+  }, 100);
+  soloThinkTimer = setTimeout(soloTimeUp, ms);
+}
+// ★時間切れ: 答えを見せない・記録しない・あとでもう一度（対戦の一問一答の時間切れと同じ）
+function soloTimeUp(){
+  stopSoloThink();
+  const id = quizQueue[quizPos];
+  quizQueue.splice(quizPos, 1);
+  quizQueue.push(id);
+  soloTimeupCount++;
+  saveSoloSession();
+  hideHintBtn("solo");
+  els["solo-reveal-btn"].style.display = "none";
+  els["solo-skip-btn"].style.display = "none";
+  els["solo-timeup-note"].textContent = "時間切れです。この問題は、あとでもう一度出てきます。";
+  els["solo-timeup-note"].style.display = "block";
+  els["solo-timeup-next-btn"].style.display = "block";
+}
 
 els["solo-start-btn"].addEventListener("click", ()=>{
   // ★ひとりで解くときも、二人と同じように大問が小問に開いて混ざる（2026-09-28）。
@@ -7206,6 +7287,8 @@ els["solo-start-btn"].addEventListener("click", ()=>{
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = false;
+  soloSkippedIds = new Set();
+  soloTimeupCount = 0;
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -7254,6 +7337,13 @@ function startSoloCard(){
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   resetHint("solo", id, !reviewMode);   // ★チェックのみ（答えが最初から出ている）では出さない
+  els["solo-timeup-note"].style.display = "none";
+  els["solo-timeup-next-btn"].style.display = "none";
+  // ★2026-10-05 一問一答にもスキップ（答えを見て✕）。スキップのあとで出し直した問は出さない（もう答えを見ている）
+  if(!reviewMode && !isDaimonItemId(id) && !soloSkippedIds.has(id)) els["solo-skip-btn"].style.display = "block";
+  els["solo-retry-note"].textContent = soloSkippedIds.has(id) ? "スキップした問題のやり直しです（記録は✕のまま。答えを思い出す練習）" : "まちがえた問題のやり直し中です。ここで正解しても、記録は苦手のまま残ります。";
+  if(soloSkippedIds.has(id) && !reviewMode) els["solo-retry-note"].style.display = "block";
+  startSoloThink(id);
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
   // ★2026-09-30（bug0930 ③・ユーザー判断）: 直前が大問の小問でも「ひとつ前の判定をやり直す」を出す
   //   （2026-09-28 は出さなかった。小問の押しまちがいが直せなかったため変更）。直せるのは直前の小問1つだけ
@@ -7282,6 +7372,7 @@ function refreshSoloCountRow(){
 els["solo-hint-btn"].addEventListener("click", ()=> nextHint("solo"));
 els["battle-hint-btn"].addEventListener("click", ()=> nextHint("battle"));
 els["solo-reveal-btn"].addEventListener("click", ()=>{
+  stopSoloThink();
   hideHintBtn("solo");   // ★答えを見たら、もうヒントは要らない（出したヒントは残す）
   // ★大問の小問の答えの図は、ここで初めて作る（battle と同じ）
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
@@ -7318,6 +7409,12 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
 // 判定を記録して quizPos を1つ進める（画面は動かさない）。judgeSolo とスキップで共通
 function recordSoloAnswer(correct){
   const qid = quizQueue[quizPos];
+  // ★2026-10-05 スキップして答えを見た問の出し直しは、記録しない（スキップのときに✕で記録ずみ）。並びと結果の数は1つ進める
+  if(soloSkippedIds.has(qid) && quizResults.some(r => r.id === qid && r.skip)){
+    quizResults.push({id: qid, correct, recorded: undefined, before: null, norecord: true});
+    quizPos++;
+    return;
+  }
   // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
   // 今回のミスリストから外すかどうかは、これまで通り実際の正誤で判定する
   const recorded = inSoloRetryRound ? false : correct;
@@ -7341,7 +7438,24 @@ function judgeSolo(correct){
 //   末尾に回さずに次の小問へ（「つぎへ」で進む）。二人の対戦のスキップ（performDaimonSkip）と同じ決まり。
 //   ★記録と quizPos はこの時点で進めて保存する（途中で閉じても、スキップが消えたり二重に付いたりしない）
 els["solo-skip-btn"].addEventListener("click", ()=>{
-  if(reviewMode || !isDaimonItemId(quizQueue[quizPos])) return;
+  if(reviewMode) return;
+  stopSoloThink();
+  // ★2026-10-05 一問一答のスキップ: 答えを見せて✕で記録し、あとでもう一度出す（ユーザー「答えを見なきゃ何度やっても同じ」）
+  if(!isDaimonItemId(quizQueue[quizPos])){
+    const id = quizQueue[quizPos];
+    hideHintBtn("solo");
+    els["solo-a-block"].classList.add("show");
+    els["solo-reveal-btn"].style.display = "none";
+    els["solo-skip-btn"].style.display = "none";
+    els["solo-judge-row"].style.display = "none";
+    recordSoloAnswer(false);
+    quizResults[quizResults.length - 1].skip = true;
+    soloSkippedIds.add(id);
+    quizQueue.push(id);   // ★うしろにもう一度
+    saveSoloSession();
+    els["solo-skip-next-btn"].style.display = "block";
+    return;
+  }
   hideHintBtn("solo");
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
   els["solo-a-block"].classList.add("show");
@@ -7357,6 +7471,11 @@ els["solo-skip-next-btn"].addEventListener("click", ()=>{
   els["solo-skip-next-btn"].style.display = "none";
   advanceSolo();
 });
+els["solo-timeup-next-btn"].addEventListener("click", ()=>{
+  els["solo-timeup-next-btn"].style.display = "none";
+  els["solo-timeup-note"].style.display = "none";
+  advanceSolo();   // ★quizPos はそのまま（時間切れの問はうしろへ回した）
+});
 els["solo-judge-ok"].addEventListener("click", ()=>judgeSolo(true));
 els["solo-judge-ng"].addEventListener("click", ()=>judgeSolo(false));
 
@@ -7368,7 +7487,15 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     if(quizResults.length === 0) return;
     const last = quizResults.pop();
     const qid = last.id;
-    if(isDaimonItemId(qid) && last.before !== undefined){
+    if(last.norecord){
+      // ★2026-10-05 スキップのあとの出し直し（記録していない）は、並びを戻すだけ
+    }else if(last.skip){
+      // ★2026-10-05 一問一答のスキップを取り消す: ✕を戻し、うしろに足した同じ問を1つ取りのぞく
+      adjustStat(qid, "wrong", -1);
+      const at = quizQueue.lastIndexOf(qid);
+      if(at > quizPos - 1) quizQueue.splice(at, 1);
+      soloSkippedIds.delete(qid);
+    }else if(isDaimonItemId(qid) && last.before !== undefined){
       // ★大問の小問（2026-09-30）: 記録する前の stats にまるごと戻す（box・正解日も元どおり）
       if(last.before === null) delete stats[qid];
       else stats[qid] = JSON.parse(last.before);
@@ -7404,6 +7531,7 @@ els["solo-review-jump-btn"].addEventListener("click", ()=>{
 });
 
 els["solo-back"].addEventListener("click", ()=>{
+  stopSoloThink();
   if(quizResults.length === 0 || confirm("とちゅうでやめますか？ここまでの記録は保存されます。")){
     renderHome();
     showScreen("screen-home");
@@ -7411,11 +7539,15 @@ els["solo-back"].addEventListener("click", ()=>{
 });
 
 function finishSoloQuiz(){
+  stopSoloThink();
   clearSoloSession();
-  const correctCount = quizResults.filter(r=>r.correct).length;
-  els["solo-result-score"].textContent = correctCount+" / "+quizResults.length;
+  // ★2026-10-05 スキップのあとの出し直し（norecord）は数に入れない（1問は1回）
+  const counted = quizResults.filter(r => !r.norecord);
+  const correctCount = counted.filter(r=>r.correct).length;
+  els["solo-result-score"].textContent = correctCount+" / "+counted.length;
+  els["solo-result-skipinfo"].textContent = (reviewMode ? "" : "スキップ " + quizResults.filter(r => r.skip).length + "問・時間切れ " + soloTimeupCount + "問");
 
-  const misses = quizResults.filter(r=>!r.correct);
+  const misses = counted.filter(r=>!r.correct);
   saveLastMiss(misses.map(m=>m.id));
   els["solo-miss-list"].innerHTML = "";
   if(misses.length === 0){
@@ -7513,6 +7645,8 @@ let gameStarted = false; // host-only: distinguishes the first peer join (start 
 // ★対戦の始まりだけは、二人とも「開始」を押してから（2026-09-19 ユーザー依頼）。
 //   ホスト・ゲストの両方で同じ2つを持ち、両方そろったらホストが startBattleNow() を呼ぶ
 let iAmReadyToStart = false;
+let speedAction = null;
+let battleTimeupCount = 0;   // ★2026-10-05 このラウンドの時間切れの数（ホスト）
 // ★2026-10-03 ゲストが「つながったまま次の対戦を待っている」とき true（結果画面のあと screen-join に出す待ち画面）。
 //   ユーザー「社会が終わってすぐ理科をいつもやってる…ゲスト側が元の画面に戻るを押すと切れちゃう。連続でできれば何でもいい」
 //   原因: ホストは「はじめの画面にもどる」で部屋を出て、同じ番号で部屋を作り直す。ゲストの部屋はまだ生きているので
@@ -7565,6 +7699,49 @@ function buildCheeseTrack(){
     track.appendChild(piece);
   }
 }
+// ============================================================
+// ★考える時間を問題ごとに自動で決める（2026-10-05 ユーザー承認）
+// ============================================================
+//   基本 b ＝ 設定の「考える時間の基本」（headStartSec。ふだんは10秒）
+//   一問一答: b ×（1 ＋ 0.5×(答えの数−1) ＋ 0.5×図・表あり ＋ 0.1×(60字をこえた分を20字ごと)）、上限 b×3
+//     → b＝10 なら「答え1つにつき＋5秒・図表＋5秒・60字をこえたら20字ごとに＋1秒・上限30秒」
+//     答えの数 … 答えの中の丸数字（①〜⑳）の数。無ければ「…」の数（「Ⅰ…文永　Ⅱ…弘安」の形）。どちらも無ければ1
+//   大問の小問: これまでどおり b×2（式は使わない。大問は図があり問いも長いので、式にすると上限に張りつくため）
+//   最後に速さの倍率（SPEED_FACTORS）をかける。小数は四捨五入、最低1秒
+function answerCountOf(a){
+  const s = String(a || "");
+  const circ = new Set((s.match(/[①-⑳]/g) || []));
+  if(circ.size > 0) return circ.size;
+  const dots = (s.match(/…/g) || []).length;
+  return Math.max(1, dots);
+}
+function thinkSecFor(id){
+  const b = headStartSec;
+  let sec;
+  if(isDaimonItemId(id)){
+    sec = b * DAIMON_TIME_FACTOR;
+  }else{
+    const d = getQById(id) || {};
+    const n = answerCountOf(d.a);
+    const len = String(d.q || "").length;
+    const longSteps = len > 60 ? Math.ceil((len - 60) / 20) : 0;
+    const mult = 1 + 0.5 * (n - 1) + (d.img ? 0.5 : 0) + 0.1 * longSteps;
+    sec = b * Math.min(3, mult);
+  }
+  return Math.max(1, Math.round(sec * SPEED_FACTORS[speedLevel]));
+}
+function setSpeedLevel(lv, fromPeer){
+  if(!(lv >= 0 && lv <= 4)) return;
+  speedLevel = lv;
+  refreshSpeedRows();
+  saveSettings();
+  // ★二人のときは相手にも知らせる（考える時間を使うのはホストなので、ゲストが変えたらホストに効く）。次の問題から
+  if(!fromPeer && room && speedAction){ try{ speedAction.send({level: lv}); }catch(e){} }
+}
+function refreshSpeedRows(){
+  document.querySelectorAll(".speed-row .speed-choice").forEach(el => el.classList.toggle("on", +el.dataset.speed === speedLevel));
+}
+document.querySelectorAll(".speed-row .speed-choice").forEach(el => el.addEventListener("click", () => setSpeedLevel(+el.dataset.speed)));
 // ★大問の小問は、考える時間・答える時間を2倍（2026-09-27 ユーザー「時間を延ばすのは伸ばしたらいい」）。
 //   設定の行は増やさない。倍率はここ1か所
 const DAIMON_TIME_FACTOR = 2;
@@ -7682,13 +7859,15 @@ function guestPeek(){
 let hostOpenedIdx = -1;
 let guestShownAt = 0;
 let hostOpenedSec = 0;
+let hostOpenedByJudge = false;
 function updateHostSeenBadge(){
   const el = els["host-seen-badge"];
   if(role !== "guest" || !room){ el.style.display = "none"; return; }
   const seen = hostOpenedIdx === currentIndex;
   el.style.display = "block";
   el.classList.toggle("seen", seen);
-  el.textContent = seen ? "子ども（ホスト）が答えを見ました（" + hostOpenedSec + "秒後）"
+  el.textContent = seen ? (hostOpenedByJudge ? "あなたの判定で、子ども（ホスト）の画面に答えを出しました（" + hostOpenedSec + "秒後）"
+                                             : "子ども（ホスト）が答えを見ました（" + hostOpenedSec + "秒後）")
                         : "子ども（ホスト）：まだ答えを見ていません";
 }
 function maybeReveal(){
@@ -7969,6 +8148,8 @@ function setupActions(){
   unitsAction = room.makeAction("units");
   revealAction = room.makeAction("reveal");
   readyAction = room.makeAction("ready");
+  speedAction = room.makeAction("speed");   // ★2026-10-05 速さの変更（どちらからでも）
+  speedAction.onMessage = (data)=>{ if(data && typeof data.level === "number") setSpeedLevel(data.level, true); };
 
   // ★対戦の始まりだけは、二人とも「開始」を押すまで始めない
   //   （2026-09-19 ユーザー原文「始めるときだけは、双方に開始というボタンを用意して、
@@ -7995,6 +8176,7 @@ function setupActions(){
       if(role === "guest" && data.idx === currentIndex){
         hostOpenedIdx = data.idx;
         hostOpenedSec = Math.max(0, Math.round((Date.now() - guestShownAt) / 1000));
+        hostOpenedByJudge = !!data.byJudge;
         updateHostSeenBadge();
       }
       return;
@@ -8147,6 +8329,13 @@ function setupActions(){
       if(role === "host"){ hostRecordedIdx = currentIndex; saveBattleSession(); }
     }
     updateMyResultUI(forcedWrong);
+    // ★2026-10-05 ユーザー「親が正解やバツを押したら開いてください。子供が答えを見るを押さなくても進めたいです」。
+    //   ゲスト（親）が判定したら、ホスト（子ども）の画面でもまだ開いていなければ答えを開く（判定ボタンも出る）。
+    //   子どもの「答えを見る」は残る（押せば今までどおり先に開く）。記録は上で付けたとおり（変えない）
+    if(role === "host" && !els["battle-a-block"].classList.contains("show")){
+      revealByJudge = true;
+      revealAnswer();
+    }
     maybeFinishQuestion();
   };
 
@@ -8506,6 +8695,9 @@ function showQuestion(idx, hostPrivate){
   els["guest-wait-status"].classList.remove("show","win","lose","info");
   els["status-banner"].classList.remove("show","win","lose","info");
   els["judge-row"].style.display = "none";
+  // ★2026-10-05 ホスト（子ども）がゲスト（親）を判定するときは、✕を大きく〇を小さく。何もしなければ〇（判定の時間切れ＝これまでどおり〇）
+  els["judge-row"].classList.toggle("host-judge", role === "host" && !!room);
+  els["host-judge-note"].style.display = "none";
   els["my-result"].style.display = "none";
   els["my-result"].classList.remove("show","win","lose","info");
   els["next-btn"].classList.remove("show");
@@ -8553,7 +8745,7 @@ function hostAdvanceAndArm(idx){
   // ★時間切れは「スキップを押した」とは別あつかいにする（2026-09-19 ユーザー原文
   //   「ぼーっとしてたりほかのことをしていて、時間切れてスキップになってることがあるのです」）。
   //   以前はここで performSkip を呼んでいたので、押していないのに答えが見えて誤答が付いていた。
-  const thinkSec = headStartSec * timeFactorAt(idx);   // ★大問の小問は2倍
+  const thinkSec = thinkSecFor(questionIds[idx]);   // ★2026-10-05 問題ごとの式×速さ（大問の小問はこれまでどおり2倍）
   pendingSendTimer = setTimeout(performTimeUp, thinkSec*1000);
   startCountdown(thinkSec);
   if(room){
@@ -8711,6 +8903,7 @@ function performTimeUp(){
   //   出し直す位置: 同じ大問の残りの小問のあと（大問はばらけない）。残りが無い（大問の最後の手）ときは
   //   一問一答と同じくラウンドの末尾（すぐ同じ小問をもう一度出しても意味がないため）
   const isItem = isDaimonItemId(questionIds[currentIndex]);
+  battleTimeupCount++;
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
@@ -8883,10 +9076,12 @@ function revealDaimonAnswerFig(prefix, ids, idx){
   }
   return dmR;
 }
+let revealByJudge = false;   // ★2026-10-05 親の判定で開いたか（ゲストのふだの言い方を変える）
 function revealAnswer(){
   hideHintBtn("battle");   // ★答えが開いたら、もうヒントは出さない（出したヒントは残す）
   // ★2026-10-03 ホストの画面で答えが開いたことを、ゲストに知らせる（押して開いたときも、時間切れで開いたときも）
-  if(role === "host" && room && revealAction){ try{ revealAction.send({idx: currentIndex, opened: true}); }catch(e){} }
+  if(role === "host" && room && revealAction){ try{ revealAction.send({idx: currentIndex, opened: true, byJudge: revealByJudge}); }catch(e){} }
+  revealByJudge = false;
   // ★大問の小問の答えの図は、ここで初めて作る（押す前は画面に無い）
   revealDaimonAnswerFig("battle", questionIds, currentIndex);
   stopAnswerCountdown();
@@ -8898,6 +9093,7 @@ function revealAnswer(){
     // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
     if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
     els["judge-row"].style.display = "flex";
+    if(role === "host" && room) els["host-judge-note"].style.display = "block";
     scrollBattleDaimonTo("judge-row");   // ★大問の小問だけ。判定ボタンが画面の外に出ないように
     startJudgeCountdown();
   }, JUDGE_SHOW_DELAY_MS);
@@ -8916,6 +9112,7 @@ function judgeOpponent(correct){
     hideJudgeFixStatus();
   }
   els["judge-row"].style.display = "none";
+  els["host-judge-note"].style.display = "none";
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "相手を「"+(correct ? "せいかい" : "まちがい")+"」と判定しました。";
@@ -9178,6 +9375,8 @@ function endGame(){
   els["result-home-btn"].textContent = (role === "guest" && room) ? "つぎの対戦を待つ（つながったまま）" : "はじめの画面にもどる";
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
+  // ★2026-10-05 スキップ・時間切れの数（ホストだけが知っている数なので、ホストの画面に出す）
+  els["result-skipinfo"].textContent = role === "host" ? ("スキップ " + hostSkippedIds.size + "問・時間切れ " + battleTimeupCount + "問") : "";
   if(!missesUnknown) saveLastMiss(myMissesThisRound);
   stopResultRetryCountdown();
   hideGuestRetryCountdown();
@@ -9205,6 +9404,7 @@ function startMissRetryRound(){
   ids = expandMissIdsKeepingDaimon(ids);
   questionIds = ids;
   hostSkippedIds = new Set();
+  battleTimeupCount = 0;
   inMissRetryRound = true;
   scores = {host:0, guest:0};
   myMissesThisRound = [];
@@ -9280,6 +9480,7 @@ function maybeStartBattleTogether(){
   startBattleNow();
 }
 function startBattleNow(){
+  battleTimeupCount = 0;
   scores = {host:0, guest:0};
   myMissesThisRound = [];
   missesUnknown = false;
