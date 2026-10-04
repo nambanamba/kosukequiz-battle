@@ -5137,12 +5137,40 @@ function tierOfStat(s){
 // starTie … true のとき、段も「最後に正解した日」もまったく同じ問どうしは★最優先を上にする（2026-09-22）。
 //   ★並びの鍵（段・正解日）は1つも変えない。同点のときの決め手を足すだけ。
 //   ★復習ミックス・fillFromRest は starTie なしで呼ぶ（そちらの並びは変えない）
-function orderByTiers(indices, starTie){
+function orderByTiers(indices, starTie, firstKind){
   const tiers = [[], [], []];
   indices.forEach(i => tiers[tierOf(i)].push(i));
   const star = i => (starTie && isPriority(QA_DATA[i].id)) ? 0 : 1;
-  tiers.forEach(t => t.sort((a, b) => (lastCorrectOf(a) - lastCorrectOf(b)) || (star(a) - star(b))));
+  // ★firstKind（2026-10-05）: 同じ段の中で、年表（社会）・表（理科）の問を先に。段はまたがない
+  const fk = i => (firstKind && isFirstKind(QA_DATA[i])) ? 0 : 1;
+  tiers.forEach(t => t.sort((a, b) => (fk(a) - fk(b)) || (lastCorrectOf(a) - lastCorrectOf(b)) || (star(a) - star(b))));
   return tiers[0].concat(tiers[1], tiers[2]);
+}
+// ============================================================
+// ★年表・表を先に出す（2026-10-05 ユーザー）
+// ============================================================
+//   原文「問題の出題順序なんですが、いきなり細かいので年表からクリアしていきませんか？」→ 案B「年表を先に並べるだけ」
+//   「理科も同じようにお願いします」＝理科は表の問を先に。
+//   ・効かせるのは「出題順どおり」のときだけ（ランダム順・復習ミックスの並びは変えない）
+//   ・段階は付けない（年表を全部正解するまで他を出さない、はしない）。並べる順だけ
+//   ・段を絞っているとき（3段の並び）は、同じ段の中で先に。絞っていないときは、選んだ単元の中で先に
+//   ・★最優先（★）はこれまでどおり、さらにその前（親の指定が勝つ）
+//   ・大問は今までどおりの位置（年表・表には入れない）
+//   ・判定はデータの問題文の頭で決める（印の欄は作らない）:
+//       社会 … 「【演習年表」で始まる問
+//       理科 … 「【〜表〜】」で始まる問（【消化の表】【血管の特ちょうの表】【表】【消化の表⑤】など）
+function isFirstKind(d){
+  if(!d || isDaimonEntry(d)) return false;
+  const q = d.q || "";
+  if(d.subj === "社会") return /^【演習年表/.test(q);
+  if(d.subj === "理科") return d.kind !== "calc" && /^【[^】]*表[^】]*】/.test(q);
+  return false;
+}
+// 年表・表を前に、それ以外を後ろに。どちらも渡された並びの順を保つ（安定）
+function firstKindFirst(pool){
+  const head = [], rest = [];
+  pool.forEach(i => (isFirstKind(QA_DATA[i]) ? head : rest).push(i));
+  return head.length ? head.concat(rest) : pool;
 }
 // ★★ fillFromRest（選んだ単元の残りから補う）は **2026-09-26 に廃止しました**。
 //   依頼書: 司令塔\回答\対戦_合計を決めて足りない分を復習で埋める_依頼_2026-09-26.md
@@ -5274,12 +5302,13 @@ function buildPlan(){
     //   「まだ正解していない」を選んでいる … ★を**いちばん上**へ
     //   それ以外 … いつもの3段の並びで、鍵がまったく同じ問どうしなら★を上（同点の決め手）
     //   ★どちらも「どの問が入るか」は変えない。変えるのは並びだけ
-    main = orderByTiers(main, true);
+    main = orderByTiers(main, true, true);   // ★2026-10-05 同じ段の中で年表・表を先に
     // ★「未クリアを含むときは★をいちばん上へ」（2026-09-22 ユーザー）を、
     // ★「「まだ正解していない」（1段目）を選んでいるとき」と言い直した（2026-09-26 ユーザー確認ずみ）
     if(selectedTiers.has(0)) main = starsFirst(main);
   }else{
     if(currentShuffle) main = shuffleArray(main);
+    else main = firstKindFirst(main);   // ★2026-10-05 出題順どおりなら、年表（社会）・表（理科）を先に
     // ★親が付けた「最優先」を先頭へ（2026-09-22）。**ふだんの出題のときだけ**
     //   （未クリア・よく間違える の枝の★の扱いは上の分岐。PRIORITY_KEY の【仕様】を参照）
     //   ★どうし・残りどうしの順は、いまの出し方（シャッフル／出題順どおり）のまま。
