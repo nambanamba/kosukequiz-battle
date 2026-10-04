@@ -7262,6 +7262,17 @@ function startSoloThink(id){
   }, 100);
   soloThinkTimer = setTimeout(soloTimeUp, ms);
 }
+// ★小問を、from から続いている同じ大問の小問のうしろへ入れる。続きが無ければ末尾
+function insertDaimonItemLater(arr, from, id){
+  const g = DAIMON_ITEM.get(id).g;
+  let end = from - 1;
+  while(end + 1 < arr.length){
+    const nx = DAIMON_ITEM.get(arr[end + 1]);
+    if(!nx || nx.g !== g) break;
+    end++;
+  }
+  if(end < from) arr.push(id); else arr.splice(end + 1, 0, id);
+}
 // ★時間切れ: 答えを見せない・記録しない・あとでもう一度（対戦の一問一答の時間切れと同じ）
 function soloTimeUp(){
   stopSoloThink();
@@ -7459,13 +7470,19 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
     return;
   }
   hideHintBtn("solo");
+  const sid = quizQueue[quizPos];
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
   els["solo-a-block"].classList.add("show");
   els["solo-reveal-btn"].style.display = "none";
   els["solo-skip-btn"].style.display = "none";
   els["solo-judge-row"].style.display = "none";
   els["solo-undo-row"].style.display = "none";
-  recordSoloAnswer(false);
+  const firstSkip = !soloSkippedIds.has(sid);
+  recordSoloAnswer(false);   // ★出し直しでのスキップは記録しない（recordSoloAnswer の norecord）
+  if(firstSkip) quizResults[quizResults.length - 1].skip = true;
+  soloSkippedIds.add(sid);
+  // ★2026-10-05 あとでもう一度（同じ大問の残りの小問のうしろ・最後の手なら末尾）。quizPos はもう次へ進んでいる
+  insertDaimonItemLater(quizQueue, quizPos, sid);
   saveSoloSession();
   els["solo-skip-next-btn"].style.display = "block";
 });
@@ -7492,8 +7509,11 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     if(last.norecord){
       // ★2026-10-05 スキップのあとの出し直し（記録していない）は、並びを戻すだけ
     }else if(last.skip){
-      // ★2026-10-05 一問一答のスキップを取り消す: ✕を戻し、うしろに足した同じ問を1つ取りのぞく
-      adjustStat(qid, "wrong", -1);
+      // ★2026-10-05 スキップを取り消す: ✕を戻し、うしろに足した同じ問を1つ取りのぞく（小問は記録する前の stats にまるごと戻す）
+      if(isDaimonItemId(qid) && last.before !== undefined){
+        if(last.before === null) delete stats[qid]; else stats[qid] = JSON.parse(last.before);
+        saveStats();
+      }else adjustStat(qid, "wrong", -1);
       const at = quizQueue.lastIndexOf(qid);
       if(at > quizPos - 1) quizQueue.splice(at, 1);
       soloSkippedIds.delete(qid);
@@ -8215,7 +8235,7 @@ function setupActions(){
   statusAction.onMessage = (data)=>{
     if(role !== "guest") return;
     // ★2026-10-03 小問の時間切れ: ホストの並び（小問を後ろに回したあと）をそのまま持つ
-    if(data && data.type === "timeup" && Array.isArray(data.ids)) questionIds = data.ids.slice();
+    if(data && (data.type === "timeup" || data.type === "skipped") && Array.isArray(data.ids)) questionIds = data.ids.slice();
     if(data.type === "retryCountdown"){
       // host is about to auto-start a "まちがえた問題だけもう一勝負" round --
       // stays on screen-result, just shows a matching countdown there
@@ -8315,7 +8335,7 @@ function setupActions(){
     const finalCorrect = forcedWrong ? false : data.correct;
     // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
     //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
-    if(!(role === "host" && hostRecordedIdx === currentIndex)){
+    if(!(role === "host" && hostRecordedIdx === currentIndex) && !(role === "host" && daimonSkipRecorded.has(qid))){
       // ★あとでゲストから「一個前を直す」が来たときのために、**記録する前の stats を丸ごと控える**。
       //   直すときは、この控えに戻してから入れ直す（＝correct/wrong/box が2回動かない）。
       //   ★ホストだけが控える。ゲストの記録（ホストが下した判定）は、この導線では直せない
@@ -8823,6 +8843,7 @@ function moveCurrentToEndOfRound(){
 //   こたえを見せて、ホストの記録は✕（答えを見たので「覚えていた」にはしない）、もう一勝負にも入れる。
 //   ゲストにはこの小問を出さない（ゲストの記録は付かない）。「つぎの問題へ」で次の小問へ進む
 let daimonSkipPending = false;   // ホストだけ: 「つぎの問題へ」で次の添字に進むか
+let daimonSkipRecorded = new Set();   // ★2026-10-05 ホストだけ: スキップで✕を付けた小問（出し直しでは記録しない）
 let startNotSentYet = false;     // ホストだけ: 1問目をスキップしたので、まだゲストに startAction を送っていない
 function performDaimonSkip(){
   clearTimeout(pendingSendTimer);
@@ -8830,23 +8851,30 @@ function performDaimonSkip(){
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   const id = questionIds[currentIndex];
-  if(hostRecordedIdx !== currentIndex){
+  // ★2026-10-05 ユーザー「あとで出しましょう」: 小問のスキップも一問一答とそろえて、答えを見せて✕で記録し、あとでもう一度出す。
+  //   ✕を付けるのは1回目だけ（出し直しでまたスキップしても、出し直しで答えても、ホストの記録は付けない）
+  if(hostRecordedIdx !== currentIndex && !daimonSkipRecorded.has(id)){
     recordResult(id, false);
     if(myMissesThisRound.indexOf(id) < 0) myMissesThisRound.push(id);
-    hostRecordedIdx = currentIndex;
+    // ★hostRecordedIdx は動かさない（スキップした小問はうしろへ回り、いまの添字には次の小問が来るので、その記録を止めてしまう）
+    daimonSkipRecorded.add(id);
   }
   hostSkippedIds.add(id);
   if(currentIndex === 0) startNotSentYet = true;
-  daimonSkipPending = true;
+  // 出し直す位置は時間切れと同じ（同じ大問の残りの小問のうしろ・大問の最後の手ならラウンドの末尾）。
+  //   いまの添字には次の小問が来るので、「つぎの問題へ」は同じ添字のまま進める（daimonSkipPending は立てない）
   revealDaimonAnswerFig("battle", questionIds, currentIndex);
   els["battle-a-block"].classList.add("show");
-  els["skip-encourage"].textContent = "この小問はスキップしました（まちがいとして記録します）。つぎの小問へ進みます。";
+  moveCurrentDaimonItemLater();
+  daimonSkipPending = false;
+  els["skip-encourage"].textContent = "この小問はスキップしました（まちがいとして記録します）。あとでもう一度出てきます。";
   els["skip-encourage"].style.display = "block";
   els["skip-continue-btn"].style.display = "block";
   saveBattleSession();
   startSkipContinueCountdown();
   if(room){
-    try{ statusAction.send({type: "skipped", q: getQById(id).q}); }catch(e){}
+    // ★並び（ids）も送る。ゲストの「前の小問」の欄で、出し直す小問の答えを出さないため
+    try{ statusAction.send({type: "skipped", q: getQById(id).q, ids: questionIds}); }catch(e){}
   }
 }
 // スキップのあと「つぎの問題へ」: 一問一答は同じ添字（末尾に回したので次の問題が来ている）、小問は次の添字
@@ -9409,6 +9437,7 @@ function startMissRetryRound(){
   questionIds = ids;
   hostSkippedIds = new Set();
   battleTimeupCount = 0;
+  daimonSkipRecorded = new Set();
   inMissRetryRound = true;
   scores = {host:0, guest:0};
   myMissesThisRound = [];
@@ -9485,6 +9514,7 @@ function maybeStartBattleTogether(){
 }
 function startBattleNow(){
   battleTimeupCount = 0;
+  daimonSkipRecorded = new Set();
   scores = {host:0, guest:0};
   myMissesThisRound = [];
   missesUnknown = false;

@@ -155,8 +155,11 @@ async function run(label, src) {
       check("S3 ⑤ 「つぎへ」が出る", await vis(sp, "#solo-skip-next-btn"));
       await tap(sp, "#solo-skip-next-btn"); await sp.waitForTimeout(80);
       const ctr = await sp.$eval("#solo-counter", e => e.textContent.replace(/\s/g, ""));
-      check("★S3 ⑤ 次は(2)で「3 / 4」（末尾に回さない・分母そのまま）", (await soloShown()) === d2 && ctr === "3/4", (await soloShown()) + " " + ctr);
+      // ★2026-10-05 小問のスキップは「あとでもう一度」になった（ユーザー「あとで出しましょう」）。(1) が大問の残りのうしろに足されるので分母が1つ増える
+      check("★S3 ⑤ 次は(2)で「3 / 5」（(1)は大問の残りのうしろにもう一度）", (await soloShown()) === d2 && ctr === "3/5", (await soloShown()) + " " + ctr);
       await judge(true); await judge(true);
+      check("★S3 ⑤ (2)(3)のあとに(1)がもう一度出る", (await soloShown()) === d1, await soloShown());
+      await judge(true);   // 出し直しは記録しない
       const r3 = await soloResult();
       check("S3 ⑤ 点は 3 / 4、×リストはスキップした1問", r3.score.replace(/\s/g, "") === "3/4" && r3.misses === 1, r3.score + " ×" + r3.misses);
     }
@@ -222,7 +225,8 @@ async function run(label, src) {
     step = "手3";
     // ---- 手3: 小問(2)（時間・見えるか）----
     await waitVis(H, "#advance-btn");
-    check("★B2 ⑤ スキップのあとは(2)で「3 / 4」（末尾に回さない）", (await shown(H)) === d2 && (await counter(H)) === "3/4", (await shown(H)) + " " + (await counter(H)));
+    // ★2026-10-05 小問のスキップは「あとでもう一度」（(1) は大問の残りのうしろへ回り、同じ番目に (2) が来る）
+    check("★B2 ⑤ スキップのあとは(2)で「2 / 4」（(1)は大問の残りのうしろへ）", (await shown(H)) === d2 && (await counter(H)) === "2/4", (await shown(H)) + " " + (await counter(H)));
     check("★B4 ④ ホスト: 小問の「わかった！」が画面の中", await inView(H, "#advance-btn"));
     await tap(H, "#advance-btn");
     await G.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", d2, { timeout: 20000 });
