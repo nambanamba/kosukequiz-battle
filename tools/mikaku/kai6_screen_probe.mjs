@@ -1,7 +1,7 @@
 // 第6回（社会・理科）の取り込みを画面で見る（2026-10-03）。本物の Chrome・390x844。
 // 使い方: node tools/mikaku/kai6_screen_probe.mjs   スクショは tools/mikaku/shots_kai6/（コミットしない）
 // 見ること:
-//   S1 社会の単元えらびに「第6回.鎌倉時代」が出る（47問）
+//   S1 社会の単元えらびに「第6回.鎌倉時代」が出る（一問一答47＋社会の大問の小問21＝68問。2026-10-04 社会の大問が入った）
 //   S2 理科の単元えらびに「第6回.ヒトと動物の呼吸・循環」が出る（一問一答28＋アプリに出る大問の小問）
 //   S3 理科の大問の一覧に第6回の7題が出る。紙の3題（練習1・練習3・発展）は出ない
 //   S4 紙で出すの一覧に第6回の3題が出る（「発展」の見出しが崩れない）。問題の紙に答えが出ない
@@ -35,16 +35,16 @@ try {
   await tap("#subject-social"); await page.waitForTimeout(300);
   const us = await unitText();
   const s6 = us.find(t => t.includes("第6回.鎌倉時代"));
-  check("S1 社会の単元に 第6回.鎌倉時代（47問）", s6 && /47/.test(s6), s6);
+  check("S1 社会の単元に 第6回.鎌倉時代（68問＝一問一答47＋大問の小問21）", s6 && /68問/.test(s6), s6);
   await shot("S1_social_units");
   await tap("#subject-science"); await page.waitForTimeout(300);
   const ur = await unitText();
   const r6 = ur.find(t => t.includes("第6回.ヒトと動物の呼吸・循環"));
   const expect = await page.evaluate(() => QA_DATA.filter(q => q.subj === "理科" && q.u === "第6回.ヒトと動物の呼吸・循環" && q.kind !== "calc" && q.kind !== "daimon").length
-    + DAIMON_DATA.filter(g => g.kai === 6 && !g.paper).reduce((a, g) => a + g.items.length, 0));   // 一問一答35＋大問の小問38＝73（2026-10-03 夜: その2 で一問一答 29→35、その3 で小問をまとめて 59→38）
+    + DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && !g.paper).reduce((a, g) => a + g.items.length, 0));   // 一問一答35＋大問の小問38＝73（2026-10-03 夜: その2 で一問一答 29→35、その3 で小問をまとめて 59→38）
   check("S2 理科の単元に 第6回.ヒトと動物の呼吸・循環（" + expect + "問）", r6 && r6.includes(String(expect)), r6);
   await shot("S2_science_units");
-  const m = await page.evaluate(() => ({ visible: DAIMON_DATA.filter(g => g.kai === 6 && !g.paper).map(g => g.key), paper: DAIMON_DATA.filter(g => g.kai === 6 && g.paper).map(g => g.key + ":" + g.items.length) }));
+  const m = await page.evaluate(() => ({ visible: DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && !g.paper).map(g => g.key), paper: DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && g.paper).map(g => g.key + ":" + g.items.length) }));
   check("S3 アプリに出る第6回の大問 7題・紙は3題", m.visible.length === 7 && m.paper.length === 3 && expect === 73, JSON.stringify(m) + " ／ 単元の問数 " + expect);
   await tap("#daimon-open-btn"); await page.waitForTimeout(500);
   const dl = await page.evaluate(() => document.getElementById("daimon-list-body").innerText);
@@ -52,7 +52,7 @@ try {
   const keys = await page.evaluate(() => [...document.querySelectorAll("#daimon-list-body [data-key]")].map(e => e.dataset.key).filter(k => /^r6_/.test(k)));
   // ★「テスト形式（大問）で解く」の一覧は、前から紙の大問も並べる（第3・4回も同じ・2026-09-28 から）。出題（QA_DATA）には入らない
   const r3paperInList = await page.evaluate(() => { const ks = new Set([...document.querySelectorAll("#daimon-list-body [data-key]")].map(e => e.dataset.key)); return DAIMON_DATA.filter(g => g.kai === 3 && g.paper).every(g => ks.has(g.key)); });
-  const inQA = await page.evaluate(() => DAIMON_DATA.filter(g => g.kai === 6 && g.paper).filter(g => QA_DATA.some(q => q.id === g.key || (q.itemIds || []).some(x => g.items.some(it => it.id === x)))).map(g => g.key));
+  const inQA = await page.evaluate(() => DAIMON_DATA.filter(g => g.kai === 6 && g.subj !== "社会" && g.paper).filter(g => QA_DATA.some(q => q.id === g.key || (q.itemIds || []).some(x => g.items.some(it => it.id === x)))).map(g => g.key));
   check("S3 大問の一覧の第6回は10題（第3回と同じく紙も並ぶ: " + r3paperInList + "）。紙の3題は出題（QA_DATA）に入らない", keys.length === 10 && r3paperInList && inQA.length === 0, keys.join(" ") + " ／ 出題に入った紙: " + inQA.join(" "));
   await shot("S3_daimon_list");
   // 第6回 基本問題 大問1 を開く

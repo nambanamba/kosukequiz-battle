@@ -1,5 +1,6 @@
 // 社会の大問（2026-10-04・ユーザー承認「社会の大問形式を入れます」）。本物の Chrome・390x844・まねごとの待ち合わせ先
 // 使い方: node tools/mikaku/shakai_daimon_probe.mjs [社会の大問JSON]
+//   ★daimon_data.js に本番の社会の大問（subj 社会）があればそれを使う。無いときだけ見本を使う
 //   既定は見本 5年下/quiz_csv/大問_下書き/社会_大問_見本_第6回_練習問題1.json（id の「（案）」を外し、未作成の図は kai6_01.jpg で代用）
 //   ★daimon_data.js の写しに社会の大問を足して配る（本物の daimon_data.js は書かない）。足し方は import_daimon.py と同じ
 // 見ること:
@@ -22,25 +23,31 @@ const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const DAIMON_SRC = fs.readFileSync(path.join(ROOT, "daimon_data.js"), "utf8");
 
-// 社会の大問を import_daimon.py と同じ形にする
-const src = JSON.parse(fs.readFileSync(SAMPLE2, "utf8"));
+// ★2026-10-04 本番の社会の大問が daimon_data.js に入ったら、それをそのまま使う（見本は使わない）
+const DD = new Function(DAIMON_SRC.replace(/^const /gm, "var ") + "\nreturn {D: DAIMON_DATA, Z: DAIMON_IMG_SIZES};")();
+const REAL = DD.D.filter(g => g.subj === "社会");
+// 見本を import_daimon.py と同じ形にする（本番が無いときだけ）
 const fixImg = n => (n && !fs.existsSync(path.join(ROOT, "images", n))) ? "kai6_01.jpg" : n;
 const BOOK = "練習問題", KAI = 6;
-const groups = src.daimon.map(dm => {
-  const g = { key: "g" + KAI + "_" + BOOK + "_" + dm.daimon, kai: KAI, book: BOOK, daimon: String(dm.daimon), lead: dm.lead || "", file: fixImg(dm.file || ""), subj: "社会", items: [] };
-  for (const it of src.items.filter(x => String(x.daimon) === String(dm.daimon))) {
-    const x = { id: String(it.id).replace("（案）", ""), label: it.label || "", q: it.q, a: it.a, form: it.form || "", file: fixImg(it.file || ""), aFile: it.aFile || "", sol: it.sol || "", note: it.note || "" };
-    if (x.file && x.file === g.file) x.file = "";
-    g.items.push(Object.fromEntries(Object.entries(x).filter(([, v]) => v !== "")));
-  }
-  return Object.fromEntries(Object.entries(g).filter(([, v]) => v !== ""));
-});
+function fromSample() {
+  const src = JSON.parse(fs.readFileSync(SAMPLE2, "utf8"));
+  return src.daimon.map(dm => {
+    const g = { key: "g" + KAI + "_" + BOOK + "_" + dm.daimon, kai: KAI, book: BOOK, daimon: String(dm.daimon), lead: dm.lead || "", file: fixImg(dm.file || ""), subj: "社会", items: [] };
+    for (const it of src.items.filter(x => String(x.daimon) === String(dm.daimon))) {
+      const x = { id: String(it.id).replace("（案）", ""), label: it.label || "", q: it.q, a: it.a, form: it.form || "", file: fixImg(it.file || ""), aFile: it.aFile || "", sol: it.sol || "", note: it.note || "" };
+      if (x.file && x.file === g.file) x.file = "";
+      g.items.push(Object.fromEntries(Object.entries(x).filter(([, v]) => v !== "")));
+    }
+    return Object.fromEntries(Object.entries(g).filter(([, v]) => v !== ""));
+  });
+}
+const groups = REAL.length ? REAL : fromSample();
 const ITEM_IDS = groups.flatMap(g => g.items.map(i => i.id));
 function patchedDaimon(paper) {
   const gs = paper ? groups.map(g => Object.assign({}, g, { paper: true, paperReason: "（検査用の印）" })) : groups;
-  const i = DAIMON_SRC.indexOf("const DAIMON_IMG_SIZES");
-  const head = DAIMON_SRC.slice(0, i).replace(/\]\s*;\s*$/, "");
-  return head + "," + JSON.stringify(gs).slice(1, -1) + "];\nDAIMON_DATA_SHAKAI_TEST = true;\n" + DAIMON_SRC.slice(i).replace("const DAIMON_IMG_SIZES = {", 'const DAIMON_IMG_SIZES = {"kai6_01.jpg": [1189, 1858], ');
+  const base = DD.D.filter(g => g.subj !== "社会");
+  const Z = Object.assign({ "kai6_01.jpg": [1189, 1858] }, DD.Z);
+  return "const DAIMON_DATA = " + JSON.stringify(base.concat(gs)) + ";\nconst DAIMON_IMG_SIZES = " + JSON.stringify(Z) + ";\n";
 }
 const relay = await startFakeRelay({ broadcast: true, label: "shakaidaimon" });
 let SERVED = CURRENT, SERVED_D = patchedDaimon(false);
@@ -133,6 +140,22 @@ async function run(label, src) {
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     const hs = await statOf(host.page, b1);
     check("S4 二人: 社会の大問の小問 " + b1 + " がホスト・ゲストに大問の形で出て、ホストの記録が付く", b1 === ITEM_IDS[0] && gb && hs && hs.correct === 1, b1 + " guest=" + gb + " " + JSON.stringify(hs));
+    // ===== S6 二人: 社会の大問の小問で時間切れ → 答えを見せず・記録せず・あとで出し直す =====
+    await tap(host.page, "#next-btn");
+    await waitVis(host.page, "#advance-btn", 30000);
+    const t1 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
+    await host.page.waitForTimeout(5000);   // 考える時間 1秒×2 が切れる
+    const tmsg = await host.page.evaluate(() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; });
+    const tst = await statOf(host.page, t1);
+    if (await host.page.evaluate(() => getComputedStyle(document.getElementById("skip-continue-btn")).display !== "none")) { await tap(host.page, "#skip-continue-btn"); await host.page.waitForTimeout(800); }
+    await waitVis(host.page, "#advance-btn", 15000).catch(() => {});
+    const t2 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
+    await tap(host.page, "#advance-btn").catch(() => {});
+    await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i, t2, { timeout: 20000 }).catch(() => {});
+    const later = await guest.page.evaluate(() => !!document.querySelector("#battle-daimon .daimon-later"));
+    await shot(guest.page, "S6_guest_after_timeup");
+    check("S6 社会の小問 " + t1 + " の時間切れ: 「あとでもう一度」・記録なし・次は " + t2 + "・ゲストの前の小問の欄に「あとでもう一度出ます」",
+      t1 === ITEM_IDS[1] && /あとでもう一度/.test(tmsg) && tst === null && t2 === ITEM_IDS[2] && later, JSON.stringify({ tmsg, tst, t2, later }));
     // ===== S5 紙で出す =====
     SERVED_D = patchedDaimon(true);
     await pg.reload(); await pg.waitForTimeout(900);
@@ -152,7 +175,7 @@ async function run(label, src) {
 }
 function report(t, out) { console.log("\n── " + t + " ──"); let ng = 0; for (const c of out) { console.log("  " + (c.ok ? "✔" : "✘") + " " + c.n + (c.x ? " … " + c.x : "")); if (!c.ok) ng++; } return ng; }
 const done = async c => { await browser.close(); server.close(); relay.close(); process.exit(c); };
-console.log("社会の大問（検査用）: " + groups.map(g => g.key + "（小問" + g.items.length + "）").join(" ") + " ／ もと: " + path.basename(SAMPLE2));
+console.log("社会の大問（検査用）: " + groups.map(g => g.key + "（小問" + g.items.length + "）").join(" ") + " ／ もと: " + (REAL.length ? "daimon_data.js（本番）" : path.basename(SAMPLE2)));
 console.log("■ 自己テスト: 直す前 " + BASE_COMMIT + " … ★鳴るのが正しい");
 const ngB = report("対照 " + BASE_COMMIT, await run("base", BASELINE));
 console.log(ngB > 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴った）" : "  → ✘ 自己テスト不合格");

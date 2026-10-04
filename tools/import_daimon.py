@@ -62,6 +62,7 @@ SRC_SHAKAI = _find_src("quiz_csv")
 IMG_SRC_SHAKAI = os.path.join(SRC_SHAKAI, "画像プレビュー")
 # (本の名前, 回) → ファイル名。★本番のファイルが来たらここに足す（いまは見本しか無いので空）
 FILES_SHAKAI = {
+    ("練習問題", 6): "練習問題_第6回.json",   # 2026-10-04 社会の大問のはじめ（練習1・練習2・発展）
 }
 IMG_DST = os.path.join(BATTLE, "images")
 OUT = os.path.join(BATTLE, "daimon_data.js")
@@ -226,7 +227,7 @@ def main():
         return
 
     for n in new_imgs:
-        shutil.copyfile(os.path.join(IMG_SRC, n), os.path.join(IMG_DST, n))
+        shutil.copyfile(os.path.join(images[n], n), os.path.join(IMG_DST, n))   # ★科目ごとの画像の場所から（2026-10-04）
     body = json.dumps(groups, ensure_ascii=False, indent=1)
     head = ("// 理科の大問（テキスト通りの形）。tools/import_daimon.py が書き出す。★手で直さないこと。\r\n"
             "// ★一問一答（data.js の QA_DATA）とは別。ホームの数字・単元・ランダムには入らない。\r\n")
