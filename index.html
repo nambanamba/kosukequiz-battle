@@ -7343,7 +7343,9 @@ function startSoloCard(){
   if(!reviewMode && !isDaimonItemId(id) && !soloSkippedIds.has(id)) els["solo-skip-btn"].style.display = "block";
   els["solo-retry-note"].textContent = soloSkippedIds.has(id) ? "スキップした問題のやり直しです（記録は✕のまま。答えを思い出す練習）" : "まちがえた問題のやり直し中です。ここで正解しても、記録は苦手のまま残ります。";
   if(soloSkippedIds.has(id) && !reviewMode) els["solo-retry-note"].style.display = "block";
-  startSoloThink(id);
+  // ★2026-10-05 ユーザー「一人の時は時間制限なしでいいです」→ 一人では考える時間をはからない（時間切れも起きない）。
+  //   時計の関数（startSoloThink / soloTimeUp）は残すが呼ばない。スキップはそのまま
+  stopSoloThink();
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
   // ★2026-09-30（bug0930 ③・ユーザー判断）: 直前が大問の小問でも「ひとつ前の判定をやり直す」を出す
   //   （2026-09-28 は出さなかった。小問の押しまちがいが直せなかったため変更）。直せるのは直前の小問1つだけ
@@ -7545,7 +7547,8 @@ function finishSoloQuiz(){
   const counted = quizResults.filter(r => !r.norecord);
   const correctCount = counted.filter(r=>r.correct).length;
   els["solo-result-score"].textContent = correctCount+" / "+counted.length;
-  els["solo-result-skipinfo"].textContent = (reviewMode ? "" : "スキップ " + quizResults.filter(r => r.skip).length + "問・時間切れ " + soloTimeupCount + "問");
+  // ★一人では時間切れが起きないので、スキップの数だけ出す（時間切れが起きたときだけ書き足す）
+  els["solo-result-skipinfo"].textContent = reviewMode ? "" : ("スキップ " + quizResults.filter(r => r.skip).length + "問" + (soloTimeupCount ? "・時間切れ " + soloTimeupCount + "問" : ""));
 
   const misses = counted.filter(r=>!r.correct);
   saveLastMiss(misses.map(m=>m.id));
@@ -7662,6 +7665,7 @@ let guestRetryCountdownInterval = null; // guest-only: drives the visible "も�
 
 function startCountdown(seconds){
   clearInterval(countdownInterval);
+  els["think-timer"].dataset.sec = String(seconds);   // ★2026-10-05 検査で秒を読むため
   const startedAt = Date.now();
   const durationMs = seconds*1000;
   els["think-timer"].style.display = "block";

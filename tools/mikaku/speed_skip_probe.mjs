@@ -1,9 +1,9 @@
 // 考える時間の自動・速さ5段階・一問一答のスキップ・ホストの判定（×だけ）・親の判定で子の画面も開く（2026-10-05・ユーザー）
 // 本物の Chrome・390x844・まねごとの待ち合わせ先。使い方: node tools/mikaku/speed_skip_probe.mjs   スクショは tools/mikaku/shots_speed/（コミットしない）
 // 見ること:
-//   T1 考える時間の式（基本10秒・ふつう）: 短い問 g6r1＝10秒・年表の3つ答える問 g6r30＝26秒・表の問 g6r48＝15秒（一人の時計の秒で見る）
-//   T2 速さ: 早く（×0.6）で g6r30＝16秒、ゆっくり（×1.6）で g6r1＝16秒
-//   S1 一人の時間切れ: 答えを見せない・記録しない・うしろに回って、あとでもう一度出る
+//   T1 考える時間の式（基本10秒・ふつう・二人のホストの時計の秒で見る）: 年表の3つ答える問 g6r30＝26秒
+//   T2 対戦中に速さを変えると次の問題から効く: 早く（×0.6）で表の問 g6r48＝9秒、ゆっくり（×1.6）で短い問 g6r1＝16秒
+//   S1 ★一人では時間をはからない（2026-10-05 ユーザー「一人の時は時間制限なしでいいです」）: 時計が出ない・時間がたっても時間切れにならない
 //   S2 一人の一問一答のスキップ: 答えを見せて✕で記録・うしろにもう一度・出し直しでは記録しない
 //   S3 一人の結果に「スキップ1問・時間切れ1問」
 //   B1 二人: ゲストが速さを変えるとホストにも反映（ホストの速さの行が変わる）
@@ -15,7 +15,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_speed"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "d1be5bf";
+const BASE_COMMIT = "d1be5bf";   // 直す前（考える時間の自動・スキップの前）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -63,30 +63,15 @@ async function run(label, src) {
   const solo = await mk(), host = await mk(), guest = await mk();
   try {
     const pg = solo.page;
-    // ===== T1・T2 =====
-    const secs = {};
-    for (const [lv, tag] of [[2, "ふつう"], [4, "早く"], [0, "ゆっくり"]]) {
-      await pg.evaluate(SEED, [MIG, ["g6r1", "g6r30", "g6r48"], { unit: U, extra: { speedLevel: lv } }]); await pg.reload(); await pg.waitForTimeout(800);
-      await tap(pg, "#solo-start-btn"); await pg.waitForTimeout(400);
-      for (let k = 0; k < 3; k++) {
-        if (!(await vis(pg, "#solo-reveal-btn"))) break;
-        const id = await qid(pg, "solo"); secs[tag + ":" + id] = await secShown(pg);
-        await tap(pg, "#solo-reveal-btn"); await pg.waitForTimeout(100); await tap(pg, "#solo-judge-ok"); await pg.waitForTimeout(250);
-      }
-      await tap(pg, "#solo-result-home-btn").catch(() => {}); await pg.waitForTimeout(200);
-    }
-    check("T1 ふつう: 短い問 g6r1＝10秒・年表の3つ答える問 g6r30＝26秒・表の問 g6r48＝15秒", secs["ふつう:g6r1"] === 10 && secs["ふつう:g6r30"] === 26 && secs["ふつう:g6r48"] === 15, JSON.stringify(secs));
-    check("T2 早く（×0.6）で g6r30＝16秒・ゆっくり（×1.6）で g6r1＝16秒", secs["早く:g6r30"] === 16 && secs["ゆっくり:g6r1"] === 16);
     // ===== S1〜S3 一人 =====
     await pg.evaluate(SEED, [MIG, ["g6r1", "g6r2", "g6r3"], { unit: U, extra: { headStartSec: 1, speedLevel: 2 } }]); await pg.reload(); await pg.waitForTimeout(800);
     await tap(pg, "#solo-start-btn"); await pg.waitForTimeout(300);
     const first = await qid(pg, "solo");
-    await pg.waitForTimeout(1800);   // 1秒で時間切れ
-    const s1 = { note: await pg.evaluate(() => { const e = document.getElementById("solo-timeup-note"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; }),
-      ans: await pg.evaluate(() => document.getElementById("solo-a-block").classList.contains("show")), st: await statOf(pg, first) };
-    check("S1 一人の時間切れ（" + first + "）: 答えを見せない・記録しない・「あとでもう一度」", /時間切れ/.test(s1.note) && !s1.ans && s1.st === null, JSON.stringify(s1));
-    await shot(pg, "S1_solo_timeup");
-    await tap(pg, "#solo-timeup-next-btn"); await pg.waitForTimeout(300);
+    await pg.waitForTimeout(2500);   // 基本1秒でも、一人では時間切れにならない
+    const s1 = { timer: await vis(pg, "#solo-think-timer"), note: await vis(pg, "#solo-timeup-note"), reveal: await vis(pg, "#solo-reveal-btn"), id: await qid(pg, "solo") };
+    check("S1 一人では時間をはからない（時計なし・時間がたっても時間切れにならない）", !s1.timer && !s1.note && s1.reveal && s1.id === first, JSON.stringify(s1));
+    await shot(pg, "S1_solo_notimer");
+    await tap(pg, "#solo-reveal-btn"); await pg.waitForTimeout(100); await tap(pg, "#solo-judge-ok"); await pg.waitForTimeout(250);
     const second = await qid(pg, "solo");
     await tap(pg, "#solo-skip-btn").catch(() => {}); await pg.waitForTimeout(300);
     const s2 = { ans: await pg.evaluate(() => document.getElementById("solo-a-block").classList.contains("show")), st: await statOf(pg, second) };
@@ -101,12 +86,12 @@ async function run(label, src) {
       await tap(pg, "#solo-reveal-btn"); await pg.waitForTimeout(100); await tap(pg, "#solo-judge-ok"); await pg.waitForTimeout(250);
     }
     const st2 = await statOf(pg, second), st1 = await statOf(pg, first);
-    check("S1・S2 時間切れの問・スキップした問があとでもう一度出る（" + seq.join(" ") + "）・スキップの出し直しでは記録しない", seq.slice(2).includes(first) && seq.slice(2).includes(second) && st2 && st2.wrong === 1 && (st2.correct || 0) === 0 && st1 && st1.correct === 1, JSON.stringify({ st1, st2 }));
+    check("S2 スキップした問があとでもう一度出る（" + seq.join(" ") + "）・出し直しでは記録しない", seq.slice(2).includes(second) && st2 && st2.wrong === 1 && (st2.correct || 0) === 0 && st1 && st1.correct === 1, JSON.stringify({ st1, st2 }));
     const info = await pg.evaluate(() => (document.getElementById("solo-result-skipinfo") || {}).textContent || "");
-    check("S3 一人の結果に「スキップ1問・時間切れ◯問」", /スキップ 1問/.test(info) && /時間切れ [1-9]/.test(info), info);
+    check("S3 一人の結果に「スキップ 1問」（一人では時間切れが無いので時間切れは出さない）", /スキップ 1問/.test(info) && !/時間切れ/.test(info), info);
     await shot(pg, "S3_solo_result");
     // ===== B 二人 =====
-    for (const p of [host.page, guest.page]) { await p.evaluate(SEED, [MIG, ["g6r1", "g6r2"], { unit: U, extra: { judgeTimeSec: 3, answerTimeSec: 60 } }]); await p.reload(); await p.waitForTimeout(800); }
+    for (const p of [host.page, guest.page]) { await p.evaluate(SEED, [MIG, ["g6r1", "g6r30", "g6r48"], { unit: U, extra: { judgeTimeSec: 3, answerTimeSec: 60 } }]); await p.reload(); await p.waitForTimeout(800); }
     await tap(host.page, "#create-btn");
     await host.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
     const code = await host.page.$eval("#room-code-display", e => e.textContent);
@@ -115,6 +100,9 @@ async function run(label, src) {
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
     await waitVis(host.page, "#advance-btn", 30000);
     const b1 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
+    const hostSec = () => host.page.evaluate(() => { const e = document.getElementById("think-timer"); return e && getComputedStyle(e).display !== "none" ? +e.dataset.sec : null; });
+    const t1 = await hostSec();
+    check("T1 二人・ふつう: 年表の3つ答える問 " + b1 + " の考える時間＝" + t1 + "秒（26秒）", b1 === "g6r30" && t1 === 26, t1);
     // B1 ゲストが速さを変える
     await guest.page.$eval('[data-speed-row="battle"] .speed-choice[data-speed="1"]', e => e.click()).catch(() => {});
     await host.page.waitForTimeout(800);
@@ -137,6 +125,23 @@ async function run(label, src) {
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 15000 }).catch(() => {});   // ホストは何もしない（3秒で〇）
     const g1 = await statOf(guest.page, b1), h1 = await statOf(host.page, b1);
     check("B3 ホストの判定: ✕が大きく〇は小さい・「何もしなければ〇」・何もしなければゲストは〇・ホストは親の✕で記録", b3v.cls && b3v.wide && /何もしなければ〇/.test(b3v.note) && g0 === null && g1 && g1.correct === 1 && h1 && h1.wrong === 1, JSON.stringify({ b3v, g1, h1 }));
+    // ===== T2 対戦中の速さの変更は次の問題から =====
+    await guest.page.$eval('[data-speed-row="battle"] .speed-choice[data-speed="4"]', e => e.click()).catch(() => {});   // 早く
+    await host.page.waitForTimeout(600);
+    await tap(host.page, "#next-btn").catch(() => {});
+    await waitVis(host.page, "#advance-btn", 30000);
+    const b2id = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, "")), t2 = await hostSec();
+    await host.page.$eval('[data-speed-row="battle"] .speed-choice[data-speed="0"]', e => e.click()).catch(() => {});      // ゆっくり（ホストから）
+    await tap(host.page, "#advance-btn");
+    await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", b2id, { timeout: 20000 });
+    await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
+    await waitVis(host.page, "#judge-row", 15000); await waitVis(guest.page, "#judge-row", 15000);
+    await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+    await tap(host.page, "#next-btn");
+    await waitVis(host.page, "#advance-btn", 30000);
+    const b3id = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, "")), t3 = await hostSec();
+    check("T2 速さを変えると次の問題から: 早くで表の問 " + b2id + "＝" + t2 + "秒（9秒）・ゆっくりで短い問 " + b3id + "＝" + t3 + "秒（16秒）", b2id === "g6r48" && t2 === 9 && b3id === "g6r1" && t3 === 16);
     check("画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await solo.ctx.close(); await host.ctx.close(); await guest.ctx.close(); }
