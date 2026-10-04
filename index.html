@@ -1940,6 +1940,10 @@
 
       <button class="btn-secondary" id="list-btn" style="margin-top:20px;">問題一覧を見る・記録を切りかえる</button>
       <div class="back-link" id="export-link">正解・不正解の記録をエクスポート（CSV）</div>
+      <!-- ★2026-10-05 学習ログ（1回に何分かかったか）と大問の記録は、上のCSVとは別のファイル（上のCSVの列・形は変えない） -->
+      <div class="back-link" id="export-studylog-link">学習ログ（1回ごとの時間）をエクスポート（CSV）</div>
+      <div class="back-link" id="export-studylog-detail-link">学習ログの1問ごとの秒数をエクスポート（CSV）</div>
+      <div class="back-link" id="export-daimon-link">大問ごとの記録をエクスポート（CSV）</div>
       <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
       <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
@@ -3237,7 +3241,7 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print",
  "subject-social","subject-science",
- "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","export-edits-link",
  "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
  "paper-pick-all","paper-pick-none","paper-pick-go",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
@@ -6386,6 +6390,7 @@ els["selection-solo-btn"].addEventListener("click", ()=>{
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = false;
+  studyLogStart("solo", quizQueue, {review: reviewMode});   // ★学習ログ（2026-10-05）
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -6807,6 +6812,344 @@ els["import-file"].addEventListener("change", (e)=>{
 });
 
 // ============================================================
+// ★学習ログ（1回ごとの時間）── 2026-10-05
+// ============================================================
+// ユーザーの原文:「一回に何分かかったかも、分析指標に入れられるように直してください」
+//   （書き出したCSVをコーチのページに渡して分析している。いまのCSVは1問1行で、
+//    朝・夕の1回（社会10問・理科15問など）に何分かかったかが分からない）
+//
+// ■ 決まりごと
+//   ・★今の「正解・不正解の記録」（kq_battle_stats_v1）と、そのCSVの列・形は一切変えない
+//     （機種変更のときの読み込みがその形に頼っているため）。学習ログは別の入れ物・別のCSV
+//   ・入れ物は kq_battle_study_log_v1 の1つだけ。★ほかの入れ物には読みも書きもしない
+//   ・1回 ＝ 「はじめる」から結果の画面まで（一人）／対戦の開始から結果の画面まで（二人）。
+//     「まちがえた問題だけもう一度」「もう一勝負」は別の1回（やり直し＝はい）
+//   ・1問の秒 ＝ 問題が出てから「こたえを見る」まで（考えた時間）。
+//     こたえを見ずに判定・スキップ・時間切れになったときは、そこまで
+//   ・とちゅうでやめた・閉じたときも残す（途中でやめた＝はい）。続きから再開したら同じ1回に戻す（再開した回数＋1）
+//   ・「解いていた分」は、とちゅうでやめてから再開するまでの間を数えない
+//   ・★約1年をこえた回は、月ごとのまとめ（回数・分・問題数）にして中身を捨てる。
+//     1問ごとの秒は120日ぶんだけ持つ（1回ごとの平均・最長は、終わったときに計算して残す）
+//   ・「正誤の記録をぜんぶクリアする」では消さない（正誤の記録とは別のもの・1年で自然に消える）
+const STUDY_LOG_KEY = "kq_battle_study_log_v1";
+const STUDY_LOG_KEEP_DAYS = 366;          // これより古い回は月のまとめへ
+const STUDY_LOG_DETAIL_DAYS = 120;        // これより古い回は1問ごとの秒を捨てる（まとめの数は残る）
+const STUDY_LOG_MAX_CHARS = 1500000;      // 入れ物がこれより大きくなったら、古い回の1問ごとの秒から捨てる
+const DAY_MS = 24 * 60 * 60 * 1000;
+let studyLog = null;   // { v:1, sessions:[...], monthly:{...}, cur:{solo:id, battle:id} }
+function studyLogLoad(){
+  if(studyLog) return studyLog;
+  let o = null;
+  try{ o = JSON.parse(window.localStorage.getItem(STUDY_LOG_KEY) || "null"); }catch(e){ o = null; }
+  if(!o || typeof o !== "object" || !Array.isArray(o.sessions)) o = { v: 1, sessions: [], monthly: {}, cur: {} };
+  if(!o.monthly || typeof o.monthly !== "object") o.monthly = {};
+  if(!o.cur || typeof o.cur !== "object") o.cur = {};
+  studyLog = o;
+  return o;
+}
+// 1回の中身から数を出す（書き出し・月のまとめ・終わったときの保存で共通）
+function studyLogSummary(s){
+  if(!Array.isArray(s.q)) return s.sum || {shown:0, ans:0, ok:0, ng:0, skip:0, to:0, re:0, see:0, avg:"", max:"", med:""};
+  const shown = new Set(), secs = [];
+  const c = {ok:0, ng:0, skip:0, to:0, re:0, see:0};
+  s.q.forEach(e => {
+    const [id, sec, r, re] = e;
+    shown.add(id);
+    if(re){ c.re++; return; }
+    if(r === "o"){ c.ok++; secs.push(sec); }
+    else if(r === "x"){ c.ng++; secs.push(sec); }
+    else if(r === "skip") c.skip++;
+    else if(r === "timeup") c.to++;
+    else if(r === "see") c.see++;
+  });
+  (s.shownIds || []).forEach(id => shown.add(id));
+  secs.sort((a, b) => a - b);
+  const round1 = v => Math.round(v * 10) / 10;
+  const avg = secs.length ? round1(secs.reduce((a, b) => a + b, 0) / secs.length) : "";
+  const max = secs.length ? secs[secs.length - 1] : "";
+  const med = secs.length ? (secs.length % 2 ? secs[(secs.length - 1) / 2] : round1((secs[secs.length / 2 - 1] + secs[secs.length / 2]) / 2)) : "";
+  return {shown: shown.size, ans: c.ok + c.ng, ok: c.ok, ng: c.ng, skip: c.skip, to: c.to, re: c.re, see: c.see,
+          avg: avg, max: max, med: med, secSum: round1(secs.reduce((a, b) => a + b, 0)), secN: secs.length};
+}
+function studyLogMonthKey(s){
+  const d = new Date(s.st);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "|" + (s.subj || "") + "|" + (s.k === "battle" ? "対戦" : "一人") + "|" + (s.m || "");
+}
+// 古い回を片づける。★学習ログの入れ物の中だけ（ほかの入れ物には触らない）
+function studyLogPrune(o, now){
+  const keepFrom = now - STUDY_LOG_KEEP_DAYS * DAY_MS, detailFrom = now - STUDY_LOG_DETAIL_DAYS * DAY_MS;
+  const curIds = new Set(Object.values(o.cur || {}));
+  o.sessions = o.sessions.filter(s => {
+    if(!s || typeof s.st !== "number") return false;
+    if(s.st >= keepFrom || curIds.has(s.id)) return true;
+    const sm = studyLogSummary(s), key = studyLogMonthKey(s);
+    const m = o.monthly[key] || {n:0, act:0, plan:0, shown:0, ans:0, ok:0, ng:0, skip:0, to:0, secSum:0, secN:0, max:0};
+    m.n++; m.act += Math.round((s.act || 0) / 1000); m.plan += s.plan || 0; m.shown += sm.shown; m.ans += sm.ans; m.ok += sm.ok; m.ng += sm.ng;
+    m.skip += sm.skip; m.to += sm.to; m.secSum = Math.round(((m.secSum || 0) + (sm.secSum || 0)) * 10) / 10; m.secN += sm.secN || 0;
+    if(sm.max !== "" && sm.max > m.max) m.max = sm.max;
+    o.monthly[key] = m;
+    return false;
+  });
+  o.sessions.forEach(s => {
+    if(Array.isArray(s.q) && s.st < detailFrom && !curIds.has(s.id)){ s.sum = studyLogSummary(s); delete s.q; delete s.shownIds; }
+  });
+}
+function studyLogSave(){
+  const o = studyLogLoad();
+  try{
+    studyLogPrune(o, Date.now());
+    let json = JSON.stringify(o);
+    // 大きくなりすぎたら、古い回から1問ごとの秒を捨てる（まとめの数は残す）
+    for(let i = 0; json.length > STUDY_LOG_MAX_CHARS && i < o.sessions.length; i++){
+      const s = o.sessions[i];
+      if(Array.isArray(s.q) && !Object.values(o.cur).includes(s.id)){ s.sum = studyLogSummary(s); delete s.q; delete s.shownIds; json = JSON.stringify(o); }
+    }
+    window.localStorage.setItem(STUDY_LOG_KEY, json);
+  }catch(e){ console.error("save study log failed", e); }
+}
+function studyLogCur(k){
+  const o = studyLogLoad(), id = o.cur[k];
+  return id ? o.sessions.find(s => s.id === id) || null : null;
+}
+// とちゅうの回をしめる（time まで解いていたことにする）。done=true なら、もう続きはない
+function studyLogClose(s, time, quit, done){
+  if(!s) return;
+  if(s.seg){ s.act = (s.act || 0) + Math.max(0, time - s.seg); s.seg = 0; }
+  s.en = time; s.la = Math.max(s.la || 0, time);
+  s.quit = !!quit;
+  s.cur = null;   // ★出ていた問題の時刻は捨てる（再開したときに、やめていた間を考えた秒に入れない）
+  if(done) s.done = true;
+}
+// 新しい1回を始める。ids ＝ この回に出す予定の問題（小問の id もそのまま）
+function studyLogStart(k, ids, opt){
+  const o = studyLogLoad(), now = Date.now();
+  const old = studyLogCur(k);
+  if(old && !old.done) studyLogClose(old, old.seg ? (old.la || now) : (old.en || old.la || now), true, true);
+  opt = opt || {};
+  const uniq = Array.from(new Set(ids || []));
+  const units = [], subjs = [];
+  let hasQa = false, hasDaimon = false;
+  uniq.forEach(id => {
+    const d = getQById(id);
+    if(isDaimonItemId(id)) hasDaimon = true; else hasQa = true;
+    if(d && d.u && !units.includes(d.u)) units.push(d.u);
+    if(d && d.subj && !subjs.includes(d.subj)) subjs.push(d.subj);
+  });
+  const mode = opt.mode || (opt.review ? "チェックのみ" : (hasQa && hasDaimon ? "一問一答＋大問" : (hasDaimon ? "大問" : "一問一答")));
+  let id = "s" + now;
+  while(o.sessions.some(s => s.id === id)) id += "x";
+  const s = { id: id, k: k, role: opt.role || "", m: mode, subj: subjs.join("・") || currentSubject, u: units,
+              retry: !!opt.retry, plan: uniq.length, st: now, la: now, en: 0, act: 0, seg: now, res: opt.resumed ? 1 : 0,
+              quit: false, done: false, q: [], shownIds: [], cur: null };
+  o.sessions.push(s);
+  o.cur[k] = id;
+  studyLogSave();
+  return s;
+}
+// 続きから再開したとき: とちゅうの回があればそこへ戻す。無ければ（または終わっていれば）新しく始める
+function studyLogResume(k, ids, opt){
+  const s = studyLogCur(k);
+  if(!s || s.done) return studyLogStart(k, ids, Object.assign({}, opt, {resumed: true}));
+  if(!s.seg){ s.seg = Date.now(); s.res = (s.res || 0) + 1; }
+  s.quit = false; s.la = Date.now();
+  studyLogSave();
+  return s;
+}
+// とちゅうでやめた（ホームにもどる・対戦を中断する）。あとで続きから再開できる
+function studyLogPause(k){
+  const s = studyLogCur(k);
+  if(!s || s.done) return;
+  studyLogClose(s, Date.now(), true, false);
+  studyLogSave();
+}
+// 結果の画面まで行った
+function studyLogFinish(k){
+  const s = studyLogCur(k);
+  if(!s || s.done) return;
+  studyLogClose(s, Date.now(), false, true);
+  s.sum = studyLogSummary(s);
+  delete studyLogLoad().cur[k];
+  studyLogSave();
+}
+// 問題が画面に出た（同じ問題がもう出ているときは、出た時刻を変えない＝つなぎ直し・描き直しで秒が0に戻らない）
+function studyLogShow(k, id){
+  const s = studyLogCur(k);
+  if(!s || s.done || !id) return;
+  if(s.cur && s.cur.id === id) return;
+  s.cur = { id: id, at: Date.now(), rv: 0 };
+  if(!s.shownIds) s.shownIds = [];
+  if(!s.shownIds.includes(id)) s.shownIds.push(id);
+  s.la = Date.now();
+  // ★保存は答えたときにまとめて（問題が出るたびに大きな入れ物を書かない）
+}
+// 「こたえを見る」を押した（答えが開いた）
+function studyLogReveal(k){
+  const s = studyLogCur(k);
+  if(!s || s.done || !s.cur || s.cur.rv) return;
+  s.cur.rv = Date.now();
+}
+// 1問の結果: r = "o" / "x" / "skip" / "timeup" / "see"（チェックのみで見ただけ）。re = スキップのあとの出し直し（記録しない回）
+function studyLogAnswer(k, id, r, re){
+  const s = studyLogCur(k);
+  if(!s || s.done || !id) return;
+  const now = Date.now();
+  const c = (s.cur && s.cur.id === id) ? s.cur : null;
+  const sec = c ? Math.round(((c.rv || now) - c.at) / 100) / 10 : "";
+  if(!Array.isArray(s.q)) s.q = [];
+  const e = [id, sec, r];
+  if(re) e.push(1);
+  s.q.push(e);
+  if(!s.shownIds) s.shownIds = [];
+  if(!s.shownIds.includes(id)) s.shownIds.push(id);
+  s.cur = null;
+  s.la = now;
+  studyLogSave();
+}
+// ひとつ前の判定をやり直す（一人）: いちばん最後の1件を取りのぞく
+function studyLogUndo(k){
+  const s = studyLogCur(k);
+  if(!s || s.done || !Array.isArray(s.q) || s.q.length === 0) return;
+  s.q.pop();
+  s.cur = null;
+  studyLogSave();
+}
+// 一個前の判定を直した（二人・ホスト）: その問題のいちばん最後の結果を直す
+function studyLogFix(k, id, correct){
+  const s = studyLogCur(k);
+  if(!s || !Array.isArray(s.q)) return;
+  for(let i = s.q.length - 1; i >= 0; i--){
+    if(s.q[i][0] === id && (s.q[i][2] === "o" || s.q[i][2] === "x")){ s.q[i][2] = correct ? "o" : "x"; break; }
+  }
+  studyLogSave();
+}
+// 紙で出した（印刷を押した）。時間ははからないので、始まりと終わりは同じ時刻
+function studyLogPaper(groups){
+  const o = studyLogLoad(), now = Date.now();
+  const units = [], subjs = [];
+  let n = 0;
+  groups.forEach(g => { if(g.u && !units.includes(g.u)) units.push(g.u); const sj = daimonSubj(g); if(!subjs.includes(sj)) subjs.push(sj); n += (g.items || []).length; });
+  let id = "p" + now;
+  while(o.sessions.some(s => s.id === id)) id += "x";
+  o.sessions.push({ id: id, k: "solo", role: "", m: "紙", subj: subjs.join("・"), u: units, retry: false, plan: n,
+                    st: now, la: now, en: now, act: 0, seg: 0, res: 0, quit: false, done: true, q: [], shownIds: [], cur: null,
+                    paper: groups.map(g => g.key) });
+  studyLogSave();
+}
+// 起動したとき: 前に開いていたときに閉じられた回（解いている最中に閉じた）を、最後に答えた時刻でしめる。
+//   ★続きから再開すれば、同じ回に戻る（studyLogResume）
+function studyLogOnBoot(){
+  const o = studyLogLoad();
+  let changed = false;
+  Object.keys(o.cur).forEach(k => {
+    const s = studyLogCur(k);
+    if(!s){ delete o.cur[k]; changed = true; return; }
+    if(!s.done && s.seg){ studyLogClose(s, s.la || s.seg, true, false); changed = true; }
+  });
+  if(changed) studyLogSave();
+}
+
+// ---- 書き出し（CSV）。★今の「正解・不正解の記録」のCSVとは別のファイル ----
+function fmtDateTime(ts){
+  if(!ts) return "";
+  const d = new Date(ts), p = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+}
+function downloadCsv(rows, baseName){
+  const csv = rows.map(r => r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + csv], {type: "text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const now = new Date(), pad = n => String(n).padStart(2, "0");
+  a.href = url;
+  a.download = baseName + "_" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + ".csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const STUDY_LOG_HEADER = ["種類","開始日時","終了日時","全体の分","解いていた分","一人・対戦","自分の役","形式","教科","単元","やり直し",
+  "予定の問題数","出した問題数","答えた数","正解数","まちがい数","スキップ数","時間切れ数","出し直しで答えた数","途中でやめた","再開した回数",
+  "1問の平均秒","1問の中央値秒","1問の最長秒"];
+function studyLogRows(){
+  const o = studyLogLoad();
+  const rows = [STUDY_LOG_HEADER.slice()];
+  const min1 = ms => Math.round(ms / 6000) / 10;
+  Object.keys(o.monthly).sort().forEach(key => {
+    const [ym, subj, kind, mode] = key.split("|"), m = o.monthly[key];
+    rows.push(["月のまとめ", ym, "", "", Math.round((m.act || 0) / 6) / 10, kind, "", mode, subj, "", "",
+      m.plan, m.shown, m.ans, m.ok, m.ng, m.skip, m.to, "", "", "",
+      m.secN ? Math.round(m.secSum / m.secN * 10) / 10 : "", "", m.secN ? m.max : ""]);
+  });
+  o.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
+    const sm = studyLogSummary(s);
+    const live = !s.done && s.seg;   // いま解いている最中（書き出しを押したのが対戦の合間など）
+    const en = live ? Date.now() : (s.en || s.la || s.st);
+    const act = (s.act || 0) + (live ? Date.now() - s.seg : 0);
+    const role = s.role === "host" ? "ホスト" : (s.role === "guest" ? "ゲスト" : "");
+    rows.push(["1回", fmtDateTime(s.st), fmtDateTime(en), min1(en - s.st), min1(act), s.k === "battle" ? "対戦" : "一人", role, s.m, s.subj,
+      (s.u || []).join("／"), s.retry ? "はい" : "いいえ",
+      s.plan || 0, sm.shown, sm.ans, sm.ok, sm.ng, sm.skip, sm.to, sm.re, (s.done && !s.quit) ? "いいえ" : "はい", s.res || 0,
+      sm.avg, sm.med, sm.max]);
+  });
+  return rows;
+}
+const RESULT_NAMES = {o: "〇", x: "✕", skip: "スキップ", timeup: "時間切れ", see: "見ただけ"};
+function studyLogDetailRows(){
+  const o = studyLogLoad();
+  const rows = [["開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し"]];
+  o.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
+    if(!Array.isArray(s.q)) return;
+    s.q.forEach((e, i) => {
+      const d = getQById(e[0]);
+      const dm = DAIMON_ITEM.get(e[0]);
+      const q = d ? ((dm && dm.it.label ? dm.it.label + " " : "") + d.q) : "";
+      rows.push([fmtDateTime(s.st), s.k === "battle" ? "対戦" : "一人", s.subj, s.m, i + 1, e[0], d ? d.u : "", q,
+                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : ""]);
+    });
+  });
+  return rows;
+}
+// 大問ごとの記録（★記録そのものは小問ごとに stats にある。ここは大問1つを1行にまとめて見せるだけ）
+function daimonRecordRows(){
+  const rows = [["大問ID","教科","単元","大問","小問の数","大問の状態",
+    "定着した小問","苦手な小問","まだ正解していない小問","正解した回数","まちがえた回数","最終正答日","最終回答日","小問ID"]];
+  QA_DATA.filter(d => isDaimonEntry(d)).forEach(d => {
+    const g = d.daimon, tiers = [0, 0, 0];
+    let ok = 0, ng = 0, lastC = 0, lastA = 0;
+    d.itemIds.forEach(id => {
+      const s = stats[id];
+      tiers[tierOfStat(s)]++;
+      if(!s) return;
+      ok += s.correct || 0; ng += s.wrong || 0;
+      if(s.lastCorrectAt > lastC) lastC = s.lastCorrectAt;
+      if(s.lastAnswered > lastA) lastA = s.lastAnswered;
+    });
+    const name = (g.book ? g.book + " " : "") + daimonName(g);
+    rows.push([d.id, d.subj, d.u, name, d.itemIds.length, TIER_NAMES[tierOf(QA_DATA.indexOf(d))],
+      tiers[2], tiers[1], tiers[0], ok, ng, lastC ? dateToYMD(lastC) : "", lastA ? dateToYMD(lastA) : "", d.itemIds.join(" ")]);
+  });
+  return rows;
+}
+els["export-studylog-link"].addEventListener("click", ()=>{
+  if(studyLogLoad().sessions.length === 0 && Object.keys(studyLog.monthly).length === 0){
+    alert("学習ログはまだありません。一人・二人で問題を解くと、1回ごとにたまっていきます。");
+    return;
+  }
+  downloadCsv(studyLogRows(), "社会一問一答_学習ログ");
+});
+els["export-studylog-detail-link"].addEventListener("click", ()=>{
+  const rows = studyLogDetailRows();
+  if(rows.length <= 1){
+    alert("1問ごとの秒の記録はまだありません。");
+    return;
+  }
+  downloadCsv(rows, "社会一問一答_学習ログ_1問ごと");
+});
+els["export-daimon-link"].addEventListener("click", ()=>{
+  downloadCsv(daimonRecordRows(), "社会一問一答_大問の記録");
+});
+
+// ============================================================
 // ★理科の「大問」（テスト形式）── 2026-09-27
 // ============================================================
 // 依頼書: 司令塔\回答\対戦_大問を丸ごと出す_依頼_2026-09-27.md（案は司令塔の承認ずみ）
@@ -6984,10 +7327,12 @@ function paperSheetHead(g, label){
 }
 // ★2026-10-03 選んだ大問をまとめて出す。並びは一覧の順。
 //   問題の紙を全部（1題ずつ改ページ）→ 答えの紙を全部（1題ずつ改ページ）。1題だけのときは前と同じ紙になる
+let paperPrintGroups = [];
 function openPaperPrint(keys){
   if(!Array.isArray(keys)) keys = [keys];
   const groups = PAPER_DAIMON.filter(x => keys.includes(x.key));
   if(groups.length === 0) return;
+  paperPrintGroups = groups;   // ★学習ログ: 印刷を押したときに「紙」として1行残す
   const body = els["paper-print-body"];
   body.innerHTML = "";
   const qSheets = groups.map(g => buildPaperQuestionSheet(g));
@@ -7190,7 +7535,10 @@ els["daimon-list-back"].addEventListener("click", ()=>{ showScreen("screen-home"
 els["paper-open-btn"].addEventListener("click", openPaperList);
 els["paper-list-back"].addEventListener("click", ()=>{ showScreen("screen-home"); renderHome(); });
 els["paper-print-back"].addEventListener("click", ()=> showScreen("screen-paper-list"));
-els["paper-print-btn"].addEventListener("click", ()=> window.print());
+els["paper-print-btn"].addEventListener("click", ()=>{
+  try{ if(paperPrintGroups.length) studyLogPaper(paperPrintGroups); }catch(e){ console.error(e); }   // ★学習ログ（2026-10-05）
+  window.print();
+});
 els["paper-pick-go"].addEventListener("click", ()=>{
   const keys = paperGroups().filter(g => paperPicked.has(g.key)).map(g => g.key);
   if(keys.length === 0) return;   // ★0題では開かない（ボタンも押せない）
@@ -7277,6 +7625,7 @@ function insertDaimonItemLater(arr, from, id){
 function soloTimeUp(){
   stopSoloThink();
   const id = quizQueue[quizPos];
+  studyLogAnswer("solo", id, "timeup");   // ★学習ログ
   quizQueue.splice(quizPos, 1);
   quizQueue.push(id);
   soloTimeupCount++;
@@ -7300,6 +7649,7 @@ els["solo-start-btn"].addEventListener("click", ()=>{
   inSoloRetryRound = false;
   soloSkippedIds = new Set();
   soloTimeupCount = 0;
+  studyLogStart("solo", quizQueue, {review: reviewMode});   // ★学習ログ（2026-10-05）
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -7372,6 +7722,7 @@ function startSoloCard(){
     els["solo-review-jump-input"].placeholder = String(quizPos + 1);
     els["solo-review-jump-total"].textContent = String(quizQueue.length);
   }
+  studyLogShow("solo", id);   // ★学習ログ: この問題が出た時刻（2026-10-05）
   saveSoloSession();
 }
 
@@ -7386,6 +7737,7 @@ els["solo-hint-btn"].addEventListener("click", ()=> nextHint("solo"));
 els["battle-hint-btn"].addEventListener("click", ()=> nextHint("battle"));
 els["solo-reveal-btn"].addEventListener("click", ()=>{
   stopSoloThink();
+  studyLogReveal("solo");   // ★学習ログ: 考えた秒はここまで（2026-10-05）
   hideHintBtn("solo");   // ★答えを見たら、もうヒントは要らない（出したヒントは残す）
   // ★大問の小問の答えの図は、ここで初めて作る（battle と同じ）
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
@@ -7400,9 +7752,11 @@ els["solo-reveal-btn"].addEventListener("click", ()=>{
 });
 
 els["solo-review-next-btn"].addEventListener("click", ()=>{
+  studyLogAnswer("solo", quizQueue[quizPos], "see");   // ★学習ログ（チェックのみ＝見ただけ）
   quizPos++;
   if(quizPos >= quizQueue.length){
     clearSoloSession();
+    studyLogFinish("solo");
     alert("全"+quizQueue.length+"問の確認が終わりました。");
     renderHome();
     showScreen("screen-home");
@@ -7444,6 +7798,9 @@ function advanceSolo(){
   }
 }
 function judgeSolo(correct){
+  // ★学習ログ（2026-10-05）。スキップのあとの出し直し（記録しない回）は「出し直し」の印を付ける（recordSoloAnswer と同じ条件）
+  const jid = quizQueue[quizPos];
+  studyLogAnswer("solo", jid, correct ? "o" : "x", soloSkippedIds.has(jid) && quizResults.some(r => r.id === jid && r.skip));
   recordSoloAnswer(correct);
   advanceSolo();
 }
@@ -7461,6 +7818,7 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
     els["solo-reveal-btn"].style.display = "none";
     els["solo-skip-btn"].style.display = "none";
     els["solo-judge-row"].style.display = "none";
+    studyLogAnswer("solo", id, "skip");   // ★学習ログ
     recordSoloAnswer(false);
     quizResults[quizResults.length - 1].skip = true;
     soloSkippedIds.add(id);
@@ -7478,6 +7836,7 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
   els["solo-judge-row"].style.display = "none";
   els["solo-undo-row"].style.display = "none";
   const firstSkip = !soloSkippedIds.has(sid);
+  studyLogAnswer("solo", sid, "skip", !firstSkip);   // ★学習ログ
   recordSoloAnswer(false);   // ★出し直しでのスキップは記録しない（recordSoloAnswer の norecord）
   if(firstSkip) quizResults[quizResults.length - 1].skip = true;
   soloSkippedIds.add(sid);
@@ -7505,6 +7864,7 @@ els["solo-undo-link"].addEventListener("click", ()=>{
   }else{
     if(quizResults.length === 0) return;
     const last = quizResults.pop();
+    studyLogUndo("solo");   // ★学習ログ: 最後の1件を取りのぞく（やり直した判定はあとで入る）
     const qid = last.id;
     if(last.norecord){
       // ★2026-10-05 スキップのあとの出し直し（記録していない）は、並びを戻すだけ
@@ -7555,6 +7915,7 @@ els["solo-review-jump-btn"].addEventListener("click", ()=>{
 els["solo-back"].addEventListener("click", ()=>{
   stopSoloThink();
   if(quizResults.length === 0 || confirm("とちゅうでやめますか？ここまでの記録は保存されます。")){
+    studyLogPause("solo");   // ★学習ログ: 途中でやめた（続きから再開すれば同じ1回に戻る）
     renderHome();
     showScreen("screen-home");
   }
@@ -7563,6 +7924,7 @@ els["solo-back"].addEventListener("click", ()=>{
 function finishSoloQuiz(){
   stopSoloThink();
   clearSoloSession();
+  studyLogFinish("solo");   // ★学習ログ（2026-10-05）
   // ★2026-10-05 スキップのあとの出し直し（norecord）は数に入れない（1問は1回）
   const counted = quizResults.filter(r => !r.norecord);
   const correctCount = counted.filter(r=>r.correct).length;
@@ -7595,6 +7957,7 @@ function finishSoloQuiz(){
     quizPos = 0;
     quizResults = [];
     inSoloRetryRound = true;
+    studyLogStart("solo", quizQueue, {retry: true});   // ★学習ログ
     startSoloCard();
     showScreen("screen-solo");
   };
@@ -7614,6 +7977,7 @@ els["retry-last-miss-btn"].addEventListener("click", ()=>{
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = true;
+  studyLogStart("solo", quizQueue, {retry: true});   // ★学習ログ
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -7627,6 +7991,7 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
   quizResults = session.quizResults;
   reviewMode = !!session.reviewMode;
   inSoloRetryRound = !!session.inSoloRetryRound;
+  studyLogResume("solo", quizQueue, {review: reviewMode, retry: inSoloRetryRound});   // ★学習ログ: 途中の1回に戻る
   startSoloCard();
   showScreen("screen-solo");
 });
@@ -8098,6 +8463,7 @@ function saveLastCode(code){
 }
 
 function leaveRoom(){
+  studyLogPause("battle");   // ★学習ログ: 対戦の途中で抜けた（中断・もどる）。終わった対戦では何もしない
   clearConnectTrouble();   // やめる・もどるで抜けたときも、知らせを消してタイマーを止める
   if(room){
     try{ room.leave(); }catch(e){}
@@ -8302,6 +8668,7 @@ function setupActions(){
       // resync to whatever question they're currently on, instead of
       // wiping the score and restarting from question 0
       scores = data.scores || {host:0, guest:0};
+      studyLogResume("battle", questionIds, {role: "guest", retry: inMissRetryRound});   // ★学習ログ
       showQuestion(data.index);
     }else{
       // 1問目。ホストが「わかった！」を押して送ってきた合図なので、ゲスト側でも鳴らす
@@ -8309,6 +8676,7 @@ function setupActions(){
       playAdvanceCue();
       scores = {host:0, guest:0};
       clearJudgeFix();   // ★新しいラウンド。前のラウンドの判定は直せない（つなぎ直しの resync では消さない）
+      studyLogStart("battle", questionIds, {role: "guest", retry: inMissRetryRound});   // ★学習ログ
       // ★ホストが1問目（大問の小問）をスキップしたときは、2問目以降から始まる（index つき・2026-09-30）
       showQuestion(typeof data.index === "number" ? data.index : 0);
     }
@@ -8333,6 +8701,10 @@ function setupActions(){
     //   ゲストにとっては1回目に〇だった問題が混ざる。ゲストの〇は〇で記録する（司令塔承認・bug0930 ①）
     const forcedWrong = role === "host" && (inMissRetryRound || hostSkippedIds.has(qid));
     const finalCorrect = forcedWrong ? false : data.correct;
+    // ★学習ログ（2026-10-05）: 自分の答えの〇✕（生の判定）。再開して判定ずみの問題に戻ったときは二重に入れない
+    if(!(role === "host" && hostRecordedIdx === currentIndex)){
+      studyLogAnswer("battle", qid, data.correct ? "o" : "x", role === "host" && (hostSkippedIds.has(qid) || daimonSkipRecorded.has(qid)));
+    }
     // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
     //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
     if(!(role === "host" && hostRecordedIdx === currentIndex) && !(role === "host" && daimonSkipRecorded.has(qid))){
@@ -8557,6 +8929,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
     els["resume-battle-btn"].disabled = false;
   }
   showScreen("screen-battle");
+  studyLogResume("battle", questionIds, {role: "host", retry: inMissRetryRound});   // ★学習ログ: 途中の1回に戻る
   // show the question privately and just wait -- don't start sending/
   // answering-phase countdowns until the guest has actually reconnected.
   // onPeerJoin's reconnect branch calls hostResyncQuestion() once they do,
@@ -8672,6 +9045,7 @@ function showQuestion(idx, hostPrivate){
   hideBigVerdict();
   currentIndex = idx;
   if(idx >= questionIds.length){ endGame(); return; }
+  studyLogShow("battle", questionIds[idx]);   // ★学習ログ（同じ問題の描き直し・つなぎ直しでは時刻を変えない）
   myVerdictOfOpponent = null;
   opponentVerdictOfMe = null;
   scored = false;
@@ -8851,6 +9225,7 @@ function performDaimonSkip(){
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   const id = questionIds[currentIndex];
+  studyLogAnswer("battle", id, "skip", daimonSkipRecorded.has(id));   // ★学習ログ
   // ★2026-10-05 ユーザー「あとで出しましょう」: 小問のスキップも一問一答とそろえて、答えを見せて✕で記録し、あとでもう一度出す。
   //   ✕を付けるのは1回目だけ（出し直しでまたスキップしても、出し直しで答えても、ホストの記録は付けない）
   if(hostRecordedIdx !== currentIndex && !daimonSkipRecorded.has(id)){
@@ -8896,6 +9271,7 @@ function performSkip(){
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   const skippedId = moveCurrentToEndOfRound();
+  studyLogAnswer("battle", skippedId, "skip", hostSkippedIds.has(skippedId));   // ★学習ログ
   // ★hostSkippedIds に入るのは「自分で押した」ときだけ。ここに入った問題は、
   //   あとで回ってきて正解しても記録は誤答のまま（judgeAction の forcedWrong）。
   //   答えを見てしまっているので、正解しても「覚えていた」ことにはならないため
@@ -8935,6 +9311,7 @@ function performTimeUp(){
   //   出し直す位置: 同じ大問の残りの小問のあと（大問はばらけない）。残りが無い（大問の最後の手）ときは
   //   一問一答と同じくラウンドの末尾（すぐ同じ小問をもう一度出しても意味がないため）
   const isItem = isDaimonItemId(questionIds[currentIndex]);
+  studyLogAnswer("battle", questionIds[currentIndex], "timeup");   // ★学習ログ
   battleTimeupCount++;
   clearTimeout(pendingSendTimer);
   stopCountdown();
@@ -9110,6 +9487,7 @@ function revealDaimonAnswerFig(prefix, ids, idx){
 }
 let revealByJudge = false;   // ★2026-10-05 親の判定で開いたか（ゲストのふだの言い方を変える）
 function revealAnswer(){
+  studyLogReveal("battle");   // ★学習ログ: 考えた秒はここまで
   hideHintBtn("battle");   // ★答えが開いたら、もうヒントは出さない（出したヒントは残す）
   // ★2026-10-03 ホストの画面で答えが開いたことを、ゲストに知らせる（押して開いたときも、時間切れで開いたときも）
   if(role === "host" && room && revealAction){ try{ revealAction.send({idx: currentIndex, opened: true, byJudge: revealByJudge}); }catch(e){} }
@@ -9250,6 +9628,7 @@ function applyJudgeFixOnHost(data){
   // ② そのうえで入れ直す。＝ correct / wrong / box は、この問について1回しか動かない
   const finalCorrect = r.forcedWrong ? false : data.correct;
   recordResult(r.qid, finalCorrect);          // saveStats() はこの中で呼ばれる
+  studyLogFix("battle", r.qid, data.correct);   // ★学習ログの〇✕も直す
 
   // ③ 「まちがえた問題だけもう一勝負」のリスト。**生の判定**で決めるのは記録のときと同じ規則
   const at = myMissesThisRound.indexOf(r.qid);
@@ -9400,6 +9779,7 @@ const RETRY_COUNTDOWN_SEC = 3;
 
 function endGame(){
   clearBattleSession();
+  studyLogFinish("battle");   // ★学習ログ（2026-10-05）
   clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
   const my = role === "host" ? scores.host : scores.guest;
   const opp = role === "host" ? scores.guest : scores.host;
@@ -9450,6 +9830,7 @@ function startMissRetryRound(){
   resetAvatars();
   setupAvatarLabels();
   showScreen("screen-battle");
+  studyLogStart("battle", questionIds, {role: "host", retry: true});   // ★学習ログ
   hostAdvanceAndArm(0);
 }
 
@@ -9526,6 +9907,7 @@ function startBattleNow(){
   resetAvatars();
   setupAvatarLabels();
   showScreen("screen-battle");
+  studyLogStart("battle", questionIds, {role: "host"});   // ★学習ログ
   hostAdvanceAndArm(0);
 }
 els["start-together-btn"].addEventListener("click", ()=>{
@@ -9681,6 +10063,7 @@ setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? quizQueue[quizPo
 setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 
 loadStats();
+studyLogOnBoot();        // ★学習ログ: 解いている最中に閉じた回を、最後に答えた時刻でしめる（2026-10-05）
 mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
 loadLastMiss();
