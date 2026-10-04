@@ -142,7 +142,8 @@ async function run(label, src) {
 
     // ---- S3 ⑤ 一人 ----
     await soloStart();
-    check("★S3 ⑤ 一問一答にはスキップが出ない", !(await vis(sp, "#solo-skip-btn")));
+    // ★2026-10-05 一問一答にもスキップ（答えを見て✕）を出すことになった（ユーザー）。逆向きに確かめる
+    check("★S3 ⑤ 一問一答にもスキップが出る（2026-10-05〜）", await vis(sp, "#solo-skip-btn"));
     await judge(true);
     const skipVis = await vis(sp, "#solo-skip-btn");
     check("★S3 ⑤ 大問の小問にはスキップが出る", skipVis);
