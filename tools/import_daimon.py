@@ -41,20 +41,28 @@ import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 BATTLE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-def _find_src():
+def _find_src(folder="quiz_csv_理科"):
     # git worktree（kosukequiz-battle/_wt/xxx）から動かしても元データを見つけられるよう、上へたどる
     d = BATTLE
     while True:
-        cand = os.path.join(os.path.dirname(d), "5年下", "quiz_csv_理科")
+        cand = os.path.join(os.path.dirname(d), "5年下", folder)
         if os.path.isdir(cand):
             return cand
         if os.path.dirname(d) == d:
-            return os.path.join(os.path.dirname(BATTLE), "5年下", "quiz_csv_理科")
+            return os.path.join(os.path.dirname(BATTLE), "5年下", folder)
         d = os.path.dirname(d)
 
 
 SRC = _find_src()
 IMG_SRC = os.path.join(SRC, "画像プレビュー")
+# ★2026-10-04 社会の大問（ユーザー承認「社会の大問形式を入れます」）。形は理科と同じ。
+#   元データは 5年下/quiz_csv/、画像は 5年下/quiz_csv/画像プレビュー/。大問の key は "g{回}_{本}_{大問}"、
+#   書き出す大問には "subj": "社会" を付ける（付いていない大問は理科＝これまでどおり）
+SRC_SHAKAI = _find_src("quiz_csv")
+IMG_SRC_SHAKAI = os.path.join(SRC_SHAKAI, "画像プレビュー")
+# (本の名前, 回) → ファイル名。★本番のファイルが来たらここに足す（いまは見本しか無いので空）
+FILES_SHAKAI = {
+}
 IMG_DST = os.path.join(BATTLE, "images")
 OUT = os.path.join(BATTLE, "daimon_data.js")
 DATA_JS = os.path.join(BATTLE, "data.js")
@@ -110,7 +118,11 @@ def main():
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--weekly", type=int, action="append", default=[],
                     help="載せる週テストの回（名指しされたときだけ）")
+    ap.add_argument("--extra", action="append", default=[],
+                    help="★調べるだけ: 登録していない社会の大問を読む「社会:本:回:パス」（--apply とは使えない）")
     args = ap.parse_args()
+    if args.extra and args.apply:
+        die("--extra は調べるだけです。書き出すときは FILES_SHAKAI に登録してください")
 
     with open(DATA_JS, encoding="utf-8") as f:
         qa_ids = set(re.findall(r'"id":\s*"([^"]+)"', f.read()))
@@ -118,14 +130,24 @@ def main():
         die("data.js の id が読めていません（" + str(len(qa_ids)) + "件）。読み方を疑うこと")
 
     groups, seen_ids, images, srcinfo = [], set(), {}, []
+    # ★読むもの（科目, 本, 回, ファイル, 画像の場所）。理科を先に、社会をあとに（並びがそのまま一覧の並び）
+    jobs = []
     for kai in (3, 4, 6):
         for book in BOOKS:
             if book == "週テスト" and kai not in args.weekly:
                 continue
             if (book, kai) not in FILES:   # ★第6回は週テストが無い。名指しされても無いものは止める
                 die("元データの登録がありません: %s 第%d回" % (book, kai))
-            fn = FILES[(book, kai)]
-            path = os.path.join(SRC, fn)
+            jobs.append(("理科", book, kai, os.path.join(SRC, FILES[(book, kai)]), IMG_SRC))
+    for (book, kai), fn in sorted(FILES_SHAKAI.items(), key=lambda x: (x[0][1], BOOKS.index(x[0][0]) if x[0][0] in BOOKS else 9)):
+        jobs.append(("社会", book, kai, os.path.join(SRC_SHAKAI, fn), IMG_SRC_SHAKAI))
+    for ex in args.extra:
+        parts = ex.split(":", 3)
+        if len(parts) != 4 or parts[0] != "社会":
+            die("--extra の書き方は 社会:本:回:パス です: " + ex)
+        jobs.append(("社会", parts[1], int(parts[2]), parts[3], IMG_SRC_SHAKAI))
+    for subj, book, kai, path, img_src in jobs:
+            fn = os.path.basename(path)
             if not os.path.exists(path):
                 die("元データがありません: " + fn)
             with open(path, encoding="utf-8") as f:
@@ -136,6 +158,9 @@ def main():
                 by_dm.setdefault(str(it["daimon"]), []).append(it)
             known = {str(x["daimon"]) for x in d["daimon"]}
             for it in d["items"]:
+                # ★id は英小文字と数字だけ（見本の「（案）g6d101」のような下書きの id は止める）
+                if not re.fullmatch(r"[a-z0-9]+", str(it.get("id", ""))):
+                    die(fn + ": 小問の id が正しくありません（英小文字と数字だけ）: " + str(it.get("id")))
                 if str(it["daimon"]) not in known:
                     die(fn + ": 小問 " + it["id"] + " の大問 " + str(it["daimon"]) + " がありません")
                 if it["id"] in seen_ids:
@@ -146,12 +171,14 @@ def main():
                     die(fn + ": 小問 " + it["id"] + " の回が " + str(it.get("kai")))
                 seen_ids.add(it["id"])
             for dm in d["daimon"]:
-                key = "r%d_%s_%s" % (kai, book, dm["daimon"])
+                key = ("g" if subj == "社会" else "r") + "%d_%s_%s" % (kai, book, dm["daimon"])
                 its = by_dm.get(str(dm["daimon"]), [])
                 if not its:
                     die(fn + ": 大問 " + str(dm["daimon"]) + " に小問が1つもありません")
                 g = {"key": key, "kai": kai, "book": book, "daimon": str(dm["daimon"]),
                      "lead": dm.get("lead", ""), "file": dm.get("file", ""), "items": []}
+                if subj == "社会":
+                    g["subj"] = "社会"   # ★理科の大問には書かない（書き出しの1文字も変えないため）
                 # ★依頼書「理科_大問を紙で出す」: 大問に paper/paperReason が付いていたら、そのまま通す。
                 #   ここ以外の欄には触らない。paper は true のときだけ書く（false は書かない＝今までどおり）
                 if dm.get("paper") is True:
@@ -168,13 +195,13 @@ def main():
                     g["items"].append({k: v for k, v in x.items() if v != ""})
                 for name in [g["file"]] + [i.get("file", "") for i in g["items"]] + [i.get("aFile", "") for i in g["items"]]:
                     if name:
-                        images.setdefault(name, None)
+                        images.setdefault(name, img_src)
                 groups.append({k: v for k, v in g.items() if v != ""})
 
     # 画像: 実物から寸法を測る（写さない）。既存と中身がちがえば止める（上書きしない）
     sizes, new_imgs = {}, []
     for name in sorted(images):
-        s = os.path.join(IMG_SRC, name)
+        s = os.path.join(images[name], name)
         if not os.path.exists(s):
             die("画像がありません: " + name)
         sizes[name] = list(jpeg_size(s))

@@ -2394,15 +2394,20 @@ const DAIMON_ITEM = new Map();   // 小問の id → { it, g, pos, entry, view }
 //     ここで入り口を分けてしまえば、一人・二人・ホームの数・未クリア・一覧の件数のどこにも
 //     同じ条件をもう一度書かずに、印の付いた大問だけが自然に出なくなる。
 const PAPER_DAIMON = [];
+// ★2026-10-04 社会の大問も同じ形で入る（ユーザー承認「社会の大問形式を入れます」）。
+//   大問の科目は g.subj（無ければ理科＝これまでの理科の大問）。単元は「その科目の 第N回.〜」の一問一答と同じ単元にする
+function daimonSubj(g){ return g && g.subj === "社会" ? "社会" : "理科"; }
 (function addDaimonEntries(){
-  const unitOfKai = {};
+  const unitOfKai = {};   // "科目|回" → 単元
   QA_DATA.forEach(d => {
-    const m = d.subj === "理科" && /^第(\d+)回\./.exec(d.u || "");
-    if(m && !unitOfKai[m[1]]) unitOfKai[m[1]] = d.u;
+    const m = (d.subj === "理科" || d.subj === "社会") && /^第(\d+)回\./.exec(d.u || "");
+    const k = m ? d.subj + "|" + m[1] : "";
+    if(m && !unitOfKai[k]) unitOfKai[k] = d.u;
   });
   const qaIds = new Set(QA_DATA.map(d => d.id));
   DAIMON.forEach(g => {
-    const u = unitOfKai[String(g.kai)];
+    const subj = daimonSubj(g);
+    const u = unitOfKai[subj + "|" + String(g.kai)];
     // ★単元が見つからない・id がかぶる大問は足さない（黙って別の単元に入れない）
     if(!u || !Array.isArray(g.items) || g.items.length === 0 || qaIds.has(g.key)) return;
     if(g.items.some(it => qaIds.has(it.id) || DAIMON_ITEM.has(it.id))) return;
@@ -2412,7 +2417,7 @@ const PAPER_DAIMON = [];
       return;
     }
     const entry = {
-      id: g.key, subj: "理科", u: u, kind: "daimon", daimon: g,
+      id: g.key, subj: subj, u: u, kind: "daimon", daimon: g,
       q: (g.lead || g.items[0].q || "").replace(/\s+/g, " "), a: "",
       itemIds: g.items.map(it => it.id),
       hasFig: !!(g.file || g.items.some(it => it.file))
@@ -2420,7 +2425,7 @@ const PAPER_DAIMON = [];
     QA_DATA.push(entry);
     g.items.forEach((it, pos) => {
       DAIMON_ITEM.set(it.id, { it: it, g: g, pos: pos, entry: entry,
-        view: { id: it.id, subj: "理科", u: u, q: it.q, a: it.a, sol: it.sol, note: it.note, daimonKey: g.key } });
+        view: { id: it.id, subj: subj, u: u, q: it.q, a: it.a, sol: it.sol, note: it.note, daimonKey: g.key } });
     });
   });
 })();
@@ -5943,7 +5948,7 @@ function buildDaimonListRow(d){
 //   一覧の他の絞りこみ（段・★最優先・出題タイプ・優先度・解いた日）は紙の大問には無い概念なので使わない。単元だけ効く
 function renderPaperListItems(){
   ++listRenderGen;   // 前の描き直しの続きがあれば止める
-  const groups = PAPER_DAIMON.filter(g => currentSubject === "理科" && listSelectedUnits.has(g.u));
+  const groups = paperGroups().filter(g => listSelectedUnits.has(g.u));
   listShownIndices = [];   // ★紙の大問には★最優先の一括付け外しは効かない
   refreshStarBulkLabel();
   const nItems = groups.reduce((a, g) => a + g.items.length, 0);
@@ -6720,14 +6725,16 @@ function daimonName(g){
 //     ここから先は出題・記録には一切つながらない。印刷して紙で配るためだけの経路
 //   ・問題の紙 … 見出し・リード文・図・小問と書くスペース。答え（a・aFile）は一切出さない
 //   ・答えの紙 … 小問ごとの答え（aFile もここ）。改ページで別ページに
+// ★2026-10-04 紙の大問は、いまの科目のものだけ（社会の大問が入ったため。前は理科のときだけ出していた）
+function paperGroups(){ return PAPER_DAIMON.filter(g => daimonSubj(g) === currentSubject); }
 function refreshPaperButton(){
-  // ★理科のときだけ・印の付いた大問が1つ以上あるときだけ出す
-  els["paper-open-btn"].style.display = (currentSubject === "理科" && PAPER_DAIMON.length > 0) ? "" : "none";
+  // ★いまの科目に、印の付いた大問が1つ以上あるときだけ出す
+  els["paper-open-btn"].style.display = paperGroups().length > 0 ? "" : "none";
 }
 function renderPaperList(){
   const body = els["paper-list-body"];
   body.innerHTML = "";
-  if(PAPER_DAIMON.length === 0){
+  if(paperGroups().length === 0){
     const e = document.createElement("div");
     e.className = "empty-note";
     e.textContent = "紙の印が付いた大問はありません。";
@@ -6735,7 +6742,7 @@ function renderPaperList(){
     return;
   }
   let lastHead = "";
-  PAPER_DAIMON.forEach(g=>{
+  paperGroups().forEach(g=>{
     const head = "第" + g.kai + "回 " + g.book;
     if(head !== lastHead){
       const h = document.createElement("div");
@@ -6788,7 +6795,7 @@ function togglePaperPick(key){
   refreshPaperPickBar();
 }
 function refreshPaperPickBar(){
-  const n = PAPER_DAIMON.filter(g => paperPicked.has(g.key)).length;
+  const n = paperGroups().filter(g => paperPicked.has(g.key)).length;
   const btn = els["paper-pick-go"];
   btn.disabled = n === 0;
   btn.textContent = n === 0 ? "印刷する大問を選んでください" : "選んだ " + n + " 題を印刷用に表示";
@@ -7027,16 +7034,16 @@ els["paper-list-back"].addEventListener("click", ()=>{ showScreen("screen-home")
 els["paper-print-back"].addEventListener("click", ()=> showScreen("screen-paper-list"));
 els["paper-print-btn"].addEventListener("click", ()=> window.print());
 els["paper-pick-go"].addEventListener("click", ()=>{
-  const keys = PAPER_DAIMON.filter(g => paperPicked.has(g.key)).map(g => g.key);
+  const keys = paperGroups().filter(g => paperPicked.has(g.key)).map(g => g.key);
   if(keys.length === 0) return;   // ★0題では開かない（ボタンも押せない）
   openPaperPrint(keys);
 });
 els["paper-pick-all"].addEventListener("click", ()=>{
-  PAPER_DAIMON.forEach(g => paperPicked.add(g.key));
+  paperGroups().forEach(g => paperPicked.add(g.key));
   savePaperPick(); renderPaperList();
 });
 els["paper-pick-none"].addEventListener("click", ()=>{
-  paperPicked = new Set();
+  paperGroups().forEach(g => paperPicked.delete(g.key));   // ★いまの科目のぶんだけはずす（2026-10-04）
   savePaperPick(); renderPaperList();
 });
 els["daimon-reveal-btn"].addEventListener("click", revealDaimon);
