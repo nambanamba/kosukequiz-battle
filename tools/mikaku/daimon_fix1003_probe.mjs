@@ -1,3 +1,4 @@
+// ★2026-10-04 社会の大問が入ったので、この検査は理科の大問だけを見る（DAIMON_DATA を subj で絞る）
 // 大問の不具合2件（2026-10-03・ユーザー）。本物の Chrome・390x844・まねごとの待ち合わせ先（trystero は本物）
 //   1) 「大問：第6回 基本問題 大問3（小問13）（図4）は… まだ正解していない（答える小問 13問・前回○ 0問）— 図がなくないですか？」
 //      → この文言が出るのは「問題一覧」の大問の行。そこに図が1枚も出ていなかった
@@ -46,13 +47,13 @@ const MIG = { "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 };
 // 対戦用: 第6回 基本問題 大問3 だけが「答える」状態。ほかの理科は全部おぼえ済み
 const SEED = (mig) => {
   const now = Date.now();
-  const g = DAIMON_DATA.find(g => g.key === "r6_基本問題_3");
+  const g = DAIMON_DATA.filter(g => g.subj !== "社会").find(g => g.key === "r6_基本問題_3");
   if (!g) return { err: "r6_基本問題_3 がありません" };
   const units = [...new Set(QA_DATA.filter(d => d.subj === "理科").map(d => d.u))];
   const known = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 };
   const st = {};
   QA_DATA.forEach(d => { if (d.subj === "理科" && d.kind !== "daimon") st[d.id] = Object.assign({}, known); });
-  DAIMON_DATA.forEach(h => { if (h !== g) h.items.forEach(it => { st[it.id] = Object.assign({}, known); }); });
+  DAIMON_DATA.filter(g => g.subj !== "社会").forEach(h => { if (h !== g) h.items.forEach(it => { st[it.id] = Object.assign({}, known); }); });
   localStorage.clear();
   localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
   localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(mig));
@@ -107,10 +108,10 @@ async function run(label, src) {
     } else check("L2 図を押すと画面いっぱいに開く", false, "図が無い");
     const all = await pg.evaluate(() => {
       // 一覧は少しずつ描くので、全部描けてから数える
-      const want = DAIMON_DATA.filter(g => !g.paper && g.file).map(g => g.key);
+      const want = DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => !g.paper && g.file).map(g => g.key);
       const miss = [], aImg = [];
       for (const k of want) { const r = document.querySelector('#list-items [data-daimon-key="' + k + '"]'); if (!r) { miss.push(k + "(行なし)"); continue; }
-        const g = DAIMON_DATA.find(x => x.key === k);
+        const g = DAIMON_DATA.filter(g => g.subj !== "社会").find(x => x.key === k);
         const srcs = [...r.querySelectorAll(".list-img-wrap img")].map(i => i.getAttribute("src"));
         if (!srcs.includes("images/" + g.file)) miss.push(k);
         g.items.forEach(it => { if (it.aFile && srcs.includes("images/" + it.aFile)) aImg.push(it.id); }); }

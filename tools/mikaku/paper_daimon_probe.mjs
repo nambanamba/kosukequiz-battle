@@ -56,7 +56,8 @@ function alreadyPaper(key) {
   const block = DAIMON_SRC.slice(i, next < 0 ? DAIMON_SRC.length : next);
   return /"paper":\s*true/.test(block);
 }
-const candidates = keysAll.filter(k => itemCountOf(k) >= 2 && !alreadyPaper(k));
+// ★2026-10-04 社会の大問（key が g で始まる）は候補にしない。この検査は理科の紙の大問を見る
+const candidates = keysAll.filter(k => /^r/.test(k) && itemCountOf(k) >= 2 && !alreadyPaper(k));
 if (candidates.length < 2) throw new Error("小問2つ以上・まだ紙でない大問が2つ見つかりません");
 const PAPER_KEYS = [candidates[0], candidates[candidates.length - 1]];
 const REASON = { [PAPER_KEYS[0]]: "作図が必要（テスト用の仮の印）", [PAPER_KEYS[1]]: "長い計算の途中式が要る（テスト用の仮の印）" };

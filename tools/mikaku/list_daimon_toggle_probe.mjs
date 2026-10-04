@@ -1,3 +1,4 @@
+// ★2026-10-04 社会の大問が入ったので、この検査は理科の大問だけを見る（DAIMON_DATA を subj で絞る）
 // 一覧の「大問の小問の行」で正誤を切り替えられるか（2026-10-02 ユーザー「理科の大問なんですが、一覧から正誤の切り替えができません」）
 // 本物の Chrome・390px。★数は決め打ちしない（DAIMON_DATA / stats から数える）
 // 見ること:
@@ -56,7 +57,7 @@ async function run(label, src) {
       localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
       localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(mig));
       localStorage.setItem("kq_battle_daimon_merged_v1", "1");
-      const g = DAIMON_DATA.find(g => !g.paper && g.items.length >= 2);
+      const g = DAIMON_DATA.filter(g => g.subj !== "社会").find(g => !g.paper && g.items.length >= 2);
       return { key: g.key, ids: g.items.map(i => i.id) };
     }, MIG_DONE);
     await p.reload(); await p.waitForTimeout(900);
@@ -65,7 +66,7 @@ async function run(label, src) {
     const expectTotal = () => p.evaluate(() => {
       const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
       const qa = QA_DATA.filter(d => d.subj === "理科" && d.kind !== "daimon" && d.kind !== "calc").length;
-      const items = DAIMON_DATA.filter(g => !g.paper).reduce((a, g) => a + g.items.filter(it => !((st[it.id] && st[it.id].box || 0) > 0)).length, 0);
+      const items = DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => !g.paper).reduce((a, g) => a + g.items.filter(it => !((st[it.id] && st[it.id].box || 0) > 0)).length, 0);
       return qa + items;
     });
     const openList = async () => {
@@ -109,7 +110,7 @@ async function run(label, src) {
     await p.click(sub(b) + ' .count-btn[data-field="correct"][data-delta="1"]', { timeout: 3000 }).catch(() => {}); await p.waitForTimeout(250);
     const rc = await rec(b);
     check("T4 「正解数＋」が効く（連続1・その小問が前回○で、「◯問」が1減る）", rc && rc.box === 1 && (await listCount()) === c0 - 1, JSON.stringify(rc));
-    const keysNow = await p.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("kq_battle_stats_v1"))).filter(k => DAIMON_DATA.some(g => g.key === k)));
+    const keysNow = await p.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("kq_battle_stats_v1"))).filter(k => DAIMON_DATA.filter(g => g.subj !== "社会").some(g => g.key === k)));
     check("T5 記録を大問の key には書いていない", keysNow.length === 0, keysNow.join(","));
     check("T5 画面のエラー0", errs.length === 0, errs.join(" | "));
   } catch (e) { check("実行エラーなし", false, e.message); }

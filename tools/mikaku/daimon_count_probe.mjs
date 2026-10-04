@@ -1,3 +1,4 @@
+// ★2026-10-04 社会の大問が入ったので、この検査は理科の大問だけを見る（DAIMON_DATA を subj で絞る）
 // ★★大問の数え方と記録（2026-09-27）を、実機（本物の Chrome・390px）で見る。1つの画面で済むもの。
 // 依頼書 = 司令塔\回答\対戦_大問の入り口を一問一答と同じにする_依頼_2026-09-27.md（＋司令塔経由のユーザー承認）
 //   ユーザー原文「問題数は6問でいいと思います。もちろん正解済みはかぞえません」
@@ -5,7 +6,7 @@
 //              「一問一答が先に無くなってしまったら、そのようなエラーメッセージを出してください」
 //
 // ■ 見ること（★大問・小問の数は決め打ちしない。DAIMON_DATA と QA_DATA から数える・4-6p）
-//   K1 社会のホームの数字は、直す前（対照）と同じ
+//   K1 社会のホームの数字は、直す前（対照）＋社会の大問の小問（2026-10-04 から）
 //   K2 ★理科: ホームの総数 ＝ 3段の合計 ＝「◯問」＝ 単元の行の合計 ＝ 一覧（全単元）の「◯問」＝ 一問一答の数 ＋ 答える小問の数
 //   K3 ★答える小問＝前回○でない小問。前回○の小問は数えない。全部○の大問は0問で、候補に入らない
 //   K4 ★問題数を指定すると、合計はちょうどその数。入れるとこえる大問は飛ばして一問一答で埋める
@@ -69,7 +70,7 @@ const SEED = (opts) => {
     else if (k % 3 === 1) st[q.id] = { correct: 3, wrong: 0, box: 3, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }; });
   // ★2026-09-28: paper:true の大問（紙で出す）は QA_DATA/DAIMON_ITEM に入らないので、
   //   仕込みの対象から外す（外さないと、そもそも出題されない大問に記録を仕込むことになる）
-  const nonPaper = DAIMON_DATA.filter(g => !g.paper);
+  const nonPaper = DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => !g.paper);
   const G = nonPaper.filter(g => g.items.length >= 2);
   const known = () => ({ correct: 1, wrong: 0, box: 1, lastCorrectAt: now - 4e8, lastAnswered: now - 4e8 });
   const g0 = G[0], gw = G[1], gl = nonPaper[nonPaper.length - 1];
@@ -79,7 +80,7 @@ const SEED = (opts) => {
   localStorage.clear();
   localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
   localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(opts.mig));
-  if (opts.old) localStorage.setItem("kq_battle_daimon_stats_v1", JSON.stringify(opts.old(DAIMON_DATA, st, now)));
+  if (opts.old) localStorage.setItem("kq_battle_daimon_stats_v1", JSON.stringify(opts.old(DAIMON_DATA.filter(g => g.subj !== "社会"), st, now)));
   return { g0: g0.key, gl: gl.key, gw: gw.key };
 };
 
@@ -99,8 +100,8 @@ async function run(label, src) {
     const seedInfo = await p.evaluate(SEED, { mig: MIG_DONE });
     await p.evaluate(() => {
       const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
-      const items = DAIMON_DATA.flatMap(g => g.items.map(it => it.id)).filter(id => !st[id]);
-      const B = DAIMON_DATA.flatMap(g => g.items.map(it => it.id)).find(id => st[id]);
+      const items = DAIMON_DATA.filter(g => g.subj !== "社会").flatMap(g => g.items.map(it => it.id)).filter(id => !st[id]);
+      const B = DAIMON_DATA.filter(g => g.subj !== "社会").flatMap(g => g.items.map(it => it.id)).find(id => st[id]);
       const qa = QA_DATA.find(d => d.kind !== "daimon" && st[d.id]).id;
       const old = {};
       old[items[0]] = { correct: 2, wrong: 1, box: 1, lastCorrectAt: 111, lastAnswered: 222, mark: "A" };
@@ -125,10 +126,10 @@ async function run(label, src) {
 
     // ================= K7: 移行の片づけが走っても小問の記録が消えない =================
     await p.evaluate(SEED, { mig: { "kaki1-4": 1, "lastcorrect-backfill": 1 } });   // kaki5-8 を未実施にして片づけを走らせる
-    const itemRecBefore = await p.evaluate(() => { const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1")); return DAIMON_DATA.flatMap(g => g.items.map(i => i.id)).filter(id => st[id]).length; });
+    const itemRecBefore = await p.evaluate(() => { const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1")); return DAIMON_DATA.filter(g => g.subj !== "社会").flatMap(g => g.items.map(i => i.id)).filter(id => st[id]).length; });
     await p.reload(); await p.waitForTimeout(900);
     const k7 = await p.evaluate(() => ({ ran: !!JSON.parse(localStorage.getItem("kq_battle_migrations_v1"))["kaki5-8"],
-      n: (() => { const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1")); return DAIMON_DATA.flatMap(g => g.items.map(i => i.id)).filter(id => st[id]).length; })() }));
+      n: (() => { const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1")); return DAIMON_DATA.filter(g => g.subj !== "社会").flatMap(g => g.items.map(i => i.id)).filter(id => st[id]).length; })() }));
     check("【下じき】K7 移行の片づけが、この読み込みで実際に走った", k7.ran);
     check("★K7 移行の片づけのあとも、小問の記録が全部残っている", itemRecBefore > 0 && k7.n === itemRecBefore, k7.n + " / " + itemRecBefore);
 
@@ -145,8 +146,8 @@ async function run(label, src) {
       const qa = QA_DATA.filter(d => d.subj === "理科" && d.kind !== "daimon" && d.kind !== "calc").length;
       const ans = g => g.items.filter(it => !((st[it.id] && st[it.id].box || 0) > 0)).length;
       // ★2026-09-28: paper:true の大問（紙で出す）は答える小問の数に入らない
-      const items = DAIMON_DATA.filter(g => !g.paper).reduce((a, g) => a + ans(g), 0);
-      const G = k => DAIMON_DATA.find(g => g.key === k);
+      const items = DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => !g.paper).reduce((a, g) => a + ans(g), 0);
+      const G = k => DAIMON_DATA.filter(g => g.subj !== "社会").find(g => g.key === k);
       return { qa, items, total: qa + items, g0: ans(G(inf.g0)), g0n: G(inf.g0).items.length, gl: ans(G(inf.gl)) };
     }, info);
     const num = t => parseInt(t, 10);
@@ -180,7 +181,7 @@ async function run(label, src) {
       QA_DATA.forEach(d => { if (d.kind !== "daimon") st[d.id] = { correct: 3, wrong: 0, box: 3, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }; });
       const u3 = QA_DATA.find(d => d.subj === "理科" && /^第3回\./.test(d.u) && d.kind !== "daimon").u;
       // ★2026-09-28: paper:true の大問（紙で出す）は候補から外す
-      const G = DAIMON_DATA.filter(g => g.kai === 3 && !g.paper);
+      const G = DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => g.kai === 3 && !g.paper);
       // 2つめの大問が2問以上になる並びを探す（こえさせるため）
       const i = G.findIndex((g, k) => k + 1 < G.length && G[k + 1].items.length >= 2);
       if (i < 0) return { err: "条件に合う大問がありません" };
@@ -203,7 +204,7 @@ async function run(label, src) {
       // 全部の単元・全部の段。最後の大問を「答える小問2」にし、指定を「総数−1」にする ＝ 最後の大問が入らず、埋める問題も無い
       const now = Date.now(), st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
       // ★2026-09-28: paper:true の大問（紙で出す）は QA_DATA/DAIMON_ITEM に無いので、この仕込みから外す
-      const nonPaper = DAIMON_DATA.filter(g => !g.paper);
+      const nonPaper = DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => !g.paper);
       // ★小問が2つ以上ある最後の大問を gl にし、それよりうしろの大問は全部前回○（0問）にする
       let li = -1; nonPaper.forEach((g, k) => { if (g.items.length >= 2) li = k; });
       if (li < 0) return { err: "小問が2つ以上の大問がありません" };
@@ -232,7 +233,7 @@ async function run(label, src) {
     const ids = new Set(csv.split(/\r\n/).slice(1).map(l => l.split(",")[0].replace(/^"|"$/g, "")));
     // ★2026-09-28: paper:true の大問の小問は、そもそも QA_DATA/DAIMON_ITEM・stats に入らないので
     //   CSV にも出ない（正しい）。K8 の対象からも外す
-    const k8 = await p.evaluate(() => ({ items: DAIMON_DATA.filter(g => !g.paper).flatMap(g => g.items.map(i => i.id)), keys: DAIMON_DATA.map(g => g.key) }));
+    const k8 = await p.evaluate(() => ({ items: DAIMON_DATA.filter(g => g.subj !== "社会").filter(g => !g.paper).flatMap(g => g.items.map(i => i.id)), keys: DAIMON_DATA.filter(g => g.subj !== "社会").map(g => g.key) }));
     const miss = k8.items.filter(id => !ids.has(id));
     check("K8 CSV に小問が全部 1行ずつ入る（" + k8.items.length + "行）", miss.length === 0, miss.slice(0, 3).join(","));
     check("K8 CSV に大問の行は入らない", k8.keys.every(k => !ids.has(k)));
@@ -267,7 +268,16 @@ if (only && only !== "now") await done(selfNg ? 3 : 0);
 if (selfNg > 0) { console.log("\n★自己テストが " + selfNg + " 件通らないので、本番の結果は出しません。"); await done(3); }
 const base = await run("base", BASELINE);
 const now = await run("now", CURRENT);
-now.push({ name: "K1 社会のホームの数字が対照 " + BASE_COMMIT + " と同じ", ok: !!now.social && now.social === base.social, extra: now.social + " ／ 対照 " + base.social });
+// ★2026-10-04 社会の大問が入ったので、社会のホームは「対照 ＋ 社会の大問の答える小問（記録なし＝全部まだ）」になる。
+//   数字の並び「総数 | まだ | 苦手 | 定着 | ◯問」のうち、総数・まだ・◯問だけがその数ぶん増え、ほかは同じであること
+const SOC_ITEMS = (() => {
+  const src = fs.readFileSync(path.join(ROOT, "daimon_data.js"), "utf8");
+  const D = new Function(src.replace(/^const /gm, "var ") + "\nreturn DAIMON_DATA;")();
+  return D.filter(g => g.subj === "社会" && !g.paper).reduce((a, g) => a + g.items.length, 0);
+})();
+const nums = s => (String(s || "").match(/\d+/g) || []).map(Number);
+const wantSocial = (() => { const n = nums(base.social); if (n.length < 5) return null; n[0] += SOC_ITEMS; n[1] += SOC_ITEMS; n[4] += SOC_ITEMS; return n; })();
+now.push({ name: "K1 社会のホームの数字＝対照 " + BASE_COMMIT + " ＋ 社会の大問の小問 " + SOC_ITEMS, ok: !!now.social && !!wantSocial && JSON.stringify(nums(now.social).slice(0, 6)) === JSON.stringify(wantSocial.slice(0, 6)), extra: now.social + " ／ 対照 " + base.social });
 const ng = report("(now) いまの index.html … ★鳴らないのが正しい", now);
 console.log(ng === 0 ? "\n✔ 全部通りました" : "\n✘ " + ng + " 件ひっかかりました");
 await done(ng === 0 ? 0 : 1);
