@@ -2490,6 +2490,122 @@ function daimonSubj(g){ return g && g.subj === "社会" ? "社会" : "理科"; }
     });
   });
 })();
+// ============================================================
+// ★★答えが2つ以上の一問一答を「はじめは分けて・覚えたらまとめて」（2026-10-06）
+// ============================================================
+// 依頼書 = 司令塔\回答\対戦_答えが複数のカードを分けて→まとめて_依頼_2026-10-06.md
+//   ユーザー「答えが2つ以上のカードですが、定着してきたら1個にしたいです。まとめてみないと全体で覚えられないと思うんです。
+//            前半は大問方式で1個づつ答えさせる、全部覚えたらまとめるとかできませんか?」
+//   ・対象: 答え（a）が「①酸素　②二酸化炭素」や「（ア）…大静脈　（イ）…肺動脈」のように2つ以上に分かれている一問一答。
+//     ★分け方は a の文字から読む（data.js は変えない）。読めないカードはこれまでどおり1枚で出す（parseAnswerParts）
+//   ・★分けて＝大問の小問と同じ作り。部分（id は「カードのid~1」「~2」…）を DAIMON_ITEM に入れて（split:true）、
+//     出し方・スキップ・時間切れ・ヒント・「前の小問」の見え方・並び（大問はばらけない）を、大問の小問の作りのまま使う。
+//     問題の文と図はカードのものをそのまま出す。答えは部分だけ
+//   ・★まとめて＝全部の部分が「2回続けて○」になったら、カード1枚で全部まとめて聞く（今までどおり）
+//   ・まとめてで✕ → 次は分けてに戻る（戻ったあとは、その✕より後に2回続けて○が要る）
+//   ・★記録: 部分の記録は別の入れ物（localStorage の kq_battle_parts_v1）。カードの記録（kq_battle_stats_v1）の形は変えない。
+//     カードの○✕はまとめてのときだけ付く（分けての間は部分の記録だけ）。記録のCSVには部分の行を出さない（列も形も同じ）
+//   ・★分けてにするかは、出す側（一人＝その端末・二人＝ホスト）の記録で決める（大問の answerItemIds と同じ）
+//   ・すでに「2回続けて○」の部分は、答えつきで見せるだけ（大問の前回○の小問と同じ）。答えるのは残りの部分だけ
+const PART_KEY = "kq_battle_parts_v1";
+// ★分けるのは理科だけ（ユーザー「理科の一問一答が全然できない」。社会の年表①②…は今までどおり1枚）。
+//   社会にも広げるときは、ここに "社会" を足すだけ（社会の検査 speed_skip・smoke は1枚で出る前提なので、合わせて直すこと）
+const SPLIT_SUBJECTS = ["理科"];
+const SPLIT_CARD = new Map();   // カードの id → 大問と同じ形の入れ物 { key, split:true, card, items:[{id,label,q,a,hint}] }
+// a を部分に分ける。読めなければ null（1枚で出す）
+//   ① 型: a 全体が「①…②…」の並び。①などの番号は問題文にも出てくること（何を答えるのか分からない部分を作らない）
+//   （ア）型: a 全体が「（ア）…〇〇　（イ）…〇〇」の並び（「…」が要る。「（ウ）（肺静脈）・（エ）（大動脈）」のような選ぶ問題は分けない）
+function parseAnswerParts(q, a){
+  const s = String(a || "").trim(), qs = String(q || "");
+  const trim = t => t.replace(/^[\s　、,，・]+|[\s　、,，・]+$/g, "");
+  const out = [];
+  if(/^[①-⑳]/.test(s)){
+    for(const seg of s.split(/(?=[①-⑳])/)){
+      const label = seg[0], text = trim(seg.slice(1));
+      if(!text || qs.indexOf(label) < 0 || out.some(p => p.label === label)) return null;
+      out.push({ label: label, a: text });
+    }
+  }else{
+    const head = /^[（(]([ア-ンA-Za-zＡ-Ｚａ-ｚ])[）)]…/;
+    if(!head.test(s)) return null;
+    for(const seg of s.split(/(?=[（(][ア-ンA-Za-zＡ-Ｚａ-ｚ][）)]…)/)){
+      const m = head.exec(seg);
+      if(!m) return null;
+      const label = "（" + m[1] + "）", text = trim(seg.slice(m[0].length));
+      if(!text || out.some(p => p.label === label)) return null;
+      out.push({ label: label, a: text });
+    }
+  }
+  return out.length >= 2 ? out : null;
+}
+(function addSplitCards(){
+  const qaIds = new Set(QA_DATA.map(d => d.id));
+  QA_DATA.forEach(d => {
+    if(!d || d.kind === "daimon" || d.kind === "calc" || SPLIT_SUBJECTS.indexOf(d.subj) < 0) return;
+    const parts = parseAnswerParts(d.q, d.a);
+    if(!parts) return;
+    const g = { key: d.id, split: true, card: d, subj: d.subj, kai: "", book: "", daimon: "", lead: "", file: null,
+      items: parts.map((p, k) => ({ id: d.id + "~" + (k + 1), label: p.label, q: "", a: p.a, hint: d.hint })) };
+    if(g.items.some(it => qaIds.has(it.id) || DAIMON_ITEM.has(it.id))) return;
+    g.items.forEach((it, pos) => {
+      DAIMON_ITEM.set(it.id, { it: it, g: g, pos: pos, entry: d, split: true,
+        view: { id: it.id, subj: d.subj, u: d.u, q: d.q, a: it.a, img: d.img, markId: d.id, note: d.note, daimonKey: d.id, partOf: d.id } });
+    });
+    SPLIT_CARD.set(d.id, g);
+  });
+})();
+function isPartId(id){ const dm = DAIMON_ITEM.get(id); return !!(dm && dm.split); }
+let partStats = {};
+try{ partStats = JSON.parse(window.localStorage.getItem(PART_KEY) || "{}") || {}; }catch(e){ partStats = {}; }
+function savePartStats(){
+  try{ window.localStorage.setItem(PART_KEY, JSON.stringify(partStats)); }catch(e){ console.error("save part stats failed", e); }
+}
+// 部分の記録。形は stats と同じ（correct/wrong/box/lastCorrectAt/lastAnswered）に、h＝最近の○✕と時刻（[時刻, 1か0]）を足したもの
+function recordPartResult(id, correct){
+  const s = partStats[id] || {correct:0, wrong:0};
+  const now = Date.now();
+  if(correct){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = now; }
+  else s.wrong = (s.wrong||0) + 1;
+  s.lastAnswered = now;
+  s.box = correct ? (s.box||0) + 1 : 0;   // 連続正解数
+  s.h = (Array.isArray(s.h) ? s.h : []).concat([[now, correct ? 1 : 0]]).slice(-8);
+  partStats[id] = s;
+  savePartStats();
+}
+// 「記録する前」の控えと戻し（ひとつ前をやり直す・大問の途中から再開・ゲストからの直し）。部分は部分の入れ物で
+function recSnap(id){
+  const st = isPartId(id) ? partStats : stats;
+  return st[id] ? JSON.stringify(st[id]) : null;
+}
+function recRestore(id, snap){
+  const part = isPartId(id), st = part ? partStats : stats;
+  if(snap === null) delete st[id];
+  else{ try{ st[id] = JSON.parse(snap); }catch(e){ return; } }
+  if(part) savePartStats(); else saveStats();
+}
+// まとめてで✕だった時刻（カードの最後の答えが✕なら、その時刻）。分けてに戻ったら、これより後の○だけ数える
+function cardBackAt(cardId){
+  const s = stats[cardId];
+  return (s && (s.wrong||0) > 0 && !((s.box||0) > 0)) ? (s.lastAnswered || 0) : 0;
+}
+// 部分が「2回続けて○」か（since より後の2回）
+function partDone(pid, since){
+  const h = (partStats[pid] && Array.isArray(partStats[pid].h)) ? partStats[pid].h : [];
+  const n = h.length;
+  return n >= 2 && h[n - 1][1] === 1 && h[n - 2][1] === 1 && h[n - 2][0] > since;
+}
+// "split"＝分けて / "together"＝まとめて / ""＝分けられないカード
+function splitModeOf(cardId){
+  const g = SPLIT_CARD.get(cardId);
+  if(!g) return "";
+  const since = cardBackAt(cardId);
+  return g.items.every(it => partDone(it.id, since)) ? "together" : "split";
+}
+// 分けてのときに答える部分（まだ「2回続けて○」でない部分）
+function splitAskIds(cardId){
+  const g = SPLIT_CARD.get(cardId), since = cardBackAt(cardId);
+  return g.items.filter(it => !partDone(it.id, since)).map(it => it.id);
+}
 function isDaimonEntry(d){ return !!(d && d.kind === "daimon"); }
 function isDaimonItemId(id){ return DAIMON_ITEM.has(id); }
 // 図があるか（出題タイプ「図あり／図なし」）。大問は大問か小問のどれかに図があれば図あり
@@ -2497,12 +2613,18 @@ function qHasFig(d){ return isDaimonEntry(d) ? d.hasFig : !!d.img; }
 // ★「データにある id か」（記録の片づけ・対戦の再開で使う）。小問の id も入れる。入れないと小問の記録が捨てられる
 function isKnownId(id){ return DAIMON_ITEM.has(id) || QA_DATA.some(d => d.id === id); }
 // 対戦に出す並び: 大問の id は小問の id に開く（順番どおり・続けて）。★並べかえは開く前にすること
-function expandDaimonIds(ids){
+// ★2026-10-06 答えが複数のカードは、「分けて」のあいだ部分に開く（答える部分だけ。noSplit＝チェックのみのときは開かない）
+function expandDaimonIds(ids, noSplit){
   const out = [];
   ids.forEach(id => {
     const d = QA_DATA.find(x => x.id === id);
     // ★答える小問だけを手にする（前回○の小問は、画面に答えつきで出すだけ）。ホストの端末の記録で決める
-    if(isDaimonEntry(d)) answerItemIds(d).forEach(x => out.push(x)); else out.push(id);
+    if(isDaimonEntry(d)) answerItemIds(d).forEach(x => out.push(x));
+    else if(!noSplit && splitModeOf(id) === "split"){
+      const p = splitAskIds(id);
+      (p.length ? p : [id]).forEach(x => out.push(x));
+    }
+    else out.push(id);
   });
   return out;
 }
@@ -3592,6 +3714,8 @@ function scheduleNext(s, correct){
   s.nextDue = Date.now() + BOX_INTERVAL_DAYS[s.box] * 24 * 60 * 60 * 1000;
 }
 function recordResult(id, correct){
+  // ★2026-10-06 答えが複数のカードの「分けて」の部分は、別の入れ物へ（カードの記録 stats には書かない）
+  if(typeof DAIMON_ITEM !== "undefined" && isPartId(id)){ recordPartResult(id, correct); daimonMark[id] = !!correct; return; }
   const s = stats[id] || {correct:0, wrong:0};
   if(correct){
     s.correct = (s.correct||0) + 1;
@@ -4446,6 +4570,8 @@ function applySoloRewind(dropped){
   let changed = false;
   (dropped || []).forEach(r => {
     if(r.before === undefined) return;
+    // ★分けての部分は部分の入れ物に戻す（recRestore。2026-10-06）
+    if(isPartId(r.id)){ recRestore(r.id, r.before); return; }
     if(r.before === null) delete stats[r.id];
     else{ try{ stats[r.id] = JSON.parse(r.before); }catch(e){ return; } }
     changed = true;
@@ -4572,12 +4698,15 @@ function refreshStatRow(){
 }
 
 els["stat-clear-link"].addEventListener("click", ()=>{
-  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（大問の記録もふくみます。この操作は元に戻せません）")) return;
+  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（大問の記録・分けての部分の記録もふくみます。この操作は元に戻せません）")) return;
   stats = {};
   saveStats();
   // ★大問（テスト形式）の記録も消す（2026-09-27）。別の入れ物なので、ここで消さないとどこからも消せなくなる
   daimonStats = {};
   saveDaimonStats();
+  // ★答えが複数のカードの部分の記録（分けて）も消す（2026-10-06）。消さないと、記録を消したのに「まとめて」で出てしまう
+  partStats = {};
+  savePartStats();
   refreshStatRow();
   refreshCreateButton();
 });
@@ -6014,7 +6143,7 @@ const HINT_DEFAULT = [
 const HINT_USE_KEY = "kq_battle_hint_use_v1";
 function hintFigOf(id){
   const dm = DAIMON_ITEM.get(id);
-  if(dm) return !!(dm.it.file || dm.g.file);
+  if(dm) return !!(dm.it.file || dm.g.file || (dm.split && dm.view.img));   // ★分けての部分はカードの図
   const d = getQById(id);
   return !!(d && d.img);
 }
@@ -6389,7 +6518,7 @@ els["selection-solo-btn"].addEventListener("click", ()=>{
   const ids = selectedIdsInOrder();
   if(ids.length === 0) return;
   // ★一覧で大問の行を選んだときも、小問に開いてから出す（solo-start-btn と同じ規則）
-  quizQueue = expandDaimonIds(ids);
+  quizQueue = expandDaimonIds(ids, reviewMode);   // ★チェックのみでは分けない（2026-10-06）
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = false;
@@ -6652,7 +6781,8 @@ els["export-link"].addEventListener("click", ()=>{
   const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日","最終回答日","連続正解数"]];
   // ★大問の「1問」の行は出さない（記録は小問にある）。小問は一問一答のうしろに1行ずつ（2026-09-27）
   const csvRows = QA_DATA.filter(d => !isDaimonEntry(d));
-  DAIMON_ITEM.forEach((v, id) => csvRows.push({ id: id, u: v.view.u, q: (v.it.label ? v.it.label + " " : "") + v.it.q, a: v.it.a }));
+  // ★分けての部分（split）は出さない（部分の記録は別の入れ物。今の記録CSVの行を変えない。2026-10-06）
+  DAIMON_ITEM.forEach((v, id) => v.split || csvRows.push({ id: id, u: v.view.u, q: (v.it.label ? v.it.label + " " : "") + v.it.q, a: v.it.a }));
   csvRows.forEach(d=>{
     const s = stats[d.id] || {correct:0, wrong:0};
     const correct = s.correct||0;
@@ -6738,7 +6868,7 @@ els["import-file"].addEventListener("change", (e)=>{
         return;
       }
       const byId = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[d.id, d]));
-      DAIMON_ITEM.forEach((v, id) => byId.set(id, v.view));   // ★小問の行は id で合わせる（2026-09-27）
+      DAIMON_ITEM.forEach((v, id) => { if(!v.split) byId.set(id, v.view); });   // ★分けての部分は取り込まない（2026-10-06）   // ★小問の行は id で合わせる（2026-09-27）
       const byQuestion = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[(d.u||"")+"||"+(d.q||""), d]));
       let matched = 0, unmatched = 0, updated = 0;
       for(let i=1;i<parsed.length;i++){
@@ -6975,7 +7105,7 @@ function studyLogStart(k, ids, opt){
   let hasQa = false, hasDaimon = false;
   uniq.forEach(id => {
     const d = getQById(id);
-    if(isDaimonItemId(id)) hasDaimon = true; else hasQa = true;
+    if(isDaimonItemId(id) && !isPartId(id)) hasDaimon = true; else hasQa = true;   // ★分けての部分は一問一答（2026-10-06）
     if(d && d.u && !units.includes(d.u)) units.push(d.u);
     if(d && d.subj && !subjs.includes(d.subj)) subjs.push(d.subj);
   });
@@ -7040,7 +7170,10 @@ function studyLogAnswer(k, id, r, re){
   const sec = c ? Math.round(((c.rv || now) - c.at) / 100) / 10 : "";
   if(!Array.isArray(s.q)) s.q = [];
   const e = [id, sec, r];
-  if(re) e.push(1);
+  // ★2026-10-06 答えが複数のカードは、分けて／まとめての別を5つ目に残す（4つ目は出し直しの印。無いときは0）
+  const tag = isPartId(id) ? "分けて" : (SPLIT_CARD.has(id) ? "まとめて" : "");
+  if(re || tag) e.push(re ? 1 : 0);
+  if(tag) e.push(tag);
   s.q.push(e);
   if(!s.shownIds) s.shownIds = [];
   if(!s.shownIds.includes(id)) s.shownIds.push(id);
@@ -7120,14 +7253,14 @@ function studyLogRows(){
 }
 const RESULT_NAMES = {o: "〇", x: "✕", skip: "スキップ", timeup: "時間切れ", see: "見ただけ"};
 function studyLogDetailRows(){
-  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し"]];
+  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し","分けて・まとめて"]];
   studyLog.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
     (s.q || []).forEach((e, i) => {
       const d = getQById(e[0]);
       const dm = DAIMON_ITEM.get(e[0]);
       const q = d ? ((dm && dm.it.label ? dm.it.label + " " : "") + d.q) : "";
       rows.push([s.id, fmtDateTime(s.st), s.k === "battle" ? "対戦" : "一人", s.subj, s.m, i + 1, e[0], d ? d.u : "", q,
-                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : ""]);
+                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : "", e[4] || ""]);
     });
   });
   return rows;
@@ -7222,7 +7355,7 @@ function studyLogImportRows(rows){
     });
     by.forEach((list, id) => {
       list.sort((a, b) => (+a[col("何問目")] || 0) - (+b[col("何問目")] || 0));
-      const q = list.map(r => { const e = [r[col("ID")], num(r[col("考えた秒")]), RESULT_CODES[r[col("結果")]] || r[col("結果")]]; if(r[col("出し直し")] === "はい") e.push(1); return e; });
+      const q = list.map(r => { const e = [r[col("ID")], num(r[col("考えた秒")]), RESULT_CODES[r[col("結果")]] || r[col("結果")]]; const tg = col("分けて・まとめて") >= 0 ? (r[col("分けて・まとめて")] || "") : ""; if(r[col("出し直し")] === "はい" || tg) e.push(r[col("出し直し")] === "はい" ? 1 : 0); if(tg) e.push(tg); return e; });
       const have = studyLog.sessions.find(s => s.id === id);
       if(have){
         if(!Array.isArray(have.q) || have.q.length === 0){ have.q = q; res.filled++; touched.add(id); }
@@ -7297,7 +7430,7 @@ function mergeOldDaimonStats(){
     let n = 0;
     if(raw && typeof raw === "object" && !Array.isArray(raw)){
       Object.keys(raw).forEach(id => {
-        if(!DAIMON_ITEM.has(id) || stats[id] || !raw[id] || typeof raw[id] !== "object") return;
+        if(!DAIMON_ITEM.has(id) || isPartId(id) || stats[id] || !raw[id] || typeof raw[id] !== "object") return;
         stats[id] = raw[id];
         n++;
       });
@@ -7754,6 +7887,7 @@ els["solo-start-btn"].addEventListener("click", ()=>{
   const pool = buildFinalPool();
   if(pool.length === 0) return;
   quizQueue = expandDaimonIds(pool.map(i => QA_DATA[i].id));
+  if(reviewMode) quizQueue = expandDaimonIds(pool.map(i => QA_DATA[i].id), true);   // ★チェックのみでは分けない（2026-10-06）
   quizPos = 0;
   quizResults = [];
   inSoloRetryRound = false;
@@ -7781,7 +7915,7 @@ function startSoloCard(){
   // 大問の小問は「文章を直す」を出さない（直す道は一問一答だけ。battle-edit-link と同じ扱い）
   els["solo-edit-link"].style.display = isDaimonItemId(d.id) ? "none" : "";
   if(d.img){
-    setImgWithSize(els["solo-img"], d.img, d.id, els["solo-marks"]);
+    setImgWithSize(els["solo-img"], d.img, d.markId || d.id, els["solo-marks"]);   // ★分けての部分はカードの印（markId）
     els["solo-img-wrap"].style.display = "block";
   }else{
     els["solo-img-wrap"].style.display = "none";
@@ -7895,7 +8029,7 @@ function recordSoloAnswer(correct){
   // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
   // 今回のミスリストから外すかどうかは、これまで通り実際の正誤で判定する
   const recorded = inSoloRetryRound ? false : correct;
-  const before = stats[qid] ? JSON.stringify(stats[qid]) : null;   // ★記録する前（戻すとき用）
+  const before = recSnap(qid);   // ★記録する前（戻すとき用）。分けての部分は部分の入れ物から（2026-10-06）
   recordResult(qid, recorded);
   quizResults.push({id: qid, correct, recorded, before});
   quizPos++;
@@ -7981,17 +8115,14 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     }else if(last.skip){
       // ★2026-10-05 スキップを取り消す: ✕を戻し、うしろに足した同じ問を1つ取りのぞく（小問は記録する前の stats にまるごと戻す）
       if(isDaimonItemId(qid) && last.before !== undefined){
-        if(last.before === null) delete stats[qid]; else stats[qid] = JSON.parse(last.before);
-        saveStats();
+        recRestore(qid, last.before);
       }else adjustStat(qid, "wrong", -1);
       const at = quizQueue.lastIndexOf(qid);
       if(at > quizPos - 1) quizQueue.splice(at, 1);
       soloSkippedIds.delete(qid);
     }else if(isDaimonItemId(qid) && last.before !== undefined){
-      // ★大問の小問（2026-09-30）: 記録する前の stats にまるごと戻す（box・正解日も元どおり）
-      if(last.before === null) delete stats[qid];
-      else stats[qid] = JSON.parse(last.before);
-      saveStats();
+      // ★大問の小問（2026-09-30）: 記録する前の stats にまるごと戻す（box・正解日も元どおり）。分けての部分は部分の入れ物
+      recRestore(qid, last.before);
     }else{
       // 実際の正誤ではなく「記録した側」を戻す（やり直しラウンドでは食いちがう）
       const recorded = last.recorded !== undefined ? last.recorded : last.correct;
@@ -8827,7 +8958,7 @@ function setupActions(){
           qid: qid, idx: currentIndex,
           rawCorrect: data.correct,      // ★得点と「まちがいリスト」は、生の判定で決まる
           forcedWrong: forcedWrong,      // スキップ後・やり直しラウンドは、正解でも記録は誤答
-          statBefore: stats[qid] ? JSON.stringify(stats[qid]) : null
+          statBefore: recSnap(qid)   // ★分けての部分は部分の入れ物から（2026-10-06）
         };
       }
       recordResult(qid, finalCorrect);
@@ -9179,7 +9310,7 @@ function showQuestion(idx, hostPrivate){
   els["battle-edit-form"].style.display = "none";
   els["battle-a-block"].classList.remove("show");
   if(d.img){
-    setImgWithSize(els["battle-img"], d.img, d.id, els["battle-marks"]);
+    setImgWithSize(els["battle-img"], d.img, d.markId || d.id, els["battle-marks"]);   // ★分けての部分はカードの印（markId）
     els["battle-img-wrap"].style.display = "block";
   }else{
     els["battle-img-wrap"].style.display = "none";
@@ -9496,7 +9627,7 @@ function addDaimonAnswered(parent, it, pos){
   wrap.className = "battle-daimon-prev";
   const add = (cls, text) => { const el = document.createElement("div"); el.className = cls; el.textContent = text; wrap.appendChild(el); };
   add("daimon-item-label", it.label || ("(" + (pos + 1) + ")"));
-  add("q-text", it.q);
+  if(it.q) add("q-text", it.q);   // ★分けての部分は問題の文を持たない（カードの文が下に出ている）
   if(it.file) wrap.appendChild(daimonImg(it.file));
   add("a-label", "こたえ");
   add("a-text", it.a);
@@ -9543,9 +9674,6 @@ function renderDaimonBlock(prefix, ids, idx){
   els[prefix+"-daimon-fig"].innerHTML = "";
   els[prefix+"-daimon-afig"].innerHTML = "";
   const dm = DAIMON_ITEM.get(ids[idx]);
-  if(!dm){ box.style.display = "none"; return; }
-  const g = dm.g;
-  box.style.display = "";
   const add = (cls, text, parent) => {
     const el = document.createElement("div");
     el.className = cls;
@@ -9553,6 +9681,28 @@ function renderDaimonBlock(prefix, ids, idx){
     (parent || box).appendChild(el);
     return el;
   };
+  // ★2026-10-06 答えが複数のカードを1枚で全部聞くとき（まとめて）は、小さく「まとめて」とだけ出す（チェックのみでは出さない）
+  if(!dm){
+    if(SPLIT_CARD.has(ids[idx]) && !(prefix === "solo" && reviewMode)){
+      box.style.display = "";
+      add("battle-daimon-title split-mode-tag", "まとめて（" + SPLIT_CARD.get(ids[idx]).items.length + "つ全部を答えます）");
+    }else box.style.display = "none";
+    return;
+  }
+  const g = dm.g;
+  box.style.display = "";
+  // ★2026-10-06 分けて: 問題の文と図はカードのもの（下に出る）。ここは「分けて 2/3」・前の部分（答えつき）・いまの部分の見出しだけ
+  if(g.split){
+    add("battle-daimon-title split-mode-tag", "分けて " + (dm.pos + 1) + "/" + g.items.length + "（1つずつ答えます）");
+    for(let k = 0; k < dm.pos; k++){
+      const it = g.items[k];
+      if(daimonItemComesLater(ids, idx, it.id)) addDaimonLater(box, it, k);
+      else addDaimonFolded(box, it, k);
+    }
+    const curS = add("battle-daimon-cur", "");
+    add("daimon-item-label", "いまは " + dm.it.label + " だけ答えます", curS);
+    return;
+  }
   add("battle-daimon-title", "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
   if(g.lead) add("daimon-lead-text", g.lead);
   if(g.file) box.appendChild(daimonImg(g.file));
@@ -9733,7 +9883,8 @@ function applyJudgeFixOnHost(data){
   }
 
   // ① 記録する前の状態に、まるごと戻す（打ち消し）
-  if(r.statBefore === null) delete stats[r.qid];
+  if(isPartId(r.qid)) recRestore(r.qid, r.statBefore);   // ★分けての部分（2026-10-06）
+  else if(r.statBefore === null) delete stats[r.qid];
   else stats[r.qid] = JSON.parse(r.statBefore);
   // ② そのうえで入れ直す。＝ correct / wrong / box は、この問について1回しか動かない
   const finalCorrect = r.forcedWrong ? false : data.correct;
