@@ -1944,9 +1944,12 @@
       <div class="back-link" id="export-studylog-link">学習ログ（1回ごとの時間）をエクスポート（CSV）</div>
       <div class="back-link" id="export-studylog-detail-link">学習ログの1問ごとの秒数をエクスポート（CSV）</div>
       <div class="back-link" id="export-daimon-link">大問ごとの記録をエクスポート（CSV）</div>
+      <div id="studylog-save-warn" style="display:none; font-size:12px; color:#c0392b; margin:4px 0 0; text-align:center;">学習ログが端末に保存できませんでした。記録の書き出しをしてください（学習ログのエクスポート）。</div>
       <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
+      <div class="back-link" id="import-studylog-link">学習ログのCSVをインポートする（端末の引越し用）</div>
       <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
+      <input type="file" id="import-studylog-file" accept=".csv,text/csv" style="display:none;">
 
       <a class="btn-secondary" id="calc-setup-btn" href="https://nambanamba.github.io/keisan-print-app/" target="_blank" rel="noopener" style="margin-top:20px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🧮 今日の計算問題（別アプリで開く）</a>
 
@@ -3241,7 +3244,7 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print",
  "subject-social","subject-science",
- "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","export-edits-link",
+ "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-edits-link",
  "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
  "paper-pick-all","paper-pick-none","paper-pick-go",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
@@ -6821,43 +6824,118 @@ els["import-file"].addEventListener("change", (e)=>{
 // ■ 決まりごと
 //   ・★今の「正解・不正解の記録」（kq_battle_stats_v1）と、そのCSVの列・形は一切変えない
 //     （機種変更のときの読み込みがその形に頼っているため）。学習ログは別の入れ物・別のCSV
-//   ・入れ物は kq_battle_study_log_v1 の1つだけ。★ほかの入れ物には読みも書きもしない
+//   ・★入れ物は IndexedDB（データベース kq_battle_study_log）。localStorage のほかの記録には読みも書きもしない
+//     （localStorage は小さいので、ずっとためる学習ログは置かない）
+//   ・★★自動では消さない・まとめない（ユーザー「一年後に消えてしまうのは困ります」）。1問ごとの秒も残す
+//   ・★書き込みに失敗したら（容量など）、何も消さずに、ホームに「記録の書き出しをしてください」と小さく出す。
+//     書けなかった回は画面を閉じるまで手元に持っていて、次に書くときにもう一度書く。書き出しには入る
 //   ・1回 ＝ 「はじめる」から結果の画面まで（一人）／対戦の開始から結果の画面まで（二人）。
 //     「まちがえた問題だけもう一度」「もう一勝負」は別の1回（やり直し＝はい）
 //   ・1問の秒 ＝ 問題が出てから「こたえを見る」まで（考えた時間）。
 //     こたえを見ずに判定・スキップ・時間切れになったときは、そこまで
 //   ・とちゅうでやめた・閉じたときも残す（途中でやめた＝はい）。続きから再開したら同じ1回に戻す（再開した回数＋1）
 //   ・「解いていた分」は、とちゅうでやめてから再開するまでの間を数えない
-//   ・★約1年をこえた回は、月ごとのまとめ（回数・分・問題数）にして中身を捨てる。
-//     1問ごとの秒は120日ぶんだけ持つ（1回ごとの平均・最長は、終わったときに計算して残す）
-//   ・「正誤の記録をぜんぶクリアする」では消さない（正誤の記録とは別のもの・1年で自然に消える）
-const STUDY_LOG_KEY = "kq_battle_study_log_v1";
-const STUDY_LOG_KEEP_DAYS = 366;          // これより古い回は月のまとめへ
-const STUDY_LOG_DETAIL_DAYS = 120;        // これより古い回は1問ごとの秒を捨てる（まとめの数は残る）
-const STUDY_LOG_MAX_CHARS = 1500000;      // 入れ物がこれより大きくなったら、古い回の1問ごとの秒から捨てる
-const DAY_MS = 24 * 60 * 60 * 1000;
-let studyLog = null;   // { v:1, sessions:[...], monthly:{...}, cur:{solo:id, battle:id} }
-function studyLogLoad(){
-  if(studyLog) return studyLog;
-  let o = null;
-  try{ o = JSON.parse(window.localStorage.getItem(STUDY_LOG_KEY) || "null"); }catch(e){ o = null; }
-  if(!o || typeof o !== "object" || !Array.isArray(o.sessions)) o = { v: 1, sessions: [], monthly: {}, cur: {} };
-  if(!o.monthly || typeof o.monthly !== "object") o.monthly = {};
-  if(!o.cur || typeof o.cur !== "object") o.cur = {};
-  studyLog = o;
-  return o;
+//   ・「正誤の記録をぜんぶクリアする」では消さない（正誤の記録とは別のもの）
+//   ・前の版（公開前）が localStorage に置いた kq_battle_study_log_v1 があれば、IndexedDB に写す（元は消さない）
+const STUDY_LOG_DB = "kq_battle_study_log";
+const STUDY_LOG_OLD_KEY = "kq_battle_study_log_v1";
+let studyLog = { sessions: [], cur: {} };   // 手元の写し（IndexedDB を読み終わったら、そちらの中身と合わせる）
+let studyLogDb = null;                       // 開けなかったときは null のまま（手元の写しだけで動く）
+let studyLogFailed = false;                  // 一度でも書けなかったら true（ホームに知らせを出す）
+const studyLogPending = new Set();           // まだ書けていない回の id（次に書くときにもう一度書く）
+function studyLogOpen(){
+  return new Promise((resolve, reject) => {
+    if(typeof indexedDB === "undefined"){ reject(new Error("IndexedDB が使えません")); return; }
+    const req = indexedDB.open(STUDY_LOG_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if(!db.objectStoreNames.contains("sessions")) db.createObjectStore("sessions", { keyPath: "id" });
+      if(!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("IndexedDB が開けません（blocked）"));
+  });
 }
-// 1回の中身から数を出す（書き出し・月のまとめ・終わったときの保存で共通）
+function studyLogReadAll(db){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(["sessions", "meta"], "readonly");
+    const out = { sessions: [], cur: {} };
+    tx.objectStore("sessions").getAll().onsuccess = e => { out.sessions = e.target.result || []; };
+    tx.objectStore("meta").get("cur").onsuccess = e => { out.cur = e.target.result || {}; };
+    tx.oncomplete = () => resolve(out);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+function studyLogShowWarn(){
+  const el = document.getElementById("studylog-save-warn");
+  if(el) el.style.display = studyLogFailed ? "block" : "none";
+}
+function studyLogMarkFailed(err){
+  console.error("save study log failed", err);
+  studyLogFailed = true;
+  studyLogShowWarn();
+}
+// 書く。s を渡せばその回だけ（＋まだ書けていない回）。★消す処理はどこにも無い
+function studyLogSave(s){
+  if(s) studyLogPending.add(s.id);
+  if(!studyLogDb){ if(studyLogReadyDone) studyLogMarkFailed(new Error("IndexedDB が開いていません")); return; }
+  const ids = Array.from(studyLogPending);
+  try{
+    const tx = studyLogDb.transaction(["sessions", "meta"], "readwrite");
+    const st = tx.objectStore("sessions");
+    ids.forEach(id => { const x = studyLog.sessions.find(v => v.id === id); if(x) st.put(JSON.parse(JSON.stringify(x))); });
+    tx.objectStore("meta").put(Object.assign({}, studyLog.cur), "cur");
+    tx.oncomplete = () => { ids.forEach(id => studyLogPending.delete(id)); };
+    tx.onerror = () => studyLogMarkFailed(tx.error);
+    tx.onabort = () => studyLogMarkFailed(tx.error);
+  }catch(e){ studyLogMarkFailed(e); }
+}
+let studyLogReadyDone = false;
+// 起動したときに1回: IndexedDB を開いて読む → 前の版の localStorage の分を写す → 閉じられた回をしめる
+const studyLogReady = (async () => {
+  let loaded = { sessions: [], cur: {} };
+  try{
+    studyLogDb = await studyLogOpen();
+    loaded = await studyLogReadAll(studyLogDb);
+  }catch(e){ studyLogDb = null; console.error("open study log failed", e); }
+  // 読み終わる前に始まった回（ほぼ無い）は、そのまま残す。読み込んだ回と id がかぶったら手元を優先
+  const mine = new Set(studyLog.sessions.map(s => s.id));
+  studyLog.sessions = loaded.sessions.filter(s => s && !mine.has(s.id)).concat(studyLog.sessions);
+  studyLog.cur = Object.assign({}, loaded.cur, studyLog.cur);
+  // 前の版（公開前）の localStorage の分。★元のキーは消さない（読むだけ）
+  try{
+    const old = JSON.parse(window.localStorage.getItem(STUDY_LOG_OLD_KEY) || "null");
+    if(old && Array.isArray(old.sessions)){
+      const have = new Set(studyLog.sessions.map(s => s.id));
+      old.sessions.forEach(s => { if(s && s.id && typeof s.st === "number" && !have.has(s.id)){ studyLog.sessions.push(s); studyLogPending.add(s.id); } });
+    }
+  }catch(e){}
+  studyLog.sessions.sort((a, b) => a.st - b.st);
+  studyLogReadyDone = true;
+  // 前に開いていたときに、解いている最中に閉じられた回を、最後に答えた時刻でしめる（続きから再開すれば同じ回に戻る）
+  Object.keys(studyLog.cur).forEach(k => {
+    const s = studyLogCur(k);
+    if(!s){ delete studyLog.cur[k]; return; }
+    if(!s.done && s.seg && s.seg < studyLogBootAt){ studyLogClose(s, s.la || s.seg, true, false); studyLogPending.add(s.id); }
+  });
+  if(!studyLogDb) studyLogMarkFailed(new Error("IndexedDB が使えません"));
+  else if(studyLogPending.size) studyLogSave();
+})();
+const studyLogBootAt = Date.now();
+function studyLogLoad(){ return studyLog; }
+// 1回の中身から数を出す（書き出しで使う）
 function studyLogSummary(s){
-  if(!Array.isArray(s.q)) return s.sum || {shown:0, ans:0, ok:0, ng:0, skip:0, to:0, re:0, see:0, avg:"", max:"", med:""};
+  // 取り込んだ回で、1問ごとの記録が無いもの（学習ログCSVだけ取り込んだ）は、CSVにあった数をそのまま使う
+  if((!Array.isArray(s.q) || s.q.length === 0) && s.sum) return s.sum;
   const shown = new Set(), secs = [];
   const c = {ok:0, ng:0, skip:0, to:0, re:0, see:0};
-  s.q.forEach(e => {
+  (s.q || []).forEach(e => {
     const [id, sec, r, re] = e;
     shown.add(id);
     if(re){ c.re++; return; }
-    if(r === "o"){ c.ok++; secs.push(sec); }
-    else if(r === "x"){ c.ng++; secs.push(sec); }
+    if(r === "o"){ c.ok++; if(sec !== "") secs.push(sec); }
+    else if(r === "x"){ c.ng++; if(sec !== "") secs.push(sec); }
     else if(r === "skip") c.skip++;
     else if(r === "timeup") c.to++;
     else if(r === "see") c.see++;
@@ -6868,48 +6946,11 @@ function studyLogSummary(s){
   const avg = secs.length ? round1(secs.reduce((a, b) => a + b, 0) / secs.length) : "";
   const max = secs.length ? secs[secs.length - 1] : "";
   const med = secs.length ? (secs.length % 2 ? secs[(secs.length - 1) / 2] : round1((secs[secs.length / 2 - 1] + secs[secs.length / 2]) / 2)) : "";
-  return {shown: shown.size, ans: c.ok + c.ng, ok: c.ok, ng: c.ng, skip: c.skip, to: c.to, re: c.re, see: c.see,
-          avg: avg, max: max, med: med, secSum: round1(secs.reduce((a, b) => a + b, 0)), secN: secs.length};
-}
-function studyLogMonthKey(s){
-  const d = new Date(s.st);
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "|" + (s.subj || "") + "|" + (s.k === "battle" ? "対戦" : "一人") + "|" + (s.m || "");
-}
-// 古い回を片づける。★学習ログの入れ物の中だけ（ほかの入れ物には触らない）
-function studyLogPrune(o, now){
-  const keepFrom = now - STUDY_LOG_KEEP_DAYS * DAY_MS, detailFrom = now - STUDY_LOG_DETAIL_DAYS * DAY_MS;
-  const curIds = new Set(Object.values(o.cur || {}));
-  o.sessions = o.sessions.filter(s => {
-    if(!s || typeof s.st !== "number") return false;
-    if(s.st >= keepFrom || curIds.has(s.id)) return true;
-    const sm = studyLogSummary(s), key = studyLogMonthKey(s);
-    const m = o.monthly[key] || {n:0, act:0, plan:0, shown:0, ans:0, ok:0, ng:0, skip:0, to:0, secSum:0, secN:0, max:0};
-    m.n++; m.act += Math.round((s.act || 0) / 1000); m.plan += s.plan || 0; m.shown += sm.shown; m.ans += sm.ans; m.ok += sm.ok; m.ng += sm.ng;
-    m.skip += sm.skip; m.to += sm.to; m.secSum = Math.round(((m.secSum || 0) + (sm.secSum || 0)) * 10) / 10; m.secN += sm.secN || 0;
-    if(sm.max !== "" && sm.max > m.max) m.max = sm.max;
-    o.monthly[key] = m;
-    return false;
-  });
-  o.sessions.forEach(s => {
-    if(Array.isArray(s.q) && s.st < detailFrom && !curIds.has(s.id)){ s.sum = studyLogSummary(s); delete s.q; delete s.shownIds; }
-  });
-}
-function studyLogSave(){
-  const o = studyLogLoad();
-  try{
-    studyLogPrune(o, Date.now());
-    let json = JSON.stringify(o);
-    // 大きくなりすぎたら、古い回から1問ごとの秒を捨てる（まとめの数は残す）
-    for(let i = 0; json.length > STUDY_LOG_MAX_CHARS && i < o.sessions.length; i++){
-      const s = o.sessions[i];
-      if(Array.isArray(s.q) && !Object.values(o.cur).includes(s.id)){ s.sum = studyLogSummary(s); delete s.q; delete s.shownIds; json = JSON.stringify(o); }
-    }
-    window.localStorage.setItem(STUDY_LOG_KEY, json);
-  }catch(e){ console.error("save study log failed", e); }
+  return {shown: shown.size, ans: c.ok + c.ng, ok: c.ok, ng: c.ng, skip: c.skip, to: c.to, re: c.re, see: c.see, avg: avg, max: max, med: med};
 }
 function studyLogCur(k){
-  const o = studyLogLoad(), id = o.cur[k];
-  return id ? o.sessions.find(s => s.id === id) || null : null;
+  const id = studyLog.cur[k];
+  return id ? studyLog.sessions.find(s => s.id === id) || null : null;
 }
 // とちゅうの回をしめる（time まで解いていたことにする）。done=true なら、もう続きはない
 function studyLogClose(s, time, quit, done){
@@ -6922,9 +6963,12 @@ function studyLogClose(s, time, quit, done){
 }
 // 新しい1回を始める。ids ＝ この回に出す予定の問題（小問の id もそのまま）
 function studyLogStart(k, ids, opt){
-  const o = studyLogLoad(), now = Date.now();
+  const now = Date.now();
   const old = studyLogCur(k);
-  if(old && !old.done) studyLogClose(old, old.seg ? (old.la || now) : (old.en || old.la || now), true, true);
+  if(old && !old.done){
+    studyLogClose(old, old.seg ? (old.la || now) : (old.en || old.la || now), true, true);
+    studyLogPending.add(old.id);
+  }
   opt = opt || {};
   const uniq = Array.from(new Set(ids || []));
   const units = [], subjs = [];
@@ -6937,13 +6981,13 @@ function studyLogStart(k, ids, opt){
   });
   const mode = opt.mode || (opt.review ? "チェックのみ" : (hasQa && hasDaimon ? "一問一答＋大問" : (hasDaimon ? "大問" : "一問一答")));
   let id = "s" + now;
-  while(o.sessions.some(s => s.id === id)) id += "x";
+  while(studyLog.sessions.some(s => s.id === id)) id += "x";
   const s = { id: id, k: k, role: opt.role || "", m: mode, subj: subjs.join("・") || currentSubject, u: units,
               retry: !!opt.retry, plan: uniq.length, st: now, la: now, en: 0, act: 0, seg: now, res: opt.resumed ? 1 : 0,
               quit: false, done: false, q: [], shownIds: [], cur: null };
-  o.sessions.push(s);
-  o.cur[k] = id;
-  studyLogSave();
+  studyLog.sessions.push(s);
+  studyLog.cur[k] = id;
+  studyLogSave(s);
   return s;
 }
 // 続きから再開したとき: とちゅうの回があればそこへ戻す。無ければ（または終わっていれば）新しく始める
@@ -6952,7 +6996,7 @@ function studyLogResume(k, ids, opt){
   if(!s || s.done) return studyLogStart(k, ids, Object.assign({}, opt, {resumed: true}));
   if(!s.seg){ s.seg = Date.now(); s.res = (s.res || 0) + 1; }
   s.quit = false; s.la = Date.now();
-  studyLogSave();
+  studyLogSave(s);
   return s;
 }
 // とちゅうでやめた（ホームにもどる・対戦を中断する）。あとで続きから再開できる
@@ -6960,16 +7004,15 @@ function studyLogPause(k){
   const s = studyLogCur(k);
   if(!s || s.done) return;
   studyLogClose(s, Date.now(), true, false);
-  studyLogSave();
+  studyLogSave(s);
 }
 // 結果の画面まで行った
 function studyLogFinish(k){
   const s = studyLogCur(k);
   if(!s || s.done) return;
   studyLogClose(s, Date.now(), false, true);
-  s.sum = studyLogSummary(s);
-  delete studyLogLoad().cur[k];
-  studyLogSave();
+  delete studyLog.cur[k];
+  studyLogSave(s);
 }
 // 問題が画面に出た（同じ問題がもう出ているときは、出た時刻を変えない＝つなぎ直し・描き直しで秒が0に戻らない）
 function studyLogShow(k, id){
@@ -6980,7 +7023,7 @@ function studyLogShow(k, id){
   if(!s.shownIds) s.shownIds = [];
   if(!s.shownIds.includes(id)) s.shownIds.push(id);
   s.la = Date.now();
-  // ★保存は答えたときにまとめて（問題が出るたびに大きな入れ物を書かない）
+  // ★書くのは答えたときにまとめて
 }
 // 「こたえを見る」を押した（答えが開いた）
 function studyLogReveal(k){
@@ -7003,7 +7046,7 @@ function studyLogAnswer(k, id, r, re){
   if(!s.shownIds.includes(id)) s.shownIds.push(id);
   s.cur = null;
   s.la = now;
-  studyLogSave();
+  studyLogSave(s);
 }
 // ひとつ前の判定をやり直す（一人）: いちばん最後の1件を取りのぞく
 function studyLogUndo(k){
@@ -7011,7 +7054,7 @@ function studyLogUndo(k){
   if(!s || s.done || !Array.isArray(s.q) || s.q.length === 0) return;
   s.q.pop();
   s.cur = null;
-  studyLogSave();
+  studyLogSave(s);
 }
 // 一個前の判定を直した（二人・ホスト）: その問題のいちばん最後の結果を直す
 function studyLogFix(k, id, correct){
@@ -7020,32 +7063,21 @@ function studyLogFix(k, id, correct){
   for(let i = s.q.length - 1; i >= 0; i--){
     if(s.q[i][0] === id && (s.q[i][2] === "o" || s.q[i][2] === "x")){ s.q[i][2] = correct ? "o" : "x"; break; }
   }
-  studyLogSave();
+  studyLogSave(s);
 }
 // 紙で出した（印刷を押した）。時間ははからないので、始まりと終わりは同じ時刻
 function studyLogPaper(groups){
-  const o = studyLogLoad(), now = Date.now();
+  const now = Date.now();
   const units = [], subjs = [];
   let n = 0;
   groups.forEach(g => { if(g.u && !units.includes(g.u)) units.push(g.u); const sj = daimonSubj(g); if(!subjs.includes(sj)) subjs.push(sj); n += (g.items || []).length; });
   let id = "p" + now;
-  while(o.sessions.some(s => s.id === id)) id += "x";
-  o.sessions.push({ id: id, k: "solo", role: "", m: "紙", subj: subjs.join("・"), u: units, retry: false, plan: n,
-                    st: now, la: now, en: now, act: 0, seg: 0, res: 0, quit: false, done: true, q: [], shownIds: [], cur: null,
-                    paper: groups.map(g => g.key) });
-  studyLogSave();
-}
-// 起動したとき: 前に開いていたときに閉じられた回（解いている最中に閉じた）を、最後に答えた時刻でしめる。
-//   ★続きから再開すれば、同じ回に戻る（studyLogResume）
-function studyLogOnBoot(){
-  const o = studyLogLoad();
-  let changed = false;
-  Object.keys(o.cur).forEach(k => {
-    const s = studyLogCur(k);
-    if(!s){ delete o.cur[k]; changed = true; return; }
-    if(!s.done && s.seg){ studyLogClose(s, s.la || s.seg, true, false); changed = true; }
-  });
-  if(changed) studyLogSave();
+  while(studyLog.sessions.some(s => s.id === id)) id += "x";
+  const s = { id: id, k: "solo", role: "", m: "紙", subj: subjs.join("・"), u: units, retry: false, plan: n,
+              st: now, la: now, en: now, act: 0, seg: 0, res: 0, quit: false, done: true, q: [], shownIds: [], cur: null,
+              paper: groups.map(g => g.key) };
+  studyLog.sessions.push(s);
+  studyLogSave(s);
 }
 
 // ---- 書き出し（CSV）。★今の「正解・不正解の記録」のCSVとは別のファイル ----
@@ -7067,26 +7099,19 @@ function downloadCsv(rows, baseName){
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
-const STUDY_LOG_HEADER = ["種類","開始日時","終了日時","全体の分","解いていた分","一人・対戦","自分の役","形式","教科","単元","やり直し",
+const STUDY_LOG_HEADER = ["回のID","開始日時","終了日時","全体の分","解いていた分","一人・対戦","自分の役","形式","教科","単元","やり直し",
   "予定の問題数","出した問題数","答えた数","正解数","まちがい数","スキップ数","時間切れ数","出し直しで答えた数","途中でやめた","再開した回数",
   "1問の平均秒","1問の中央値秒","1問の最長秒"];
 function studyLogRows(){
-  const o = studyLogLoad();
   const rows = [STUDY_LOG_HEADER.slice()];
   const min1 = ms => Math.round(ms / 6000) / 10;
-  Object.keys(o.monthly).sort().forEach(key => {
-    const [ym, subj, kind, mode] = key.split("|"), m = o.monthly[key];
-    rows.push(["月のまとめ", ym, "", "", Math.round((m.act || 0) / 6) / 10, kind, "", mode, subj, "", "",
-      m.plan, m.shown, m.ans, m.ok, m.ng, m.skip, m.to, "", "", "",
-      m.secN ? Math.round(m.secSum / m.secN * 10) / 10 : "", "", m.secN ? m.max : ""]);
-  });
-  o.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
+  studyLog.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
     const sm = studyLogSummary(s);
     const live = !s.done && s.seg;   // いま解いている最中（書き出しを押したのが対戦の合間など）
     const en = live ? Date.now() : (s.en || s.la || s.st);
     const act = (s.act || 0) + (live ? Date.now() - s.seg : 0);
     const role = s.role === "host" ? "ホスト" : (s.role === "guest" ? "ゲスト" : "");
-    rows.push(["1回", fmtDateTime(s.st), fmtDateTime(en), min1(en - s.st), min1(act), s.k === "battle" ? "対戦" : "一人", role, s.m, s.subj,
+    rows.push([s.id, fmtDateTime(s.st), fmtDateTime(en), min1(en - s.st), min1(act), s.k === "battle" ? "対戦" : "一人", role, s.m, s.subj,
       (s.u || []).join("／"), s.retry ? "はい" : "いいえ",
       s.plan || 0, sm.shown, sm.ans, sm.ok, sm.ng, sm.skip, sm.to, sm.re, (s.done && !s.quit) ? "いいえ" : "はい", s.res || 0,
       sm.avg, sm.med, sm.max]);
@@ -7095,15 +7120,13 @@ function studyLogRows(){
 }
 const RESULT_NAMES = {o: "〇", x: "✕", skip: "スキップ", timeup: "時間切れ", see: "見ただけ"};
 function studyLogDetailRows(){
-  const o = studyLogLoad();
-  const rows = [["開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し"]];
-  o.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
-    if(!Array.isArray(s.q)) return;
-    s.q.forEach((e, i) => {
+  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し"]];
+  studyLog.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
+    (s.q || []).forEach((e, i) => {
       const d = getQById(e[0]);
       const dm = DAIMON_ITEM.get(e[0]);
       const q = d ? ((dm && dm.it.label ? dm.it.label + " " : "") + d.q) : "";
-      rows.push([fmtDateTime(s.st), s.k === "battle" ? "対戦" : "一人", s.subj, s.m, i + 1, e[0], d ? d.u : "", q,
+      rows.push([s.id, fmtDateTime(s.st), s.k === "battle" ? "対戦" : "一人", s.subj, s.m, i + 1, e[0], d ? d.u : "", q,
                  RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : ""]);
     });
   });
@@ -7130,14 +7153,16 @@ function daimonRecordRows(){
   });
   return rows;
 }
-els["export-studylog-link"].addEventListener("click", ()=>{
-  if(studyLogLoad().sessions.length === 0 && Object.keys(studyLog.monthly).length === 0){
+els["export-studylog-link"].addEventListener("click", async ()=>{
+  await studyLogReady;
+  if(studyLog.sessions.length === 0){
     alert("学習ログはまだありません。一人・二人で問題を解くと、1回ごとにたまっていきます。");
     return;
   }
   downloadCsv(studyLogRows(), "社会一問一答_学習ログ");
 });
-els["export-studylog-detail-link"].addEventListener("click", ()=>{
+els["export-studylog-detail-link"].addEventListener("click", async ()=>{
+  await studyLogReady;
   const rows = studyLogDetailRows();
   if(rows.length <= 1){
     alert("1問ごとの秒の記録はまだありません。");
@@ -7147,6 +7172,91 @@ els["export-studylog-detail-link"].addEventListener("click", ()=>{
 });
 els["export-daimon-link"].addEventListener("click", ()=>{
   downloadCsv(daimonRecordRows(), "社会一問一答_大問の記録");
+});
+
+// ---- 学習ログの取り込み（端末の引越し用・2026-10-05）----
+//   ・学習ログCSV・1問ごとCSVのどちらでも取り込める（見出しで見分ける）。両方取り込めば元どおり
+//   ・★「回のID」で突き合わせる。すでにある回は入れない（二重にならない）。★今あるログは何も消さない・クリアは要らない
+//   ・1問ごとCSVを先に取り込んだ回にあとで学習ログCSVを取り込んだら、足りない欄（終わりの時刻・分など）だけ足す。逆も同じ
+function parseDateTime(v){
+  const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)$/.exec(String(v || "").trim());
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : 0;
+}
+const RESULT_CODES = {"〇": "o", "✕": "x", "スキップ": "skip", "時間切れ": "timeup", "見ただけ": "see"};
+function studyLogImportRows(rows){
+  const head = rows[0] || [], col = name => head.indexOf(name);
+  const num = v => (v === "" || v == null || isNaN(+v)) ? "" : +v;
+  const res = { added: 0, filled: 0, skipped: 0, bad: 0 };
+  if(head[0] !== "回のID") return null;
+  const touched = new Set();
+  if(col("解いていた分") >= 0 && col("1問の最長秒") >= 0){
+    // 学習ログCSV（1回＝1行）
+    rows.slice(1).forEach(r => {
+      const g = name => r[col(name)];
+      const id = String(g("回のID") || "").trim(), st = parseDateTime(g("開始日時"));
+      if(!id || !st){ res.bad++; return; }
+      const meta = { k: g("一人・対戦") === "対戦" ? "battle" : "solo", role: g("自分の役") === "ホスト" ? "host" : (g("自分の役") === "ゲスト" ? "guest" : ""),
+        m: g("形式") || "", subj: g("教科") || "", u: (g("単元") || "").split("／").filter(Boolean), retry: g("やり直し") === "はい",
+        plan: +g("予定の問題数") || 0, st: st, en: parseDateTime(g("終了日時")) || st, act: Math.round((+g("解いていた分") || 0) * 60000),
+        res: +g("再開した回数") || 0, quit: g("途中でやめた") === "はい" };
+      meta.la = meta.en;
+      const sum = { shown: +g("出した問題数") || 0, ans: +g("答えた数") || 0, ok: +g("正解数") || 0, ng: +g("まちがい数") || 0, skip: +g("スキップ数") || 0,
+        to: +g("時間切れ数") || 0, re: +g("出し直しで答えた数") || 0, see: 0, avg: num(g("1問の平均秒")), med: num(g("1問の中央値秒")), max: num(g("1問の最長秒")) };
+      const have = studyLog.sessions.find(s => s.id === id);
+      if(have){
+        if(have.imported && have.partial){ Object.assign(have, meta); have.sum = sum; have.partial = false; res.filled++; touched.add(id); }
+        else res.skipped++;
+        return;
+      }
+      studyLog.sessions.push(Object.assign({ id: id, seg: 0, done: true, q: [], shownIds: [], cur: null, imported: true, sum: sum }, meta));
+      res.added++; touched.add(id);
+    });
+  }else if(col("考えた秒") >= 0 && col("結果") >= 0){
+    // 1問ごとCSV（1問＝1行）。回ごとにまとめてから入れる
+    const by = new Map();
+    rows.slice(1).forEach(r => {
+      const id = String(r[col("回のID")] || "").trim();
+      if(!id || !r[col("ID")]){ res.bad++; return; }
+      if(!by.has(id)) by.set(id, []);
+      by.get(id).push(r);
+    });
+    by.forEach((list, id) => {
+      list.sort((a, b) => (+a[col("何問目")] || 0) - (+b[col("何問目")] || 0));
+      const q = list.map(r => { const e = [r[col("ID")], num(r[col("考えた秒")]), RESULT_CODES[r[col("結果")]] || r[col("結果")]]; if(r[col("出し直し")] === "はい") e.push(1); return e; });
+      const have = studyLog.sessions.find(s => s.id === id);
+      if(have){
+        if(!Array.isArray(have.q) || have.q.length === 0){ have.q = q; res.filled++; touched.add(id); }
+        else res.skipped++;
+        return;
+      }
+      const r0 = list[0], st = parseDateTime(r0[col("開始日時")]);
+      if(!st){ res.bad++; return; }
+      studyLog.sessions.push({ id: id, k: r0[col("一人・対戦")] === "対戦" ? "battle" : "solo", role: "", m: r0[col("形式")] || "", subj: r0[col("教科")] || "",
+        u: Array.from(new Set(list.map(r => r[col("単元")]).filter(Boolean))), retry: false, plan: 0, st: st, la: st, en: st, act: 0, seg: 0, res: 0,
+        quit: false, done: true, q: q, shownIds: [], cur: null, imported: true, partial: true });
+      res.added++; touched.add(id);
+    });
+  }else return null;
+  studyLog.sessions.sort((a, b) => a.st - b.st);
+  touched.forEach(id => studyLogPending.add(id));
+  if(touched.size) studyLogSave();
+  return res;
+}
+els["import-studylog-link"].addEventListener("click", ()=> els["import-studylog-file"].click());
+els["import-studylog-file"].addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  els["import-studylog-file"].value = "";
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev)=>{
+    await studyLogReady;
+    let r = null;
+    try{ r = studyLogImportRows(parseCSV(String(ev.target.result))); }catch(err){ console.error(err); }
+    if(!r){ alert("学習ログのCSVとして読み取れませんでした。このアプリの「学習ログ」か「1問ごとの秒数」で書き出したファイルを選んでください。"); return; }
+    alert(["学習ログを取り込みました。", "新しく入れた回: " + r.added, "足りない欄を足した回: " + r.filled,
+           "すでにあったので入れなかった回: " + r.skipped].concat(r.bad ? ["読めなかった行: " + r.bad] : []).join(String.fromCharCode(10)));
+  };
+  reader.readAsText(file, "UTF-8");
 });
 
 // ============================================================
@@ -10063,7 +10173,6 @@ setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? quizQueue[quizPo
 setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 
 loadStats();
-studyLogOnBoot();        // ★学習ログ: 解いている最中に閉じた回を、最後に答えた時刻でしめる（2026-10-05）
 mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
 loadLastMiss();
