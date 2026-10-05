@@ -84,6 +84,13 @@ FILES = {
     6: "第6回_ヒトと動物の呼吸循環.json",   # 2026-10-03 追加（第5回は作っていない）
 }
 
+# ★取り込みの単位（2026-10-06）。キーは --check / --apply に渡す文字。値は（回, id の文字, ファイル）。
+#   ふつうの回は id が r<回>m<番号>。同じ回に別のファイル（「今回のポイント」など）があるときは
+#   id の文字を変えて（r6p01 など）別の単位にする。**単位ごとに、その id の形の行だけを入れかえる**ので、
+#   r6p を取り込んでも r6m には1字も触らない。
+SOURCES = {str(k): (k, "m", f) for k, f in FILES.items()}
+SOURCES["6p"] = (6, "p", "第6回_今回のポイント.json")   # 2026-10-06 追加（今回のポイント①〜⑤・45問）
+
 # data.js に出力するキーと、その順番（既存の理科の行と同じ並び）
 OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "kai", "kind",
             "priority", "level", "sol", "hint"]   # ★hint（2026-10-04）: 図・表の問のヒント。文字の配列（1手ずつ出す）
@@ -101,14 +108,14 @@ def die(msg):
     raise Stop(msg)
 
 
-def id_pattern(kai):
-    """その回の id の形。r<回>m<番号>。番号は桁数を決めない（第3回に r3m102 がある）。"""
-    return re.compile(r"^r%dm(\d+)$" % kai)
+def id_pattern(kai, letter="m"):
+    """その回の id の形。r<回><文字><番号>（ふつうは m）。番号は桁数を決めない（第3回に r3m102 がある）。"""
+    return re.compile(r"^r%d%s(\d+)$" % (kai, letter))
 
 
 # ---------------------------------------------------------------- id の決め方
 
-def ids_of(memo, kai):
+def ids_of(memo, kai, letter="m"):
     """memo 行の id を決める。**元データの id をそのまま使う。それ以外の道はない。**
 
     id が無いときは止める。黙って並び順から採番すると、
@@ -132,24 +139,24 @@ def ids_of(memo, kai):
             % (kai, len(memo)))
 
     # --- ここから先は「元データの id を使う」場合の検査 ---
-    pat = id_pattern(kai)
+    pat = id_pattern(kai, letter)
     bad = [i for i in ids if not pat.match(str(i))]
     if bad:
-        die("第%d回の元データに、この回の形（r%dm<番号>）でない id があります: %s\n"
+        die("第%d回の元データに、この回の形（r%d%s<番号>）でない id があります: %s\n"
             "  ★別の回の id がまじっていると、取り込みで他の回の問題を壊します。"
-            % (kai, kai, ", ".join(map(str, bad[:10]))))
+            % (kai, kai, letter, ", ".join(map(str, bad[:10]))))
     dup = sorted({i for i in ids if ids.count(i) > 1})
     if dup:
         die("第%d回の元データの中で id が重複しています: %s" % (kai, ", ".join(dup[:10])))
     return ids
 
 
-def convert(src_rows, kai):
+def convert(src_rows, kai, letter="m"):
     """元データの memo 行を data.js の1問に変換する。"""
     memo = [r for r in src_rows if r.get("kind") == "memo"]
     if not memo:
         die("第%d回の元データに memo 行がありません。" % kai)
-    ids = ids_of(memo, kai)
+    ids = ids_of(memo, kai, letter)
 
     out = []
     mapping = []
@@ -400,14 +407,15 @@ def verify_ids():
 
     print("=== 元データの id と data.js の id の突き合わせ（書きかえません）===")
     total = {"match": 0, "mismatch": 0}
-    for kai in sorted(FILES):
-        path = os.path.join(SRC, FILES[kai])
+    for key in SOURCES:
+        kai, letter, fname = SOURCES[key]
+        path = os.path.join(SRC, fname)
         if not os.path.exists(path):
-            print("  第%d回  元データが見つかりません: %s" % (kai, FILES[kai]))
+            print("  第%d回  元データが見つかりません: %s" % (kai, fname))
             continue
         rows = json.load(io.open(path, encoding="utf-8"))
         memo = [r for r in rows if r.get("kind") == "memo"]
-        pat = id_pattern(kai)
+        pat = id_pattern(kai, letter)
         here = {i: q for i, q in live.items() if i and pat.match(i)}
 
         no_id = [r.get("no") for r in memo if not str(r.get("id", "")).strip()]
@@ -428,9 +436,9 @@ def verify_ids():
         bad_n = len(q_diff) + len(only_src) + len(only_js)
         total["match"] += ok_n
         total["mismatch"] += bad_n
-        print("  第%d回  一致 %d件 / 食い違い %d件"
+        print("  第%d回(r%d%s)  一致 %d件 / 食い違い %d件"
               "（問題文が違う %d・元データにしかない %d・data.js にしかない %d）"
-              % (kai, ok_n, bad_n, len(q_diff), len(only_src), len(only_js)))
+              % (kai, kai, letter, ok_n, bad_n, len(q_diff), len(only_src), len(only_js)))
         for i in q_diff[:5]:
             print("      ★%s 問題文が違う" % i)
             print("        元データ: %s" % str(src_q[i])[:60])
@@ -447,8 +455,8 @@ def verify_ids():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--check", type=int)
-    ap.add_argument("--apply", type=int)
+    ap.add_argument("--check", type=str, help="回の数字（例 6）か単位（例 6p）")
+    ap.add_argument("--apply", type=str, help="回の数字（例 6）か単位（例 6p）")
     ap.add_argument("--selftest", action="store_true", help="入口の自己テストだけを走らせる")
     ap.add_argument("--verify-ids", action="store_true",
                     help="全回、元データの id と data.js の id を突き合わせる（書きかえない）")
@@ -463,13 +471,14 @@ def main():
         verify_ids()
         return
 
-    kai = a.check or a.apply
-    if not kai:
+    key = a.check or a.apply
+    if not key:
         die("--check か --apply に回の数字を渡してください（--selftest / --verify-ids もあります）。")
-    if kai not in FILES:
-        die("第%d回のファイルを知りません。" % kai)
+    if key not in SOURCES:
+        die("%s のファイルを知りません（知っているもの: %s）。" % (key, ", ".join(SOURCES)))
+    kai, letter, fname = SOURCES[key]
 
-    path = os.path.join(SRC, FILES[kai])
+    path = os.path.join(SRC, fname)
     if not os.path.exists(path):
         die("元データが見つかりません: " + path)
     with io.open(path, encoding="utf-8") as f:
@@ -485,20 +494,20 @@ def main():
 
     existing = [id_of(p) for p in parts]
     existing_q = {id_of(p): q_of(p) for p in parts}
-    pat = id_pattern(kai)
+    pat = id_pattern(kai, letter)
     already = [i for i in existing if i and pat.match(i)]
 
     n_calc = len([r for r in src_rows if r.get("kind") == "calc"])
-    new_rows, mapping, memo = convert(src_rows, kai)
+    new_rows, mapping, memo = convert(src_rows, kai, letter)
 
-    print("=== 第%d回 %s ===" % (kai, FILES[kai]))
+    print("=== 第%d回 %s ===" % (kai, fname))
     print("  元データ: %d問（memo %d / calc %d）" % (len(src_rows), len(memo), n_calc))
     print("  ★calc %d問は取り込みません（keisan-print-app の持ち物）" % n_calc)
     print("  id の決め方: ★元データの id をそのまま使用（このスクリプトは id を作りません）")
     print("  取り込む: %d問  id: %s〜%s" % (len(new_rows), new_rows[0]["id"], new_rows[-1]["id"]))
     print("  data.js のいまの総数: %d問" % len(parts))
     print("  data.js にある %s*: %d問 %s"
-          % ("r%dm" % kai, len(already), "（上書き更新）" if already else "（新規追加）"))
+          % ("r%d%s" % (kai, letter), len(already), "（上書き更新）" if already else "（新規追加）"))
 
     # id の重複チェック（他の回とぶつかっていないか）
     dup = (set(existing) - set(already)) & set(r["id"] for r in new_rows)
@@ -543,6 +552,14 @@ def main():
         keep_parts = [p for p in parts if not pat.match(id_of(p) or "")]
         at = min(i for i, p in enumerate(parts) if pat.match(id_of(p) or ""))
         parts = keep_parts[:at] + new_text_rows + keep_parts[at:]
+    elif letter != "m":
+        # ★同じ回の別ファイル（r6p など）は、その回の行（r6m・r6p…）のいちばん後ろの直後に入れる
+        same_kai = re.compile(r"^r%d[a-z]\d+$" % kai)
+        idxs = [i for i, p in enumerate(parts) if same_kai.match(id_of(p) or "")]
+        if not idxs:
+            idxs = [i for i, p in enumerate(parts) if re.match(r"^r\d+m", id_of(p) or "")]
+        at = (max(idxs) + 1) if idxs else len(parts)
+        parts = parts[:at] + new_text_rows + parts[at:]
     else:
         # 理科をまとめて置くため、いちばん後ろの r?m* の直後に入れる
         idxs = [i for i, p in enumerate(parts) if re.match(r"^r\d+m", id_of(p) or "")]
