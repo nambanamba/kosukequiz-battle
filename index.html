@@ -645,17 +645,27 @@
     /* ★子どもの指で押しやすい大きさに（2026-09-16 ユーザー原文「スキップのボタンが小さいそうです」）。
        以前は padding 12px・文字 13px で、「わかった！」の下に細く出ていた */
     width:100%;
-    min-height:68px;
-    margin-top:14px;
-    padding:20px 12px;
+    min-height:72px;
+    /* ★2026-10-06 ユーザー「スキップボタンが小さくて、押し間違えが多発してる。ぼたんをはなして、大きくして」。
+       上の「こたえを見る」「わかった！」から 52px、下の「ヒント」などから 44px はなす（前は上 14px・下 0）。
+       あいだに「わからないときは」の小さい字を置き、ただのすき間ではなく別のボタンだと分かるようにする */
+    position:relative;
+    margin:52px 0 44px;
+    padding:22px 12px;
     border:2px dashed var(--gold);
     border-radius:14px;
     background:#fff;
     color:#7a561f;
-    font-size:18px;
+    font-size:20px;
     font-weight:700;
     cursor:pointer;
     -webkit-tap-highlight-color:transparent;
+  }
+  .skip-btn::before{
+    content:"わからないときは";
+    position:absolute; left:0; right:0; top:-26px;
+    font-size:12.5px; font-weight:500; color:var(--ink-soft); text-align:center;
+    pointer-events:none;
   }
   .skip-btn:active{background:#fbf2e2;}
   .think-timer{
