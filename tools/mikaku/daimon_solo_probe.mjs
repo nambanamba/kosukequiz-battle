@@ -177,9 +177,14 @@ async function run(label, src) {
 
     await tap("#solo-start-btn"); await page.waitForTimeout(300);
     const seq = [];
-    for (let t = 0; t < S.plan.length; t++) {
+    // ★2026-10-07（#18 正解するまでぐるぐる）: 1回目の答えだけ 〇✕〇✕… にし、✕にした問題は同じラウンドでもう一度出るので〇で答える。
+    //   ラウンドが終わる（全部〇）まで回す。「あとでもう一度出る」✕の小問の答えは前の小問の欄に出さない（前からの決まり）
+    const pending = new Set();
+    for (let t = 0; t < S.plan.length * 2 + 2; t++) {
+      if (!(await page.evaluate(() => document.getElementById("screen-solo").classList.contains("active")))) break;
       await waitVisible("#solo-reveal-btn", 15000);
       const id = await shown();
+      const firstIdx = seq.includes(id) ? -1 : new Set(seq).size;
       seq.push(id);
       const isItem = !!texts[id];
       // ---- 答えが開く前 ----
@@ -187,7 +192,7 @@ async function run(label, src) {
         const tx = await screenText(), html = await screenHtml();
         const leak = later(id).filter(x => tx.includes(texts[x].q));
         check("★S3 " + id + ": 答える前に、うしろの小問が画面に無い", leak.length === 0, leak.join(","));
-        const prevMissing = earlier(id).filter(x => !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
+        const prevMissing = earlier(id).filter(x => !pending.has(x) && !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
         if (earlier(id).length) check("S4 " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
         if (S.aFile && S.g5[S.af] === id) check("★S5 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
         // ★S7: 直前が大問の小問のときも、「一個前を直す」を出す（2026-09-30 bug0930 ③）
@@ -197,17 +202,25 @@ async function run(label, src) {
       if (isItem) {
         const html = await screenHtml();
         if (S.aFile && S.g5[S.af] === id) check("★S5 答えを開いたら、答えの図が出る", html.includes(S.aFile));
-        if (S.g1.indexOf(id) === S.g1.length - 2) {
+        // ★大問 G1 の最後の手で見る（#18 から、✕でもう一度出る小問があると最後の手が後ろにずれる）:
+        //   ほかに「もう一度出る」G1 の小問が無く、G1 の答える小問が全部出たとき
+        const g1Ans = S.plan.filter(x => S.g1.includes(x));
+        const lastG1Hand = S.g1.includes(id) && ![...pending].some(x => x !== id && S.g1.includes(x)) && g1Ans.every(x => seq.includes(x));
+        if (lastG1Hand) {
           const tail = S.g1[S.g1.length - 1];
           const tx = await screenText();
           check("★S4 大問の最後の手の答えを開くと、うしろの前回○の小問が答えつきで出る", tx.includes(texts[tail].q) && tx.includes(texts[tail].a), tail);
           await shot(page, "after_last_g1");
         }
       }
-      await tap(t % 2 === 0 ? "#solo-judge-ok" : "#solo-judge-ng"); await page.waitForTimeout(60);
+      const ng = firstIdx >= 0 && firstIdx % 2 === 1;
+      if (ng) pending.add(id); else pending.delete(id);
+      await tap(ng ? "#solo-judge-ng" : "#solo-judge-ok"); await page.waitForTimeout(60);
     }
-    check("★S2 ひとりの出題の並びが「X → G1 の答える小問 → G5 の答える小問」（前回○は手にならない）",
-      JSON.stringify(seq) === JSON.stringify(S.plan), JSON.stringify(seq));
+    const firstSeq = seq.filter((x, i) => seq.indexOf(x) === i);
+    const ngIds = S.plan.filter((x, i) => i % 2 === 1);
+    check("★S2 ひとりの出題の並びが「X → G1 の答える小問 → G5 の答える小問」（前回○は手にならない）・✕にした問題はもう一度出て〇で終わる",
+      JSON.stringify(firstSeq) === JSON.stringify(S.plan) && ngIds.every(x => seq.filter(y => y === x).length === 2) && pending.size === 0, JSON.stringify(seq));
     const statsAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1")));
     const changed = Object.keys(Object.assign({}, statsBefore, statsAfter)).filter(k => JSON.stringify(statsBefore[k]) !== JSON.stringify(statsAfter[k]));
     check("★S6 記録が変わったのは、このラウンドの" + S.plan.length + "手だけ（ほかの一問一答・前回○の小問は1文字も変わらない）",

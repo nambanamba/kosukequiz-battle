@@ -157,7 +157,8 @@ async function run(label, src) {
       await tap(sp, "#solo-skip-next-btn"); await sp.waitForTimeout(80);
       const ctr = await sp.$eval("#solo-counter", e => e.textContent.replace(/\s/g, ""));
       // ★2026-10-05 小問のスキップは「あとでもう一度」になった（ユーザー「あとで出しましょう」）。(1) が大問の残りのうしろに足されるので分母が1つ増える
-      check("★S3 ⑤ 次は(2)で「3 / 5」（(1)は大問の残りのうしろにもう一度）", (await soloShown()) === d2 && ctr === "3/5", (await soloShown()) + " " + ctr);
+      // ★2026-10-07 ユーザー「21/23ってでて、なんで？」→ 分母は最初の問題数のまま（4）。(1) はもう一度出るが数えない
+      check("★S3 ⑤ 次は(2)で「3 / 4」（(1)は大問の残りのうしろにもう一度・分母は最初の数のまま）", (await soloShown()) === d2 && ctr === "3/4", (await soloShown()) + " " + ctr);
       await judge(true); await judge(true);
       check("★S3 ⑤ (2)(3)のあとに(1)がもう一度出る", (await soloShown()) === d1, await soloShown());
       await judge(true);   // 出し直しは記録しない

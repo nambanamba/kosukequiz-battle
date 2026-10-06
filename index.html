@@ -4684,6 +4684,7 @@ function saveBattleSession(){
       scoredIdx: hostScoredIdx,
       // ★2026-10-06 記録ずみ（1回目を答えた）の問題と、✕でうしろへ回した添字
       answered: Array.from(battleAnsweredIds),
+      doneIds: Array.from(battleDoneIds),
       requeuedIdx: hostRequeuedIdx
     }));
   }catch(e){}
@@ -8085,8 +8086,10 @@ function startSoloCard(){
   // ★大問の小問だけスキップを出す（チェックのみでは出さない）。「つぎへ」はスキップしたあとだけ
   els["solo-skip-btn"].style.display = (!reviewMode && isDaimonItemId(id)) ? "block" : "none";
   els["solo-skip-next-btn"].style.display = "none";
-  els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
-  showLoopLeft("solo", quizQueue.length - quizPos, !reviewMode);
+  // ★分母は最初の問題数のまま（チェックのみは並びの位置のまま）
+  const rc = roundCounter(quizQueue, quizPos);
+  els["solo-counter"].textContent = reviewMode ? (quizPos+1)+" / "+quizQueue.length : rc.n+" / "+rc.total;
+  showLoopLeft("solo", soloLeftCount(), !reviewMode, rc.again);
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   resetHint("solo", id, !reviewMode);   // ★チェックのみ（答えが最初から出ている）では出さない
   els["solo-timeup-note"].style.display = "none";
@@ -8172,12 +8175,25 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
 //     同じ大問／カードの残りのうしろ＝insertDaimonItemLater）。ほかの問題が残っていれば間に1問以上はさまる。全部〇になったら終わり
 //   ・★記録（stats・部分の記録）は、このラウンドで1回目の答えだけ。2回目からは記録しない（norecord）
 //   ・結果画面の「まちがえた問題をもう一度」はこの動きに置きかえた（ボタンは出さない）
-// ★「のこり◯問（まちがえた問題は正解するまで出ます）」。のこり＝いま出ている問題をふくめて、このラウンドにまだ出てくる数
-function showLoopLeft(prefix, n, show){
+// ★2026-10-07 ユーザー「間違えた問題が母数にカウントされて21/23ってでて、なんで？って言ってるので、やめてください」
+//   ・「◯ / ◯」の分母は、最初の問題数のまま（＝このラウンドの、ちがう問題の数）。ぐるぐるで後ろに回った問題で増やさない
+//   ・分子は「いま何問目か（最初の数の中で）」＝ここまでに出た、ちがう問題の数。出し直しの問題では数は変えず、「もう一度」の印を出す
+//   ・「のこり◯問」は、まだ〇になっていない問題の数（いま出ている問題をふくむ）
+function roundCounter(ids, idx){
+  const seen = new Set();
+  for(let i = 0; i <= idx && i < ids.length; i++) seen.add(ids[i]);
+  return { n: seen.size, total: new Set(ids).size, again: ids.indexOf(ids[idx]) < idx };
+}
+function showLoopLeft(prefix, n, show, again){
   const el = document.getElementById(prefix + "-left");
   if(!el) return;
   el.style.display = show ? "" : "none";
-  el.textContent = "のこり" + n + "問（まちがえた問題は正解するまで出ます）";
+  el.textContent = (again ? "🔁 もう一度　" : "") + "のこり" + n + "問（まちがえた問題は正解するまで出ます）";
+}
+// 一人: まだ〇になっていない問題の数
+function soloLeftCount(){
+  const ok = new Set(quizResults.filter(r => r.correct).map(r => r.id));
+  return Array.from(new Set(quizQueue)).filter(id => !ok.has(id)).length;
 }
 function soloIsRepeat(qid){ return quizResults.some(r => r.id === qid && !r.norecord); }
 function soloRequeue(qid){
@@ -9102,6 +9118,7 @@ function setupActions(){
       scores = {host:0, guest:0};
       clearJudgeFix();   // ★新しいラウンド。前のラウンドの判定は直せない（つなぎ直しの resync では消さない）
       battleAnsweredIds = new Set();   // ★2026-10-06
+      battleDoneIds = new Set();
       studyLogStart("battle", questionIds, {role: "guest", retry: inMissRetryRound});   // ★学習ログ
       // ★ホストが1問目（大問の小問）をスキップしたときは、2問目以降から始まる（index つき・2026-09-30）
       showQuestion(typeof data.index === "number" ? data.index : 0);
@@ -9343,6 +9360,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   myMissesThisRound = missesUnknown ? [] : session.misses.slice();
   hostRecordedIdx = typeof session.recordedIdx === "number" ? session.recordedIdx : -1;
   battleAnsweredIds = new Set(Array.isArray(session.answered) ? session.answered : []);   // ★2026-10-06
+  battleDoneIds = new Set(Array.isArray(session.doneIds) ? session.doneIds : []);
   hostRequeuedIdx = typeof session.requeuedIdx === "number" ? session.requeuedIdx : -1;
   hostScoredIdx = -1;
   // 採点まで済んだ問題には戻らない（戻ると記録と得点が二重に入る）
@@ -9493,8 +9511,10 @@ function showQuestion(idx, hostPrivate){
   scored = false;
 
   const d = getQById(questionIds[idx]);
-  els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
-  showLoopLeft("battle", questionIds.length - idx, true);
+  // ★分母は最初の問題数のまま。のこりは、まだ〇になっていない問題の数（ホストの答えの〇で決める・2026-10-07）
+  const rc = roundCounter(questionIds, idx);
+  els["battle-counter"].textContent = rc.n+" / "+rc.total;
+  showLoopLeft("battle", Array.from(new Set(questionIds)).filter(id => !battleDoneIds.has(id)).length, true, rc.again);
   els["battle-unit-tag"].textContent = d.u;
   els["battle-q-id"].textContent = "No."+d.id;
   els["battle-source-tag"].textContent = d.note ? "出典："+d.note : "";
@@ -9594,7 +9614,8 @@ function hostAdvanceAndArm(idx){
     // the host is still deciding スキップ vs 進める, so they're not left
     // completely in the dark during the think-time countdown
     const q = getQById(questionIds[idx]).q;
-    try{ statusAction.send({type: "thinking", position: idx+1, total: questionIds.length, seconds: thinkSec, q: q}); }catch(e){}
+    const rcT = roundCounter(questionIds, idx);   // ★分母は最初の問題数のまま（2026-10-07）
+    try{ statusAction.send({type: "thinking", position: rcT.n, total: rcT.total, seconds: thinkSec, q: q}); }catch(e){}
   }
 }
 
@@ -9666,6 +9687,7 @@ let daimonSkipRecorded = new Set();   // ★2026-10-05 ホストだけ: スキ�
 //   ・★記録は、このラウンドで1回目の答えだけ（両方の端末とも）。battleAnsweredIds に入っている問は記録しない
 //   ・並びを変えたら、つぎの合図（nextAction）で並び全体（ids）をゲストに送る
 let battleAnsweredIds = new Set();   // このラウンドで記録をつけた問題（ホスト・ゲストそれぞれの端末で）
+let battleDoneIds = new Set();       // このラウンドでホスト（子ども）が〇になった問題（「のこり◯問」に使う・2026-10-07）
 let hostRequeuedIdx = -1;            // ホストだけ: ✕でうしろへ回したのはどの添字か（つなぎ直しで二重に回さない）
 function battleRequeue(id){
   if(isDaimonItemId(id)){
@@ -10213,6 +10235,7 @@ function maybeFinishQuestion(){
   scored = true;
   const hostCorrect = role === "host" ? opponentVerdictOfMe : myVerdictOfOpponent;
   const guestCorrect = role === "guest" ? opponentVerdictOfMe : myVerdictOfOpponent;
+  if(hostCorrect) battleDoneIds.add(questionIds[currentIndex]);   // ★「のこり◯問」はホストの〇で数える（2026-10-07）
   if(hostCorrect) scores.host += 1;
   if(guestCorrect) scores.guest += 1;
   updateScoreUI();
@@ -10386,6 +10409,7 @@ function maybeStartBattleTogether(){
   startBattleNow();
 }
 function startBattleNow(){
+  battleDoneIds = new Set();
   battleTimeupCount = 0;
   battleAnsweredIds = new Set();   // ★2026-10-06
   hostRequeuedIdx = -1;

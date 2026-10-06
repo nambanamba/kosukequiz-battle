@@ -7,6 +7,7 @@
 //   L3 一人: 「ひとつ前の判定をやり直す」で、うしろへ回した分も取り消す
 //   L4 一人: とちゅうでやめて再開しても、回した問題が残っている・記録は1回目のまま
 //   L5 学習ログ: 1問ごとに「何回目」・1回ごとに「何周」
+//   L6 ★2026-10-07 分母は最初の問題数のまま・出し直しは「もう一度」・のこりは〇になっていない数（ユーザー「21/23ってでて、なんで？」）
 //   B1 二人: ホストが✕（ゲストの判定）の問題は、〇になるまでうしろへ回る・ゲストにも同じ並び・記録はどちらも1回目だけ・もう一勝負は出ない
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
@@ -81,12 +82,15 @@ async function run(label, src) {
     const left0 = await txt(pg, "#solo-left");
     const plan = { [A]: [false, false, true], [B]: [true], [C]: [false, true] };
     const seq = [];
-    for (let k = 0; k < 12 && (await onSolo(pg)); k++) { const id = await qid(pg, "solo"); seq.push(id); const ans = plan[id] && plan[id].length ? plan[id].shift() : true; await judge(pg, ans); }
+    const cnts = [], lefts = [];
+    for (let k = 0; k < 12 && (await onSolo(pg)); k++) { const id = await qid(pg, "solo"); seq.push(id); cnts.push(await txt(pg, "#solo-counter")); lefts.push(await txt(pg, "#solo-left")); const ans = plan[id] && plan[id].length ? plan[id].shift() : true; await judge(pg, ans); }
     const finished = !(await onSolo(pg));
     const res = { score: await txt(pg, "#solo-result-score"), info: await txt(pg, "#solo-result-skipinfo"), retry: await vis(pg, "#solo-retry-miss-btn") };
     const sA = await statOf(pg, A), sB = await statOf(pg, B), sC = await statOf(pg, C);
     const noBackToBack = seq.every((id, i) => i === 0 || id !== seq[i - 1] || seq.slice(i).every(x => x === id));
     check("L1 ✕は〇になるまでうしろへ回る・全部〇で終わり（" + seq.join(" ") + "）", finished && seq.join(",") === [A, B, C, A, C, A].join(","), JSON.stringify(seq));
+    check("L6 分母は最初の問題数のまま（" + cnts.join(" ") + "）・出し直しは「もう一度」・のこりは〇になっていない数（" + lefts[3] + "）",
+      cnts.join(",") === "1 / 3,2 / 3,3 / 3,3 / 3,3 / 3,3 / 3" && /^🔁 もう一度　のこり2問/.test(lefts[3]) && /^のこり2問/.test(lefts[2]) && /^🔁 もう一度　のこり1問/.test(lefts[5]), JSON.stringify(lefts));
     check("L1 ほかの問題が残っていれば同じ問題が続かない", noBackToBack, seq.join(" "));
     check("L1 記録は1回目の答えだけ（" + A + " ✕1・" + C + " ✕1・" + B + " 〇1）", sA && sA.wrong === 1 && !(sA.correct > 0) && sC && sC.wrong === 1 && !(sC.correct > 0) && sB && sB.correct === 1, JSON.stringify({ sA, sB, sC }));
     check("L1 「のこり3問（まちがえた問題は正解するまで出ます）」・結果に「もう一度」が出ない・1 / 3・3周", /^のこり3問（まちがえた問題は正解するまで出ます）$/.test(left0) && !res.retry && res.score === "1 / 3" && /3周/.test(res.info), JSON.stringify({ left0, res }));
@@ -111,7 +115,7 @@ async function run(label, src) {
     const c3a = await txt(pg, "#solo-counter");
     await tap(pg, "#solo-undo-link"); await pg.waitForTimeout(250);
     const c3b = await txt(pg, "#solo-counter"), s3 = await statOf(pg, A), id3 = await qid(pg, "solo");
-    check("L3 やり直すと、うしろへ回した分も取り消す（" + c3a + " → " + c3b + "）・記録も戻る", c3a === "2 / 4" && c3b === "1 / 3" && id3 === A && s3 === null, JSON.stringify(s3));
+    check("L3 やり直すと、うしろへ回した分も取り消す（" + c3a + " → " + c3b + "）・記録も戻る", c3a === "2 / 3" && c3b === "1 / 3" && id3 === A && s3 === null, JSON.stringify(s3));
     // ===== L4 中断・再開 =====
     await judge(pg, false); await judge(pg, true);   // A ✕・B 〇
     await pg.evaluate(() => document.getElementById("solo-back").click()); await pg.waitForTimeout(300);
@@ -150,7 +154,7 @@ async function run(label, src) {
     const retryBtn = await vis(host.page, "#result-retry-battle-btn");
     const hA = await statOf(host.page, A), gA = await statOf(guest.page, A);
     check("B1 二人: ホストが✕の問題は〇になるまで回る（" + bseq.join(" ") + "）・ゲストも同じ並び（" + gcnt.join(" ") + "）",
-      bseq.join(",") === [A, B, A].join(",") && gseq.join(",") === bseq.join(",") && gcnt[2] === "3 / 3", JSON.stringify({ bseq, gseq, gcnt }));
+      bseq.join(",") === [A, B, A].join(",") && gseq.join(",") === bseq.join(",") && gcnt.join(",") === "1 / 2,2 / 2,2 / 2", JSON.stringify({ bseq, gseq, gcnt }));
     check("B1 記録はどちらも1回目だけ（ホスト " + A + " ✕1・ゲスト " + A + " 〇1）・もう一勝負は出ない・結果画面へ",
       hA && hA.wrong === 1 && !(hA.correct > 0) && gA && gA.correct === 1 && !(gA.wrong > 0) && onRes && !retryBtn, JSON.stringify({ hA, gA, onRes, retryBtn }));
     check("E 画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));

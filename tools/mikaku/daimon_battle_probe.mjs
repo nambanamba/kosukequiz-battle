@@ -22,6 +22,8 @@
 //   B7 待ち画面（ゲストの「準備中」）に、前の大問のリード文が残っていない
 //   B8 ホストの記録: 小問の記録が stats に入り、★ほかの一問一答の記録は1文字も変わらない
 //   B9 まちがえた小問だけのもう一勝負: G5 の1つめの答える小問を✕にすると、もう一勝負の手はその小問だけ
+//      ★2026-10-07（#18 正解するまでぐるぐる）から: もう一勝負は無く、✕の小問は同じラウンドで G5 の残りのうしろにもう一度出る。
+//        B1 の並びはそのぶん1手ふえ、B3 では「あとでもう一度出る」小問の答えは出さない（前からの決まり）
 //   B10 画面のエラー0・横のはみ出し0（390px）
 //
 // ■ 入口の自己テスト（★鳴るのが正しい。偽の実装は出荷される index.html から作る・4-6d）
@@ -195,7 +197,10 @@ async function run(label, src) {
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
 
     const seqHost = [], seqGuest = [];
-    for (let t = 0; t < S.plan.length; t++) {
+    // ★正解するまでぐるぐる: G5 の1つめの答える小問（✕にする）は、G5 の残りのうしろにもう一度出る
+    const wrongFirst = S.plan.filter(x => S.g5.includes(x))[0];
+    const expectSeq = (() => { const a = S.plan.slice(); let end = a.indexOf(wrongFirst); while (end + 1 < a.length && S.g5.includes(a[end + 1])) end++; a.splice(end + 1, 0, wrongFirst); return a; })();
+    for (let t = 0; t < expectSeq.length; t++) {
       await waitVisible(host.page, "#advance-btn", 30000);
       const id = await shown(host.page);
       seqHost.push(id);
@@ -232,7 +237,9 @@ async function run(label, src) {
           const tx = await screenText(pg), html = await screenHtml(pg);
           const leak = later(id).filter(x => tx.includes(texts[x].q));
           check("★B2 " + who + " " + id + ": 答える前に、うしろの小問が画面に無い", leak.length === 0, leak.join(","));
-          const prevMissing = earlier(id).filter(x => !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
+          // ★✕で「あとでもう一度出る」小問は答えを出さない（前からの決まり）ので、ここでは見ない
+          const pendingWrong = seqHost.filter(x => x === wrongFirst).length === 1 && id !== wrongFirst ? wrongFirst : null;
+          const prevMissing = earlier(id).filter(x => x !== pendingWrong && !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
           if (earlier(id).length) check("B3 " + who + " " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
           if (S.aFile && S.g5[S.af] === id) check("★B4 " + who + " 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
         }
@@ -253,14 +260,15 @@ async function run(label, src) {
         }
       }
       // ---- 判定: G5 の1つめの答える小問だけ、ゲストがホストを✕にする ----
-      const hostWrong = S.g5.includes(id) && seqHost.filter(x => S.g5.includes(x)).length === 1;
+      const hostWrong = id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 1;
       await waitVisible(host.page, "#judge-row", 30000); await waitVisible(guest.page, "#judge-row", 30000);
       await tap(host.page, "#judge-ok"); await tap(guest.page, hostWrong ? "#judge-ng" : "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       if (t === 0) check("B1 分母は答える小問で数えた " + S.plan.length, (await txt(host.page, "#battle-counter")) === "1 / " + S.plan.length, await txt(host.page, "#battle-counter"));
+      if (id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 2) check("★B9 ✕にした小問は同じラウンドでもう一度出る・分母は最初の数のまま・「もう一度」の印（" + (await txt(host.page, "#battle-counter")) + "）", (await txt(host.page, "#battle-counter")).endsWith(" / " + S.plan.length) && /もう一度/.test(await txt(host.page, "#battle-left")), await txt(host.page, "#battle-left"));
       await tap(host.page, "#next-btn");
     }
-    check("★B1 ホストの手の並びが「X → G1 の答える小問 → G5 の答える小問」（前回○は手にならない）", JSON.stringify(seqHost) === JSON.stringify(S.plan), JSON.stringify(seqHost));
+    check("★B1 ホストの手の並びが「X → G1 の答える小問 → G5 の答える小問（✕にした小問は G5 の残りのうしろにもう一度）」（前回○は手にならない）", JSON.stringify(seqHost) === JSON.stringify(expectSeq), JSON.stringify(seqHost));
     check("★B1 ゲストの手の並びがホストと同じ", JSON.stringify(seqGuest) === JSON.stringify(seqHost), JSON.stringify(seqGuest));
     // ---- B8 記録 ----
     const statsAfter = await host.page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1")));
@@ -270,12 +278,9 @@ async function run(label, src) {
       JSON.stringify(changed.sort()) === JSON.stringify(expectChanged), "変わった=" + changed.join(","));
     const wrongId = S.plan.filter(x => S.g5.includes(x))[0];
     check("B8 ✕にされた小問は、連続正解数0・まちがい1", statsAfter[wrongId] && statsAfter[wrongId].box === 0 && statsAfter[wrongId].wrong === 1, JSON.stringify(statsAfter[wrongId]));
-    // ---- B9 もう一勝負 ----
-    await waitVisible(host.page, "#result-retry-battle-btn", 20000);
-    await tap(host.page, "#result-retry-battle-btn").catch(() => {});
-    await waitVisible(host.page, "#advance-btn", 30000);
-    check("★B9 もう一勝負は、まちがえた小問だけ（分母1）", (await shown(host.page)) === wrongId && (await txt(host.page, "#battle-counter")) === "1 / 1",
-      (await shown(host.page)) + " " + (await txt(host.page, "#battle-counter")));
+    // ---- B9 もう一勝負は出ない（★#18 から。同じラウンドで正解するまで回った）----
+    await host.page.waitForFunction(() => document.getElementById("screen-result").classList.contains("active"), null, { timeout: 20000 }).catch(() => {});
+    check("★B9 結果画面に「まちがえた問題だけもう一勝負」は出ない", !(await visible(host.page, "#result-retry-battle-btn")) && wrongId === wrongFirst);
     // ---- B10 ----
     for (const [who, pg] of [["ホスト", host.page], ["ゲスト", guest.page]]) {
       const ov = await pg.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
