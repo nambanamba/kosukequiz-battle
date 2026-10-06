@@ -8,6 +8,7 @@
 //   L4 URL が無いときは何も出ない（今までどおり）
 //   L5 単元名がまちがっているときは「見つかりませんでした」・はじめるは出ない
 //   L6 チェックのみが ON でも、答える形で始まる
+//   L7 mode=battle なら「二人ではじめる（部屋を作る）」→ 押すと二人の部屋を作って相手を待つ（2026-10-07）
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -93,6 +94,12 @@ async function run(label, src) {
     await startToday();
     const l6 = { judgeRow: false, reveal: await vis("#solo-reveal-btn"), review: await vis("#solo-review-next-btn") };
     check("L6 チェックのみが ON でも答える形で始まる（こたえを見る が出る）", (await onSolo()) && l6.reveal && !l6.review, JSON.stringify(l6));
+    // L7
+    await open("?ids=r6p01,r6p02&mode=battle");
+    const l7 = { btn: await txt("#today-start-btn") };
+    await startToday(); await page.waitForTimeout(1500);
+    l7.wait = await vis("#home-waiting"); l7.code = await txt("#room-code-display");
+    check("L7 mode=battle →「二人ではじめる（部屋を作る）」→ 押すと部屋を作って相手を待つ", l7.btn === "二人ではじめる（部屋を作る）" && l7.wait && /^\d{4}$/.test(l7.code), JSON.stringify({ btn: l7.btn, wait: l7.wait, code: l7.code }));
     check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await ctx.close(); }

@@ -1685,6 +1685,11 @@
   .plan-start-btn{ flex:0 0 auto; padding:12px 16px; border:none; border-radius:12px; background:var(--navy-deep); color:#fff; font-size:15px; font-weight:700; cursor:pointer; }
   .plan-row.done .plan-start-btn{ background:#fff; color:var(--navy-deep); border:1.5px solid var(--navy-deep); }
   .plan-start-btn:disabled{ opacity:.45; cursor:default; }
+  .plan-next{ margin-top:12px; padding-top:10px; border-top:2px solid var(--gold); }
+  .plan-btns{ display:flex; flex-direction:column; gap:6px; flex:0 0 auto; }
+  .plan-btns .plan-start-btn{ padding:10px 14px; }
+  .plan-battle-btn{ background:#fff !important; color:var(--navy-deep) !important; border:1.5px solid var(--navy-deep) !important; }
+  .plan-weak-note{ margin-top:2px; font-size:12px; font-weight:700; color:#b5533f; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
@@ -1794,11 +1799,11 @@
       <div class="today-note" id="today-note"></div>
     </div>
     <!-- ★2026-10-07 今日やること（kosuke-records の plan/今日.json）。ユーザー「今日の理科ってなにやるかとかってタブレットに配信できますか？」 -->
+    <!-- ★2026-10-07 日付をやめて、番号のセットを順に進める（plan/0001.json …）。いま進めているセットと、全部できたら「つぎ」 -->
     <div class="plan-box" id="plan-box" style="display:none;">
-      <div class="plan-head">今日やること</div>
-      <div class="plan-msg" id="plan-msg" style="display:none;"></div>
-      <div id="plan-items"></div>
-      <div class="plan-alldone" id="plan-done" style="display:none;">今日はおわり！</div>
+      <div id="plan-cur"></div>
+      <div class="plan-alldone" id="plan-done" style="display:none;">おわり！</div>
+      <div class="plan-next" id="plan-next" style="display:none;"></div>
     </div>
 
     <div class="stat-row">
@@ -4684,7 +4689,9 @@ function saveBattleSession(){
       scoredIdx: hostScoredIdx,
       // ★2026-10-06 記録ずみ（1回目を答えた）の問題と、✕でうしろへ回した添字
       answered: Array.from(battleAnsweredIds),
-      requeuedIdx: hostRequeuedIdx
+      requeuedIdx: hostRequeuedIdx,
+      plan: planBattleActive,                    // ★今日やることの行（2026-10-07）
+      timeupIds: Array.from(battleTimeupIds)
     }));
   }catch(e){}
 }
@@ -6607,6 +6614,7 @@ els["selection-battle-btn"].addEventListener("click", ()=>{
   const ids = selectedIdsInOrder();
   if(ids.length === 0) return;
   questionIds = ids;
+  planBattlePending = null;   // ★今日やることの行には結びつけない
   hostSkippedIds = new Set();
   showScreen("screen-home");
   els["home-setup"].style.display = "none";
@@ -9273,6 +9281,7 @@ els["create-btn"].addEventListener("click", ()=>{
 
   // ★大問は小問に開いて続けて並べる（並べかえは buildFinalPool の中で済んでいる＝大問はばらけない）
   questionIds = expandDaimonIds(pool.map(i => QA_DATA[i].id));
+  planBattlePending = null;   // ★今日やることの行には結びつけない
   hostSkippedIds = new Set();
   inMissRetryRound = false;
 
@@ -9344,6 +9353,8 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   hostRecordedIdx = typeof session.recordedIdx === "number" ? session.recordedIdx : -1;
   battleAnsweredIds = new Set(Array.isArray(session.answered) ? session.answered : []);   // ★2026-10-06
   hostRequeuedIdx = typeof session.requeuedIdx === "number" ? session.requeuedIdx : -1;
+  planBattleActive = session.plan && session.plan.no ? session.plan : null;   // ★2026-10-07
+  battleTimeupIds = new Set(Array.isArray(session.timeupIds) ? session.timeupIds : []);
   hostScoredIdx = -1;
   // 採点まで済んだ問題には戻らない（戻ると記録と得点が二重に入る）
   if(session.scoredIdx === currentIndex) currentIndex += 1;
@@ -9776,6 +9787,7 @@ function performTimeUp(){
   const isItem = isDaimonItemId(questionIds[currentIndex]);
   studyLogAnswer("battle", questionIds[currentIndex], "timeup");   // ★学習ログ
   battleTimeupCount++;
+  battleTimeupIds.add(questionIds[currentIndex]);   // ★「朝まちがえた」に入れる（2026-10-07）
   clearTimeout(pendingSendTimer);
   stopCountdown();
   els["skip-btn"].style.display = "none";
@@ -10267,6 +10279,8 @@ function updateScoreUI(){
 const RETRY_COUNTDOWN_SEC = 3;
 
 function endGame(){
+  // ★今日やることの「二人で」: 最後まで終えた（最後の問題まで採点ずみ）ならその行を「できた」に。とちゅうで「おわる」なら付けない
+  if(role === "host") planNoteBattleEnd(currentIndex >= questionIds.length - 1 && hostScoredIdx >= questionIds.length - 1);
   clearBattleSession();
   studyLogFinish("battle");   // ★学習ログ（2026-10-05）
   clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
@@ -10386,6 +10400,9 @@ function maybeStartBattleTogether(){
   startBattleNow();
 }
 function startBattleNow(){
+  planBattleActive = planBattlePending;   // ★今日やることの「二人で」から作った部屋なら、その行（2026-10-07）
+  planBattlePending = null;
+  battleTimeupIds = new Set();
   battleTimeupCount = 0;
   battleAnsweredIds = new Set();   // ★2026-10-06
   hostRequeuedIdx = -1;
@@ -10573,7 +10590,7 @@ function readTodayLink(search){
   const ids = (p.get("ids") || "").split(/[,、\s]+/).map(s => s.trim()).filter(Boolean);
   const units = p.getAll("unit").map(s => s.trim()).filter(Boolean);
   if(!ids.length && !units.length) return null;
-  return { subj: (p.get("subj") || "").trim(), ids: ids, units: units };
+  return { subj: (p.get("subj") || "").trim(), ids: ids, units: units, mode: (p.get("mode") || "").trim() === "battle" ? "battle" : "solo" };
 }
 const stripKai = u => String(u || "").replace(/^第\d+回\./, "");
 // リンクの問題（QA_DATA の id。大問は大問の id のまま）。見つからない id・単元は除く
@@ -10608,9 +10625,11 @@ function setupTodayLink(){
   title.textContent = "今日の" + subj + "：" + (todayLink.ids.length ? "えらんだ問題" + (units.length === 1 ? "（" + units[0] + "）" : "") : units.join("・")) + "（" + n + "問）";
   note.textContent = n > 0 ? "問題数の設定は使わず、この問題だけを出します" : "どれもいまは答える問題がありません";
   btn.style.display = n > 0 ? "" : "none";
+  btn.textContent = todayLink.mode === "battle" ? "二人ではじめる（部屋を作る）" : "はじめる";   // ★mode=battle（2026-10-07）
 }
 document.getElementById("today-start-btn").addEventListener("click", ()=>{
-  startSoloWithIds(todayLinkIds(todayLink));   // ★「今日やること」と同じ始め方（2026-10-07 にまとめた）
+  if(todayLink && todayLink.mode === "battle") startBattleWithIds(todayLinkIds(todayLink));   // ★mode=battle は二人の部屋を作る
+  else startSoloWithIds(todayLinkIds(todayLink));   // ★「今日やること」と同じ始め方（2026-10-07 にまとめた）
 });
 
 // ============================================================
@@ -10842,49 +10861,109 @@ function setupAutoSend(){
 }
 
 // ============================================================
-// ★★今日やること（kosuke-records の plan/YYYY-MM-DD.json を読んでホームに出す・2026-10-07）
+// ★★今日やること → 順番に進むセット（kosuke-records の plan/0001.json, 0002.json … をホームに出す）
 // ============================================================
-// ユーザー「今日の理科ってなにやるかとかってタブレットに配信できますか？」。司令塔が毎日 push する:
-//   {"date":"2026-10-07","message":"ひとこと（なくてもよい）",
-//    "items":[{"subj":"理科","title":"②心臓と血管…（10枚）","ids":["r6p12",…]},
-//             {"subj":"社会","title":"朝：今週の回を10問","unit":"第6回.鎌倉時代","count":10}]}
+// 2026-10-07 ユーザー「今日の理科ってなにやるかとかってタブレットに配信できますか？」
+//   → 同じ日「今日は終わったら、次に行く方式にしませんか？『今日』じゃないといけない理由はありますか？」
+//   ・★日付・端末の時計は使わない。司令塔が kosuke-records の plan/ に「セット」を番号で置く:
+//       plan/index.json … 番号の一覧（[1,2,3] でも {"sets":[1,2,3]} でも {"sets":[{"no":1},…]} でもよい）
+//       plan/0001.json … {"no":1,"label":"10/7 のぶん","message":"ひとこと（なくてもよい）",
+//                         "items":[{"subj":"理科","title":"…","ids":[…]},{"subj":"社会","title":"…","unit":"第6回.鎌倉時代","count":10}]}
+//   ・ホームには「いま進めているセット」＝まだ全部できていない、いちばん小さい番号のセット。
+//     全部できたら「おわり！」と出して、すぐ下に次のセットを「つぎ（明日のぶん）」として出す（押せばそのまま進める）。
+//     ★「いま進めているセット」は開いたときに決める（終えてもその場では入れかえない＝「おわり！」が見える）
 //   ・ids … その問題だけ・その順番／unit … その単元（count があればその数だけランダム）
-//   ・読むのは、この端末に保存ずみの「記録の送り先」の鍵（kosuke-records・Contents 読める）。日付は端末の日付
-//   ・★読みに行くのはアプリを開いてホームが出たとき1回。鍵が無い・ファイルが無い・オフラインなら何も出さない
-//     （前に読めた今日の分が端末にあれば、それを出す。kq_battle_plan_v1）
-//   ・各行の「はじめる」→ リンクで開く（start-link）のと同じく、一人の一問一答がすぐ始まる（問題数の設定より優先・設定は書きかえない）
-//   ・その日のうちに最後まで終えた行には「できた」（kq_battle_plan_done_v1）。全部できたら「今日はおわり！」
-const PLAN_CACHE_KEY = "kq_battle_plan_v1";       // {date, plan}
-const PLAN_DONE_KEY = "kq_battle_plan_done_v1";   // {date, done:[行の鍵]}
-const PLAN_ACTIVE_KEY = "kq_battle_plan_active_v1"; // {date, key} いま「今日やること」から始めた行（とちゅうでやめて再開しても続く）
-function planToday(){ return sendDay(); }
+//   ・読むのは、この端末に保存ずみの「記録の送り先」の鍵（kosuke-records・Contents 読める）。
+//     ★読みに行くのはアプリを開いてホームが出たとき1回（index と、いまのセット・つぎのセット）。
+//     鍵が無い・ファイルが無い・オフラインなら、前に読めた分（端末に置いた写し）で出す。何も無ければ何も出さない
+//   ・できた印はセットの番号ごと（kq_battle_plan_done_v2）。どの行をいつ終えたかを、自動送信で
+//     kosuke-records の battle/plan_done/<番号>.json にも送る（司令塔が次のセットを決めるのに使う）
+//   ・古い plan/YYYY-MM-DD.json は読まない
+const PLAN_INDEX_KEY = "kq_battle_plan_index_v2";    // [番号…]（読めた一覧の写し）
+const PLAN_SETS_KEY = "kq_battle_plan_sets_v2";      // {番号: セット}（読めたセットの写し）
+const PLAN_DONE_KEY = "kq_battle_plan_done_v2";      // {番号: {行の鍵: 終えた時刻}}
+const PLAN_ACTIVE_KEY = "kq_battle_plan_active_v2";  // {no, key} いま「今日やること」から始めた行（とちゅうでやめて再開しても続く）
 function planLoad(key){ try{ return JSON.parse(window.localStorage.getItem(key) || "null"); }catch(e){ return null; } }
 function planSave(key, v){ try{ window.localStorage.setItem(key, JSON.stringify(v)); }catch(e){} }
 function planItemKey(it, i){ return i + ":" + String(it && it.title || ""); }
-function planCurrent(){
-  const c = planLoad(PLAN_CACHE_KEY);
-  return (c && c.date === planToday() && c.plan && Array.isArray(c.plan.items)) ? c.plan : null;
+function planPath(no){ return "plan/" + String(no).padStart(4, "0") + ".json"; }
+function planNormIndex(j){
+  const arr = Array.isArray(j) ? j : (j && Array.isArray(j.sets) ? j.sets : []);
+  return Array.from(new Set(arr.map(x => +(x && typeof x === "object" ? x.no : x)).filter(n => Number.isInteger(n) && n > 0))).sort((a, b) => a - b);
 }
-function planDoneSet(){
-  const d = planLoad(PLAN_DONE_KEY);
-  return new Set(d && d.date === planToday() && Array.isArray(d.done) ? d.done : []);
+function planIndex(){ const a = planLoad(PLAN_INDEX_KEY); return Array.isArray(a) ? a : []; }
+function planSets(){ return planLoad(PLAN_SETS_KEY) || {}; }
+function planSetOf(no){ const s = planSets()[no]; return (s && Array.isArray(s.items)) ? s : null; }
+function planDoneOf(no){ const d = planLoad(PLAN_DONE_KEY) || {}; return d[no] || {}; }
+function planAllDone(no){
+  const s = planSetOf(no);
+  if(!s || s.items.length === 0) return false;
+  const d = planDoneOf(no);
+  return s.items.every((it, i) => !!d[planItemKey(it, i)]);
 }
+// まだ全部できていない、いちばん小さい番号（中身が読めているセットだけ）
+function planFirstOpen(after){
+  return planIndex().find(no => (after === undefined || no > after) && planSetOf(no) && !planAllDone(no));
+}
+let planShownNo = null;   // 開いたときに決めた「いま進めているセット」
 // 行の問題（QA_DATA の id）。unit で count があれば、その数だけランダムに選ぶ
-function planItemIds(it){
-  if(!it || typeof it !== "object") return [];
-  const subj = typeof it.subj === "string" ? it.subj : "";
-  if(Array.isArray(it.ids) && it.ids.length) return todayLinkIds({ subj: subj, ids: it.ids.map(String), units: [] });
-  if(typeof it.unit === "string" && it.unit){
-    let ids = todayLinkIds({ subj: subj, ids: [], units: [it.unit] });
-    const n = parseInt(it.count, 10);
-    if(n > 0 && ids.length > n) ids = shuffleArray(ids.slice()).slice(0, n);
-    return ids;
+// ★2026-10-07 ユーザー「今日の朝どれができたかで、今日の夜やるのかわりませんか？」→ 行に "order":"weak" と "count"。
+//   ids（または unit）を「候補」として、出す直前にこの端末の記録で並べ替え、count 問だけ出す:
+//     ① 同じセットの前の行で、1回目が✕・スキップ・時間切れだった問題（PLAN_MISS_KEY。その行を終えたときに覚える）
+//     ② 苦手な問題 ③ まだ正解していない問題 ④ それ以外（最後に正解した日が古い順）
+//   ・分けて出すカード（分けての間）は部分の記録で判断。大問は小問の記録で判断（tierOf と同じ）
+//   ・並べ替えは端末の中だけ（司令塔の手は要らない）
+const PLAN_MISS_KEY = "kq_battle_plan_miss_v2";     // {番号: {行の鍵: [1回目にまちがえた問題（カード／大問の id）]}}
+function planMissOf(no){ const m = planLoad(PLAN_MISS_KEY) || {}; return m[no] || {}; }
+// 小問・部分の id → カード／大問の id（候補と同じ形）
+function planCardIdOf(id){ const dm = DAIMON_ITEM.get(id); return dm ? dm.g.key : id; }
+function planWeakRank(id, missSet){
+  if(missSet.has(id)) return { r: 0, at: 0 };
+  const i = QA_DATA.findIndex(d => d.id === id);
+  if(i < 0) return { r: 3, at: 0 };
+  const d = QA_DATA[i];
+  let tier, at;
+  if(splitModeOf(id) === "split"){
+    const g = SPLIT_CARD.get(id);
+    tier = g.items.reduce((m, it) => Math.min(m, tierOfStat(partStats[it.id])), 2);
+    at = g.items.reduce((m, it) => Math.min(m, (partStats[it.id] && partStats[it.id].lastCorrectAt) || 0), Infinity);
+  }else if(isDaimonEntry(d)){
+    tier = tierOf(i);
+    at = d.itemIds.reduce((m, x) => Math.min(m, (stats[x] && stats[x].lastCorrectAt) || 0), Infinity);
+  }else{
+    tier = tierOf(i);
+    at = (stats[id] && stats[id].lastCorrectAt) || 0;
   }
-  return [];
+  return { r: tier === 1 ? 1 : (tier === 0 ? 2 : 3), at: at === Infinity ? 0 : at };
 }
+// 行の問題を決める。戻り値 {ids, miss}（miss … ①から選んだ数）
+function planItemPick(it, no, idx){
+  const out = { ids: [], miss: 0 };
+  if(!it || typeof it !== "object") return out;
+  const subj = typeof it.subj === "string" ? it.subj : "";
+  let ids = [];
+  if(Array.isArray(it.ids) && it.ids.length) ids = todayLinkIds({ subj: subj, ids: it.ids.map(String), units: [] });
+  else if(typeof it.unit === "string" && it.unit) ids = todayLinkIds({ subj: subj, ids: [], units: [it.unit] });
+  const n = parseInt(it.count, 10);
+  if(it.order === "weak"){
+    const s = no ? planSetOf(no) : null, missAll = no ? planMissOf(no) : {};
+    const missSet = new Set();
+    if(s) s.items.forEach((x, j) => { if(j < idx) (missAll[planItemKey(x, j)] || []).forEach(id => missSet.add(id)); });
+    const ranked = ids.map((id, k) => Object.assign({ id: id, k: k }, planWeakRank(id, missSet)))
+      .sort((a, b) => (a.r - b.r) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
+    const pick = n > 0 ? ranked.slice(0, n) : ranked;
+    out.ids = pick.map(x => x.id);
+    out.miss = pick.filter(x => x.r === 0).length;
+    return out;
+  }
+  if(!(Array.isArray(it.ids) && it.ids.length) && n > 0 && ids.length > n) ids = shuffleArray(ids.slice()).slice(0, n);
+  out.ids = ids;
+  return out;
+}
+function planItemIds(it, no, idx){ return planItemPick(it, no, idx).ids; }
 // 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
-let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える
-function startSoloWithIds(ids, planKey){
+let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
+function startSoloWithIds(ids, planRef){
   if(!ids || ids.length === 0) return false;
   const q = expandDaimonIds(ids);
   if(q.length === 0) return false;
@@ -10896,7 +10975,7 @@ function startSoloWithIds(ids, planKey){
   inSoloRetryRound = false;
   soloSkippedIds = new Set();
   soloTimeupCount = 0;
-  planStarting = planKey || null;
+  planStarting = planRef || null;
   studyLogStart("solo", quizQueue, {});   // ★学習ログ（ここで「今日やること」の行を覚える）
   planStarting = null;
   startSoloCard();
@@ -10905,73 +10984,168 @@ function startSoloWithIds(ids, planKey){
 }
 // studyLogStart("solo") から呼ぶ: 今日やることから始めた回か、ほかの回か
 function planNoteStart(){
-  if(planStarting) planSave(PLAN_ACTIVE_KEY, { date: planToday(), key: planStarting });
+  if(planStarting) planSave(PLAN_ACTIVE_KEY, planStarting);
   else try{ window.localStorage.removeItem(PLAN_ACTIVE_KEY); }catch(e){}
 }
-// finishSoloQuiz から呼ぶ: 今日やることから始めた回を最後まで終えたら「できた」
+// finishSoloQuiz から呼ぶ: 今日やることから始めた回を最後まで終えたら「できた」→ 自動送信でも送る
 function planNoteFinish(){
   const a = planLoad(PLAN_ACTIVE_KEY);
   try{ window.localStorage.removeItem(PLAN_ACTIVE_KEY); }catch(e){}
-  if(!a || a.date !== planToday() || reviewMode) return;
-  const done = planDoneSet();
-  done.add(a.key);
-  planSave(PLAN_DONE_KEY, { date: planToday(), done: Array.from(done) });
+  if(!a || !a.no || !a.key || reviewMode) return;
+  // 1回目の答えが✕（スキップもふくむ）だった問題。時間切れは一人では起きない
+  const miss = quizResults.filter(r => !r.norecord && !r.correct).map(r => r.id);
+  planMarkDone(a.no, a.key, miss);
+}
+// 行を「できた」にする（一人・二人で共通）。miss … 1回目が✕・スキップ・時間切れだった問題（小問・部分の id でもよい）
+function planMarkDone(no, key, miss){
+  const all = planLoad(PLAN_DONE_KEY) || {};
+  const d = all[no] || {};
+  if(!d[key]) d[key] = Date.now();
+  all[no] = d;
+  planSave(PLAN_DONE_KEY, all);
+  const ms = planLoad(PLAN_MISS_KEY) || {};
+  const m = ms[no] || {};
+  m[key] = Array.from(new Set((miss || []).map(planCardIdOf)));
+  ms[no] = m;
+  planSave(PLAN_MISS_KEY, ms);
+  planSendDone(no);
+}
+// ★2026-10-07 ユーザー「今日やることからだと一人でしかできないのですが二人でやりたいときはどうしますか？」→「二人で」。
+//   その行の問題で二人対戦の部屋を作る（ホスト側。ゲストはいつもどおり部屋番号で入る）。
+//   問題数・順番・正解するまでぐるぐる・できた印は一人と同じ（二人でやり終えてもその行は「できた」）
+let planBattlePending = null;   // 「二人で」で部屋を作った行（二人が「開始」を押すまで）
+let planBattleActive = null;    // いま対戦している行（startBattleNow で pending から移す）
+let battleTimeupIds = new Set();   // ホストだけ: 時間切れになった問題（「朝まちがえた」に入れる）
+function startBattleWithIds(ids, planRef){
+  if(!ids || ids.length === 0) return false;
+  const q = expandDaimonIds(ids);
+  if(q.length === 0) return false;
+  questionIds = q;
+  hostSkippedIds = new Set();
+  inMissRetryRound = false;
+  planBattlePending = planRef || null;
+  showScreen("screen-home");
+  els["home-setup"].style.display = "none";
+  els["home-waiting"].style.display = "block";
+  els["home-waiting-note"].innerHTML = '<span class="spinner"></span>相手の参加を待っています…';
+  els["start-together-btn"].style.display = "none";
+  resetStartTogether();
+  const code = loadLastCode() || genCode();
+  hostCreateRoomWithCode(code);
+  window.scrollTo(0, 0);
+  return true;
+}
+// endGame から呼ぶ（ホストだけ）: 最後まで終えた対戦なら、その行を「できた」に
+function planNoteBattleEnd(finished){
+  const a = planBattleActive;
+  planBattleActive = null;
+  if(!a || !finished) return;
+  planMarkDone(a.no, a.key, myMissesThisRound.concat(Array.from(battleTimeupIds)));
+}
+// battle/plan_done/<番号>.json（同じセットは上書き）。送り先の鍵が無ければ何もしない（sendEnqueue の中で見る）
+function planSendDone(no){
+  try{
+    const s = planSetOf(no), d = planDoneOf(no);
+    const items = (s ? s.items : []).map((it, i) => { const k = planItemKey(it, i); return { i: i, subj: it.subj || "", title: it.title || "", done: !!d[k], doneAt: d[k] ? new Date(d[k]).toISOString() : "", miss: (planMissOf(no)[k] || []) }; });
+    sendEnqueue("plan_done_" + no, "plan_done", "battle/plan_done/" + String(no).padStart(4, "0") + ".json",
+      { app: "battle", no: no, label: s && s.label || "", all: planAllDone(no), at: new Date().toISOString(), items: items }, true);
+  }catch(e){ console.error("send plan done failed", e); }
+}
+function renderPlanSet(container, no, prefix){
+  container.innerHTML = "";
+  const s = planSetOf(no);
+  if(!s) return false;
+  const head = document.createElement("div");
+  head.className = "plan-head";
+  head.textContent = prefix + (s.label ? s.label : "セット " + no);
+  container.appendChild(head);
+  if(typeof s.message === "string" && s.message){
+    const m = document.createElement("div"); m.className = "plan-msg"; m.textContent = s.message; container.appendChild(m);
+  }
+  const done = planDoneOf(no);
+  s.items.forEach((it, i) => {
+    const key = planItemKey(it, i), ok = !!done[key], pick = planItemPick(it, no, i), ids = pick.ids;
+    const row = document.createElement("div");
+    row.className = "plan-row" + (ok ? " done" : "");
+    row.dataset.planKey = key; row.dataset.planNo = String(no);
+    const t = document.createElement("div");
+    t.className = "plan-row-title";
+    t.textContent = (it.subj ? it.subj + "：" : "") + (it.title || "") + (ids.length === 0 ? "（問題が見つかりません）" : "");
+    if(it.order === "weak" && pick.miss > 0){
+      const w = document.createElement("div"); w.className = "plan-weak-note"; w.textContent = "朝まちがえた" + pick.miss + "問から出します"; t.appendChild(w);
+    }
+    const mk = document.createElement("span");
+    mk.className = "plan-mark";
+    mk.textContent = ok ? "✔ できた" : "";
+    const btns = document.createElement("div");
+    btns.className = "plan-btns";
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "plan-start-btn";
+    b.textContent = ok ? "もう一度（一人）" : "一人で";
+    b.disabled = ids.length === 0;
+    b.addEventListener("click", () => startSoloWithIds(planItemIds(it, no, i), { no: no, key: key }));
+    const b2 = document.createElement("button");
+    b2.type = "button"; b2.className = "plan-start-btn plan-battle-btn";
+    b2.textContent = "二人で";
+    b2.disabled = ids.length === 0;
+    b2.addEventListener("click", () => startBattleWithIds(planItemIds(it, no, i), { no: no, key: key }));
+    btns.appendChild(b); btns.appendChild(b2);
+    row.appendChild(t); row.appendChild(mk); row.appendChild(btns);
+    container.appendChild(row);
+  });
+  return true;
 }
 function renderPlan(){
   const box = document.getElementById("plan-box");
   if(!box) return;
-  const plan = planCurrent();
-  const list = document.getElementById("plan-items");
-  list.innerHTML = "";
-  if(!plan || plan.items.length === 0){ box.style.display = "none"; return; }
+  if(planShownNo === null || !planSetOf(planShownNo)) planShownNo = planFirstOpen() || null;
+  const cur = document.getElementById("plan-cur"), nx = document.getElementById("plan-next"), fin = document.getElementById("plan-done");
+  if(!planShownNo){ box.style.display = "none"; cur.innerHTML = ""; nx.innerHTML = ""; return; }
   box.style.display = "";
-  const msg = document.getElementById("plan-msg");
-  msg.textContent = typeof plan.message === "string" ? plan.message : "";
-  msg.style.display = msg.textContent ? "" : "none";
-  const done = planDoneSet();
-  let all = true;
-  plan.items.forEach((it, i) => {
-    const key = planItemKey(it, i), ok = done.has(key), ids = planItemIds(it);
-    if(!ok) all = false;
-    const row = document.createElement("div");
-    row.className = "plan-row" + (ok ? " done" : "");
-    row.dataset.planKey = key;
-    const t = document.createElement("div");
-    t.className = "plan-row-title";
-    t.textContent = (it.subj ? it.subj + "：" : "") + (it.title || "");
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "plan-start-btn";
-    b.textContent = ok ? "もう一度" : "はじめる";
-    b.disabled = ids.length === 0;
-    if(ids.length === 0) t.textContent += "（問題が見つかりません）";
-    b.addEventListener("click", () => startSoloWithIds(planItemIds(it), key));
-    const m = document.createElement("span");
-    m.className = "plan-mark";
-    m.textContent = ok ? "✔ できた" : "";
-    row.appendChild(t); row.appendChild(m); row.appendChild(b);
-    list.appendChild(row);
-  });
-  document.getElementById("plan-done").style.display = all ? "" : "none";
+  renderPlanSet(cur, planShownNo, "今日やること：");
+  const allDone = planAllDone(planShownNo);
+  fin.style.display = allDone ? "" : "none";
+  // 全部できたら、すぐ下に次のセット（押せばそのまま進める）
+  const nextNo = allDone ? planFirstOpen(planShownNo) : null;
+  nx.style.display = nextNo ? "" : "none";
+  if(nextNo) renderPlanSet(nx, nextNo, "つぎ（明日のぶん）："); else nx.innerHTML = "";
 }
-// GitHub から今日の分を読む（鍵があるときだけ）。読めなければ何もしない（端末にある今日の分を出す）
+// GitHub から読む。404 は null、つながらない・鍵がちがうは例外
+async function planGet(cfg, p){
+  const testApi = typeof cfg.api === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(cfg.api) ? cfg.api : "";
+  const api = (testApi || SEND_API).replace(/\/+$/, ""), repo = testApi && cfg.repo ? cfg.repo : SEND_REPO;
+  const r = await fetch(api + "/repos/" + repo + "/contents/" + p + "?ref=main", { cache: "no-store",
+    headers: { "Authorization": "Bearer " + cleanToken(cfg.token), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } });
+  if(r.status === 404) return null;
+  if(!r.ok) throw new Error("GitHub " + r.status);
+  const j = await r.json();
+  const bin = atob(String(j.content || "").replace(/\s/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+// 開いたとき1回: index → いま進めているセット（まだ全部できていない、いちばん小さい番号）→ そのつぎのセット
 async function fetchPlan(){
   const cfg = sendCfg();
   if(!cfg) return;
-  const testApi = typeof cfg.api === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(cfg.api) ? cfg.api : "";
-  const api = (testApi || SEND_API).replace(/\/+$/, ""), repo = testApi && cfg.repo ? cfg.repo : SEND_REPO;
-  const day = planToday();
   try{
-    const r = await fetch(api + "/repos/" + repo + "/contents/plan/" + day + ".json?ref=main", { cache: "no-store",
-      headers: { "Authorization": "Bearer " + cleanToken(cfg.token), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } });
-    if(!r.ok) return;
-    const j = await r.json();
-    const bin = atob(String(j.content || "").replace(/\s/g, ""));
-    const bytes = new Uint8Array(bin.length);
-    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const plan = JSON.parse(new TextDecoder().decode(bytes));
-    if(!plan || !Array.isArray(plan.items)) return;
-    if(plan.date && plan.date !== day) return;   // ちがう日の分は出さない
-    planSave(PLAN_CACHE_KEY, { date: day, plan: plan });
+    const idx = await planGet(cfg, "plan/index.json");
+    if(idx === null) return;
+    const list = planNormIndex(idx);
+    planSave(PLAN_INDEX_KEY, list);
+    const sets = planSets();
+    let found = 0;
+    for(const no of list){
+      // できた印が全部ついているセットは、写しがあれば読み直さない
+      if(sets[no] && planAllDone(no)) continue;
+      const s = await planGet(cfg, planPath(no));
+      if(!s || !Array.isArray(s.items)) continue;
+      sets[no] = s;
+      planSave(PLAN_SETS_KEY, sets);
+      if(!planAllDone(no)) found++;
+      if(found >= 2) break;   // いまのセットと、そのつぎ
+    }
+    planShownNo = null;
     renderPlan();
   }catch(e){ console.error("read plan failed", e); }
 }
