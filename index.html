@@ -1664,6 +1664,13 @@
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
   .hint-box{ margin:10px 0 6px; }
+  .send-box{ margin:16px 0 8px; padding:12px; border:1px dashed var(--paper-line); border-radius:10px; }
+  .send-title{ font-size:13px; font-weight:700; color:var(--ink-soft); margin-bottom:6px; }
+  .send-input{ display:block; width:100%; box-sizing:border-box; margin:4px 0; padding:8px; font-size:14px; border:1px solid #c9c2b0; border-radius:8px; }
+  .send-row{ display:flex; gap:8px; margin-top:6px; }
+  .send-row .btn-secondary{ flex:1; margin-top:0; }
+  .send-auth-warn{ margin:10px 0 0; padding:6px 10px; font-size:12.5px; color:#c0392b; border:1px solid #e6b0a8; border-radius:8px; background:#fdf1ef; text-align:center; }
+  .send-status{ margin-top:6px; font-size:12px; color:var(--ink-soft); line-height:1.5; }
   .today-box{ margin:10px 0 14px; padding:14px 14px 12px; border:2px solid var(--gold); border-radius:14px; background:#fffaf0; }
   .today-title{ font-size:16px; font-weight:700; color:var(--navy-deep); line-height:1.5; text-align:center; }
   .today-box .start-btn{ margin-top:10px; }
@@ -1971,6 +1978,18 @@
       <!-- ★2026-10-06 答えが複数のカードの「分けて」の部分の記録（別の入れ物）。端末の引越し用 -->
       <div class="back-link" id="export-parts-link">分けて答えた部分の記録をエクスポート（CSV・引越し用）</div>
       <div class="back-link" id="import-parts-link">分けて答えた部分の記録をインポートする（引越し用）</div>
+      <!-- ★2026-10-06 記録の自動送信（親向け）。ユーザー「記録の書き出しですが何とかもう少し自動化できませんか?」。
+           送り先は GitHub の非公開リポジトリ（nambanamba/kosuke-records）。鍵（トークン）は、この端末にだけ保存する（コードには書かない） -->
+      <div class="send-auth-warn" id="send-auth-warn" style="display:none;">記録の送り先の鍵を作り直してください（鍵の期限切れなどで送れていません。記録は端末にためてあります）</div>
+      <div class="send-box" id="send-box">
+        <div class="send-title">記録の送り先（親向け）</div>
+        <input type="password" class="send-input" id="send-token" placeholder="鍵（github_pat_…）を貼る。空にして保存すると送らない" autocomplete="off">
+        <div class="send-row">
+          <button type="button" class="btn-secondary" id="send-save-btn">保存</button>
+          <button type="button" class="btn-secondary" id="send-test-btn">ためしに送る</button>
+        </div>
+        <div class="send-status" id="send-status"></div>
+      </div>
       <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
       <input type="file" id="import-studylog-file" accept=".csv,text/csv" style="display:none;">
@@ -6802,7 +6821,8 @@ function parseCSV(text){
   return rows.filter(r => !(r.length === 1 && r[0].trim() === ""));
 }
 
-els["export-link"].addEventListener("click", ()=>{
+// ★今の「正解・不正解の記録」CSV の行（見出しつき）。書き出しと、自動送信の snapshot（2026-10-06）で同じものを使う
+function recordCsvRows(){
   // ★「正解した回数」は、これまでどおり累計（correct）。元のアプリや古いファイルとの読み書きを変えないため。
   //   2026-09-13 からアプリの「正解数」は連続正解数なので、最後に「連続正解数」の列を足した
   const rows = [["ID","単元","問題","こたえ","正解した回数","まちがえた回数","状態","最終正答日","最終回答日","連続正解数"]];
@@ -6821,6 +6841,10 @@ els["export-link"].addEventListener("click", ()=>{
     const lastAnswered = s.lastAnswered ? dateToYMD(s.lastAnswered) : "";
     rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect, lastAnswered, streak]);
   });
+  return rows;
+}
+els["export-link"].addEventListener("click", ()=>{
+  const rows = recordCsvRows();
   const csv = rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
   const blob = new Blob(["﻿"+csv], {type:"text/csv;charset=utf-8;"});
   const url = URL.createObjectURL(blob);
@@ -7170,6 +7194,7 @@ function studyLogFinish(k){
   studyLogClose(s, Date.now(), false, true);
   delete studyLog.cur[k];
   studyLogSave(s);
+  sendSession(s);   // ★記録の自動送信（送り先があるときだけ。2026-10-06）
 }
 // 問題が画面に出た（同じ問題がもう出ているときは、出た時刻を変えない＝つなぎ直し・描き直しで秒が0に戻らない）
 function studyLogShow(k, id){
@@ -7238,6 +7263,7 @@ function studyLogPaper(groups){
               paper: groups.map(g => g.key) };
   studyLog.sessions.push(s);
   studyLogSave(s);
+  sendSession(s);   // ★記録の自動送信（2026-10-06）
 }
 
 // ---- 書き出し（CSV）。★今の「正解・不正解の記録」のCSVとは別のファイル ----
@@ -10479,6 +10505,206 @@ document.getElementById("today-start-btn").addEventListener("click", ()=>{
   showScreen("screen-solo");
 });
 
+// ============================================================
+// ★★記録の自動送信（2026-10-06）
+// ============================================================
+// ユーザー「記録の書き出しですが何とかもう少し自動化できませんか?」→「gitにpushとかどうですか？」。
+// 手順書 = 司令塔\こうすけカルテ\自動送信\手順書.md
+//   ・送り先は GitHub の非公開リポジトリ nambanamba/kosuke-records（main）。GitHub API の PUT /repos/{owner}/{repo}/contents/{path} で書く
+//   ・★鍵（fine-grained トークン。Contents R/W・このリポジトリだけ）は、親がホームの「記録の送り先」に貼って、
+//     この端末の localStorage（kq_battle_send_gh_v1）にだけ置く。コード（公開リポジトリ）には書かない。
+//     ★鍵が空なら何も送らない・何もためない（今までどおり）
+//   ・1回の練習が終わるたび … battle/session/YYYY-MM-DD/<回のID>.json（学習ログの1回分の行＋1問ごとの秒・〇✕・分けて/まとめて＋その回の部分の記録）
+//       新しいファイルなので sha は要らない。★同じ回のIDは二度送らない（もうある＝422 は「送れた」とみなす）
+//   ・1日1回 … battle/snapshot/YYYY-MM-DD.json（今の「正解・不正解の記録」CSV と同じ見出しと行）。同じ日は上書き（sha を取ってから PUT）
+//   ・「ためしに送る」… test/<日時>.json を書いて、結果（送れた／だめだった理由）を出す
+//   ・送れなかった分は IndexedDB（kq_battle_outbox。学習ログとは別のデータベース）にためて、次に送る。1件ごとに id（同じ id は上書き＝二重にためない）
+//   ・401/403（鍵の期限切れ・権限なし）は、ホームの親向けの所に小さく「記録の送り先の鍵を作り直してください」。ためた分はそのまま
+//   ・★アプリは止めない（全部うしろで動く）。★学習ログ・記録そのものは何も消さない。名前は送らない（問題の番号・〇✕・秒・日時だけ）
+const SEND_CFG_KEY = "kq_battle_send_gh_v1";          // {token, api?, repo?}（api・repo は検査用。ふだんは入れない）
+const SEND_SNAP_KEY = "kq_battle_send_snapday_v1";
+const SEND_AUTH_KEY = "kq_battle_send_autherr_v1";     // 401/403 が出たら "1"（送れたら消す）
+const SEND_DB = "kq_battle_outbox";
+const SEND_API = "https://api.github.com";
+const SEND_REPO = "nambanamba/kosuke-records";
+function sendCfg(){
+  try{ const c = JSON.parse(window.localStorage.getItem(SEND_CFG_KEY) || "null"); return (c && typeof c.token === "string" && c.token.trim()) ? c : null; }catch(e){ return null; }
+}
+let sendDbP = null;
+function sendDb(){
+  if(!sendDbP) sendDbP = new Promise((res, rej) => {
+    if(typeof indexedDB === "undefined"){ rej(new Error("IndexedDB が使えません")); return; }
+    const r = indexedDB.open(SEND_DB, 1);
+    r.onupgradeneeded = () => { if(!r.result.objectStoreNames.contains("q")) r.result.createObjectStore("q", { keyPath: "id" }); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.onblocked = () => rej(new Error("IndexedDB が開けません（blocked）"));
+  }).catch(e => { console.error("open outbox failed", e); return null; });
+  return sendDbP;
+}
+const sendMem = new Map();   // IndexedDB が使えないときは、画面を閉じるまで手元に持つ
+function sendTx(db, mode, fn){
+  return new Promise((res, rej) => {
+    const tx = db.transaction(["q"], mode);
+    let out;
+    const r = fn(tx.objectStore("q"));
+    if(r) r.onsuccess = () => { out = r.result; };
+    tx.oncomplete = () => res(out);
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error);
+  });
+}
+async function outboxPut(item){
+  const db = await sendDb();
+  if(db){ try{ await sendTx(db, "readwrite", st => st.put(item)); return; }catch(e){ console.error("outbox put failed", e); } }
+  sendMem.set(item.id, item);
+}
+async function outboxAll(){
+  const db = await sendDb();
+  let arr = [];
+  if(db){ try{ arr = (await sendTx(db, "readonly", st => st.getAll())) || []; }catch(e){ arr = []; } }
+  sendMem.forEach(v => { if(!arr.some(x => x.id === v.id)) arr.push(v); });
+  return arr.sort((a, b) => (a.at - b.at) || (a.id < b.id ? -1 : 1));
+}
+async function outboxDel(id){
+  sendMem.delete(id);
+  const db = await sendDb();
+  if(db){ try{ await sendTx(db, "readwrite", st => st.delete(id)); }catch(e){} }
+}
+function sendB64(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for(let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function sendAuthWarn(on){
+  try{ if(on) window.localStorage.setItem(SEND_AUTH_KEY, "1"); else window.localStorage.removeItem(SEND_AUTH_KEY); }catch(e){}
+  const el = document.getElementById("send-auth-warn");
+  if(el) el.style.display = on ? "block" : "none";
+}
+// 1件を GitHub に書く。戻り値 "ok" / "auth"（401・403）/ "retry"（そのほか・電波なし）
+async function sendOne(cfg, it){
+  const api = (cfg.api || SEND_API).replace(/\/+$/, ""), repo = cfg.repo || SEND_REPO;
+  const url = api + "/repos/" + repo + "/contents/" + it.path.split("/").map(encodeURIComponent).join("/");
+  const headers = { "Authorization": "Bearer " + cfg.token.trim(), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  const body = { message: "battle " + it.kind + " " + it.path, content: sendB64(JSON.stringify(it.data, null, 1)), branch: "main" };
+  try{
+    if(it.overwrite){
+      // 同じ日の snapshot は上書き: いまのファイルの sha を取る（無ければ 404 で新しく作る）
+      const g = await fetch(url + "?ref=main", { headers: headers, cache: "no-store" });
+      if(g.status === 401 || g.status === 403) return "auth";
+      if(g.ok){ const j = await g.json(); if(j && j.sha) body.sha = j.sha; }
+      else if(g.status !== 404) return "retry";
+    }
+    const r = await fetch(url, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, headers), body: JSON.stringify(body) });
+    if(r.status === 200 || r.status === 201) return "ok";
+    if(r.status === 401 || r.status === 403) return "auth";
+    if(r.status === 422 && !it.overwrite) return "ok";   // ★もう同じファイルがある＝前に送れていた（二度送らない）
+    return "retry";
+  }catch(e){ return "retry"; }
+}
+// ためる（鍵が無いときは何もしない）→ すぐ送ってみる
+async function sendEnqueue(id, kind, path, data, overwrite){
+  if(!sendCfg()) return false;
+  await outboxPut({ id: id, kind: kind, path: path, overwrite: !!overwrite, at: Date.now(), data: data });
+  sendFlush();
+  return true;
+}
+let sendBusy = false, sendAgain = false;
+async function sendFlush(){
+  const cfg = sendCfg();
+  if(!cfg) return { sent: 0, left: 0, stop: "" };
+  if(sendBusy){ sendAgain = true; return null; }
+  sendBusy = true;
+  let sent = 0, stop = "";
+  try{
+    const items = await outboxAll();
+    for(const it of items){
+      const r = await sendOne(cfg, it);
+      if(r !== "ok"){ stop = r; break; }   // ★送れなかった。残りは次に（順番は変えない）
+      await outboxDel(it.id);
+      sent++;
+    }
+  }catch(e){ stop = "retry"; }
+  finally{ sendBusy = false; }
+  if(stop === "auth") sendAuthWarn(true);
+  else if(sent > 0 || !stop) sendAuthWarn(false);
+  if(sendAgain){ sendAgain = false; return sendFlush(); }
+  const left = (await outboxAll()).length;
+  sendShowStatus("");   // 親向けの欄の「まだ送れていない記録」の数を新しくする
+  return { sent: sent, left: left, stop: stop };
+}
+function sendDay(t){ const d = new Date(t || Date.now()), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
+// 1回の練習が終わった（studyLogFinish・紙）。学習ログの1回分の行と、1問ごとの記録
+function sendSession(s){
+  if(!s || !sendCfg()) return;
+  try{
+    const rows = studyLogRows();
+    const row = rows.find(r => r[0] === s.id);
+    const summary = {};
+    if(row) rows[0].forEach((h, i) => { summary[h] = row[i]; });
+    const q = (s.q || []).map(e => ({ id: e[0], sec: e[1], r: e[2], re: e[3] ? 1 : 0, mode: e[4] || "" }));
+    const parts = {};
+    (s.q || []).forEach(e => { if(isPartId(e[0]) && partStats[e[0]]) parts[e[0]] = partStats[e[0]]; });
+    sendEnqueue("session_" + s.id, "session", "battle/session/" + sendDay(s.st) + "/" + s.id + ".json", { app: "battle", id: s.id, summary: summary, q: q, parts: parts }, false);
+    sendSnapshotIfDue();
+  }catch(e){ console.error("send session failed", e); }
+}
+// 1日1回: 今の記録CSVと同じ中身
+function sendSnapshotIfDue(){
+  if(!sendCfg()) return;
+  const day = sendDay();
+  try{ if(window.localStorage.getItem(SEND_SNAP_KEY) === day) return; }catch(e){ return; }
+  try{
+    const rows = recordCsvRows();
+    try{ window.localStorage.setItem(SEND_SNAP_KEY, day); }catch(e){}
+    sendEnqueue("snapshot_" + day, "snapshot", "battle/snapshot/" + day + ".json", { app: "battle", day: day, at: new Date().toISOString(), header: rows[0], rows: rows.slice(1) }, true);
+  }catch(e){ console.error("send snapshot failed", e); }
+}
+async function sendShowStatus(msg){
+  const el = document.getElementById("send-status");
+  if(!el) return;
+  const left = sendCfg() ? (await outboxAll()).length : 0;
+  el.textContent = (msg ? msg + " " : "") + (sendCfg() ? "（まだ送れていない記録: " + left + "件）" : "（鍵が入っていないので、送りません）");
+}
+function sendSaveFromInput(){
+  const token = document.getElementById("send-token").value.trim();
+  let old = null;
+  try{ old = JSON.parse(window.localStorage.getItem(SEND_CFG_KEY) || "null"); }catch(e){}
+  if(!token){ try{ window.localStorage.removeItem(SEND_CFG_KEY); }catch(e){} return "cleared"; }
+  try{ window.localStorage.setItem(SEND_CFG_KEY, JSON.stringify(Object.assign({}, old || {}, { token: token }))); }catch(e){ return "fail"; }
+  return "ok";
+}
+const SEND_WHY = { auth: "鍵がちがうか、期限が切れています（鍵を作り直してください）。", retry: "つながらないか、GitHub が返事をしませんでした。あとで自動でもう一度送ります。" };
+function setupAutoSend(){
+  const c = sendCfg();
+  document.getElementById("send-token").value = c ? c.token : "";
+  sendAuthWarn((() => { try{ return !!c && window.localStorage.getItem(SEND_AUTH_KEY) === "1"; }catch(e){ return false; } })());
+  document.getElementById("send-save-btn").addEventListener("click", async ()=>{
+    const r = sendSaveFromInput();
+    if(r === "fail"){ sendShowStatus("この端末に保存できませんでした。"); return; }
+    if(r === "cleared"){ sendAuthWarn(false); sendShowStatus("鍵を消しました。もう送りません（ためていた分は残しています）。"); return; }
+    sendShowStatus("保存しました。");
+    sendSnapshotIfDue();
+    await sendFlush();
+    sendShowStatus("保存しました。");
+  });
+  document.getElementById("send-test-btn").addEventListener("click", async ()=>{
+    const r = sendSaveFromInput();
+    if(r !== "ok"){ sendShowStatus("先に鍵を貼ってください。"); return; }
+    const now = new Date(), p = n => String(n).padStart(2, "0");
+    const stamp = sendDay(now) + "_" + p(now.getHours()) + p(now.getMinutes()) + p(now.getSeconds());
+    const res = await sendOne(sendCfg(), { kind: "test", path: "test/" + stamp + ".json", overwrite: false, data: { app: "battle", at: now.toISOString(), note: "ためしに送る" } });
+    sendAuthWarn(res === "auth");
+    if(res === "ok"){ await sendFlush(); sendShowStatus("送れました（kosuke-records の test/" + stamp + ".json）。"); }
+    else sendShowStatus("送れませんでした: " + SEND_WHY[res]);
+  });
+  window.addEventListener("online", () => { sendFlush(); });
+  sendShowStatus("");
+  // 起動したら: 1日1回の snapshot と、ためていた分を送る（画面が出たあと、うしろで）
+  setTimeout(() => { sendSnapshotIfDue(); sendFlush().then(() => sendShowStatus("")); }, 1500);
+}
+
 loadStats();
 mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
@@ -10490,7 +10716,8 @@ renderUnitChoices();
 applySettingsUI();
 // ★設定を移したときの知らせは、画面が揃ってから一度だけ（2026-09-26）
 showMigrationNoteOnce();
-setupTodayLink();   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
+setupTodayLink();
+setupAutoSend();   // ★記録の自動送信（送り先が入っているときだけ送る。2026-10-06）   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
 </body>
