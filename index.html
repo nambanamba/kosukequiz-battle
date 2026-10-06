@@ -1664,6 +1664,7 @@
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
   .hint-box{ margin:10px 0 6px; }
+  .loop-left{ margin:2px 0 6px; font-size:12.5px; color:var(--ink-soft); text-align:right; }
   .send-box{ margin:16px 0 8px; padding:12px; border:1px dashed var(--paper-line); border-radius:10px; }
   .send-title{ font-size:13px; font-weight:700; color:var(--ink-soft); margin-bottom:6px; }
   .send-input{ display:block; width:100%; box-sizing:border-box; margin:4px 0; padding:8px; font-size:14px; border:1px solid #c9c2b0; border-radius:8px; }
@@ -2156,6 +2157,8 @@
       <div class="back" id="solo-back">← やめてもどる</div>
       <div class="counter" id="solo-counter">1 / 10</div>
     </div>
+    <!-- ★2026-10-06 正解するまでぐるぐる。のこりの数 -->
+    <div class="loop-left" id="solo-left" style="display:none;"></div>
     <div class="undo-row" id="solo-undo-row" style="display:none;">
       <span id="solo-undo-link">↩ 前の問題にもどる</span>
       <!-- ★2026-09-28: チェックのみ（review）のときだけ「一つ戻る」の隣に「一つ進む」（依頼:
@@ -2256,7 +2259,7 @@
       <div class="sub">正解数 / 出題数</div>
       <div class="sub" id="solo-result-skipinfo"></div>
     </div>
-    <div class="section-title" id="solo-miss-title" style="display:none;">まちがえた問題</div>
+    <div class="section-title" id="solo-miss-title" style="display:none;">1回目にまちがえた問題（正解するまでくり返しました）</div>
     <div class="miss-list" id="solo-miss-list"></div>
     <div class="empty-note" id="solo-perfect-note" style="display:none;">全問正解です。すばらしい！</div>
     <div class="result-actions">
@@ -2344,6 +2347,7 @@
       </div>
       <div class="counter" id="battle-counter">1 / 10</div>
     </div>
+    <div class="loop-left" id="battle-left" style="display:none;"></div>
     <div class="battle-avatars" id="battle-avatars">
       <div class="avatar-box" id="host-avatar-box">
         <div class="avatar-char" id="host-avatar">🙂</div>
@@ -4554,7 +4558,8 @@ function saveSoloSession(){
       quizPos: quizPos,
       // ★before … 記録する前の stats（JSON 文字列。無かったら null）。大問の途中から再開して
       //   (1)に戻すとき・大問の小問の「ひとつ前をやり直す」で、記録をその前にまるごと戻すのに使う（2026-09-30）
-      quizResults: quizResults.map(r => ({ id: r.id, correct: r.correct, recorded: r.recorded, before: r.before })),
+      // ★2026-10-06 norecord（2回目からの答え）・skip・requeued（うしろへ回した）も残す。再開しても「記録は1回目だけ」「正解するまで」が続く
+      quizResults: quizResults.map(r => ({ id: r.id, correct: r.correct, recorded: r.recorded, before: r.before, norecord: !!r.norecord, skip: !!r.skip, requeued: !!r.requeued })),
       reviewMode: reviewMode,
       inSoloRetryRound: inSoloRetryRound
     }));
@@ -4592,7 +4597,7 @@ function restoreSoloSession(session){
   }
   const results = (session.quizResults || []).map(r=>{
     if(!r || !isKnownId(r.id)) return null;
-    return {id: r.id, correct: r.correct, recorded: r.recorded, before: r.before};
+    return {id: r.id, correct: r.correct, recorded: r.recorded, before: r.before, norecord: !!r.norecord, skip: !!r.skip, requeued: !!r.requeued};
   }).filter(r => r);
   // ★戻した小問（queue の pos〜posBeforeRewind-1）の結果を、うしろから外す（新しい順）
   const rewound = queue.slice(pos, posBeforeRewind);
@@ -4600,7 +4605,10 @@ function restoreSoloSession(session){
   for(let k = rewound.length - 1; k >= 0; k--){
     const last = results[results.length - 1];
     if(!last || last.id !== rewound[k]) break;   // 並びが合わないときは外さない（別の問題の結果を消さない）
-    dropped.push(results.pop());
+    const dr = results.pop();
+    dropped.push(dr);
+    // ★2026-10-06 その答えでうしろへ回した同じ問も取りのぞく（大問の頭からやり直すと、また✕なら回り直すため。二重に回さない）
+    if(dr.requeued || dr.skip){ const at = queue.lastIndexOf(dr.id); if(at >= posBeforeRewind) queue.splice(at, 1); }
   }
   return {
     quizQueue: queue,
@@ -4655,7 +4663,10 @@ function saveBattleSession(){
       // ★再開で失うと困るもの（2026-09-13）: まちがいリスト／記録ずみ・採点ずみの問題番号
       misses: myMissesThisRound,
       recordedIdx: hostRecordedIdx,
-      scoredIdx: hostScoredIdx
+      scoredIdx: hostScoredIdx,
+      // ★2026-10-06 記録ずみ（1回目を答えた）の問題と、✕でうしろへ回した添字
+      answered: Array.from(battleAnsweredIds),
+      requeuedIdx: hostRequeuedIdx
     }));
   }catch(e){}
 }
@@ -7127,7 +7138,11 @@ function studyLogSummary(s){
   const avg = secs.length ? round1(secs.reduce((a, b) => a + b, 0) / secs.length) : "";
   const max = secs.length ? secs[secs.length - 1] : "";
   const med = secs.length ? (secs.length % 2 ? secs[(secs.length - 1) / 2] : round1((secs[secs.length / 2 - 1] + secs[secs.length / 2]) / 2)) : "";
-  return {shown: shown.size, ans: c.ok + c.ng, ok: c.ok, ng: c.ng, skip: c.skip, to: c.to, re: c.re, see: c.see, avg: avg, max: max, med: med};
+  // ★2026-10-06 何周（正解するまでぐるぐる）: いちばん多く出た問題が何回答えたか（〇・✕・スキップ・時間切れを数える）
+  const per = {};
+  (s.q || []).forEach(e => { if(e[2] !== "see") per[e[0]] = (per[e[0]] || 0) + 1; });
+  const laps = Object.values(per).reduce((m, v) => Math.max(m, v), 0);
+  return {shown: shown.size, ans: c.ok + c.ng, ok: c.ok, ng: c.ng, skip: c.skip, to: c.to, re: c.re, see: c.see, avg: avg, max: max, med: med, laps: laps};
 }
 function studyLogCur(k){
   const id = studyLog.cur[k];
@@ -7287,7 +7302,7 @@ function downloadCsv(rows, baseName){
 }
 const STUDY_LOG_HEADER = ["回のID","開始日時","終了日時","全体の分","解いていた分","一人・対戦","自分の役","形式","教科","単元","やり直し",
   "予定の問題数","出した問題数","答えた数","正解数","まちがい数","スキップ数","時間切れ数","出し直しで答えた数","途中でやめた","再開した回数",
-  "1問の平均秒","1問の中央値秒","1問の最長秒"];
+  "1問の平均秒","1問の中央値秒","1問の最長秒","何周"];   // ★何周: 2026-10-06（正解するまでぐるぐる）
 function studyLogRows(){
   const rows = [STUDY_LOG_HEADER.slice()];
   const min1 = ms => Math.round(ms / 6000) / 10;
@@ -7300,20 +7315,20 @@ function studyLogRows(){
     rows.push([s.id, fmtDateTime(s.st), fmtDateTime(en), min1(en - s.st), min1(act), s.k === "battle" ? "対戦" : "一人", role, s.m, s.subj,
       (s.u || []).join("／"), s.retry ? "はい" : "いいえ",
       s.plan || 0, sm.shown, sm.ans, sm.ok, sm.ng, sm.skip, sm.to, sm.re, (s.done && !s.quit) ? "いいえ" : "はい", s.res || 0,
-      sm.avg, sm.med, sm.max]);
+      sm.avg, sm.med, sm.max, sm.laps === undefined ? "" : sm.laps]);
   });
   return rows;
 }
 const RESULT_NAMES = {o: "〇", x: "✕", skip: "スキップ", timeup: "時間切れ", see: "見ただけ"};
 function studyLogDetailRows(){
-  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し","分けて・まとめて"]];
+  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し","分けて・まとめて","何回目"]];   // ★何回目: その回の中で、その問題に答えた何回目か（2026-10-06）
   studyLog.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
     (s.q || []).forEach((e, i) => {
       const d = getQById(e[0]);
       const dm = DAIMON_ITEM.get(e[0]);
       const q = d ? ((dm && dm.it.label ? dm.it.label + " " : "") + d.q) : "";
       rows.push([s.id, fmtDateTime(s.st), s.k === "battle" ? "対戦" : "一人", s.subj, s.m, i + 1, e[0], d ? d.u : "", q,
-                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : "", e[4] || ""]);
+                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : "", e[4] || "", (s.q || []).slice(0, i + 1).filter(x => x[0] === e[0]).length]);
     });
   });
   return rows;
@@ -7387,7 +7402,7 @@ function studyLogImportRows(rows){
         res: +g("再開した回数") || 0, quit: g("途中でやめた") === "はい" };
       meta.la = meta.en;
       const sum = { shown: +g("出した問題数") || 0, ans: +g("答えた数") || 0, ok: +g("正解数") || 0, ng: +g("まちがい数") || 0, skip: +g("スキップ数") || 0,
-        to: +g("時間切れ数") || 0, re: +g("出し直しで答えた数") || 0, see: 0, avg: num(g("1問の平均秒")), med: num(g("1問の中央値秒")), max: num(g("1問の最長秒")) };
+        to: +g("時間切れ数") || 0, re: +g("出し直しで答えた数") || 0, see: 0, avg: num(g("1問の平均秒")), med: num(g("1問の中央値秒")), max: num(g("1問の最長秒")), laps: col("何周") >= 0 ? num(g("何周")) : "" };
       const have = studyLog.sessions.find(s => s.id === id);
       if(have){
         if(have.imported && have.partial){ Object.assign(have, meta); have.sum = sum; have.partial = false; res.filled++; touched.add(id); }
@@ -8051,6 +8066,7 @@ function startSoloCard(){
   els["solo-skip-btn"].style.display = (!reviewMode && isDaimonItemId(id)) ? "block" : "none";
   els["solo-skip-next-btn"].style.display = "none";
   els["solo-counter"].textContent = (quizPos+1)+" / "+quizQueue.length;
+  showLoopLeft("solo", quizQueue.length - quizPos, !reviewMode);
   els["solo-progress-fill"].style.width = (quizPos/quizQueue.length*100)+"%";
   resetHint("solo", id, !reviewMode);   // ★チェックのみ（答えが最初から出ている）では出さない
   els["solo-timeup-note"].style.display = "none";
@@ -8058,7 +8074,9 @@ function startSoloCard(){
   // ★2026-10-05 一問一答にもスキップ（答えを見て✕）。スキップのあとで出し直した問は出さない（もう答えを見ている）
   if(!reviewMode && !isDaimonItemId(id) && !soloSkippedIds.has(id)) els["solo-skip-btn"].style.display = "block";
   els["solo-retry-note"].textContent = soloSkippedIds.has(id) ? "スキップした問題のやり直しです（記録は✕のまま。答えを思い出す練習）" : "まちがえた問題のやり直し中です。ここで正解しても、記録は苦手のまま残ります。";
-  if(soloSkippedIds.has(id) && !reviewMode) els["solo-retry-note"].style.display = "block";
+  // ★2026-10-06 このラウンドで2回目から（✕で回ってきた）の問題: 正解するまで出る・記録は1回目のまま
+  if(!soloSkippedIds.has(id) && soloIsRepeat(id)) els["solo-retry-note"].textContent = "まちがえた問題です。正解するまで出ます（記録は1回目のまま）";
+  if((soloSkippedIds.has(id) || soloIsRepeat(id)) && !reviewMode) els["solo-retry-note"].style.display = "block";
   // ★2026-10-05 ユーザー「一人の時は時間制限なしでいいです」→ 一人では考える時間をはからない（時間切れも起きない）。
   //   時計の関数（startSoloThink / soloTimeUp）は残すが呼ばない。スキップはそのまま
   stopSoloThink();
@@ -8129,12 +8147,32 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
 });
 
 // 判定を記録して quizPos を1つ進める（画面は動かさない）。judgeSolo とスキップで共通
+// ★★2026-10-06 正解するまでぐるぐる（ユーザー「間違えた問題をもう一回をやめて、正解するまでぐるぐる回してください」）
+//   ・✕・スキップの問題は、〇になるまで何度でも、このラウンドのうしろへ回す（一問一答は末尾。大問の小問・分けての部分は、
+//     同じ大問／カードの残りのうしろ＝insertDaimonItemLater）。ほかの問題が残っていれば間に1問以上はさまる。全部〇になったら終わり
+//   ・★記録（stats・部分の記録）は、このラウンドで1回目の答えだけ。2回目からは記録しない（norecord）
+//   ・結果画面の「まちがえた問題をもう一度」はこの動きに置きかえた（ボタンは出さない）
+// ★「のこり◯問（まちがえた問題は正解するまで出ます）」。のこり＝いま出ている問題をふくめて、このラウンドにまだ出てくる数
+function showLoopLeft(prefix, n, show){
+  const el = document.getElementById(prefix + "-left");
+  if(!el) return;
+  el.style.display = show ? "" : "none";
+  el.textContent = "のこり" + n + "問（まちがえた問題は正解するまで出ます）";
+}
+function soloIsRepeat(qid){ return quizResults.some(r => r.id === qid && !r.norecord); }
+function soloRequeue(qid){
+  // quizPos はもう次へ進んでいる
+  if(isDaimonItemId(qid)) insertDaimonItemLater(quizQueue, quizPos, qid);
+  else quizQueue.push(qid);
+}
 function recordSoloAnswer(correct){
   const qid = quizQueue[quizPos];
-  // ★2026-10-05 スキップして答えを見た問の出し直しは、記録しない（スキップのときに✕で記録ずみ）。並びと結果の数は1つ進める
-  if(soloSkippedIds.has(qid) && quizResults.some(r => r.id === qid && r.skip)){
-    quizResults.push({id: qid, correct, recorded: undefined, before: null, norecord: true});
+  const requeue = !correct && !reviewMode;
+  // ★このラウンドで2回目からの答え（✕で回ってきた・スキップのあとの出し直し）は記録しない。並びと結果の数は1つ進める
+  if(soloIsRepeat(qid)){
+    quizResults.push({id: qid, correct, recorded: undefined, before: null, norecord: true, requeued: requeue});
     quizPos++;
+    if(requeue) soloRequeue(qid);
     return;
   }
   // やり直しラウンド中は、そこで正解しても記録は「まちがえた」のまま。
@@ -8142,8 +8180,9 @@ function recordSoloAnswer(correct){
   const recorded = inSoloRetryRound ? false : correct;
   const before = recSnap(qid);   // ★記録する前（戻すとき用）。分けての部分は部分の入れ物から（2026-10-06）
   recordResult(qid, recorded);
-  quizResults.push({id: qid, correct, recorded, before});
+  quizResults.push({id: qid, correct, recorded, before, requeued: requeue});
   quizPos++;
+  if(requeue) soloRequeue(qid);
 }
 function advanceSolo(){
   if(quizPos >= quizQueue.length){
@@ -8155,7 +8194,7 @@ function advanceSolo(){
 function judgeSolo(correct){
   // ★学習ログ（2026-10-05）。スキップのあとの出し直し（記録しない回）は「出し直し」の印を付ける（recordSoloAnswer と同じ条件）
   const jid = quizQueue[quizPos];
-  studyLogAnswer("solo", jid, correct ? "o" : "x", soloSkippedIds.has(jid) && quizResults.some(r => r.id === jid && r.skip));
+  studyLogAnswer("solo", jid, correct ? "o" : "x", soloIsRepeat(jid));   // ★2回目からは「出し直し」の印（記録しない回）
   recordSoloAnswer(correct);
   advanceSolo();
 }
@@ -8173,11 +8212,11 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
     els["solo-reveal-btn"].style.display = "none";
     els["solo-skip-btn"].style.display = "none";
     els["solo-judge-row"].style.display = "none";
-    studyLogAnswer("solo", id, "skip");   // ★学習ログ
-    recordSoloAnswer(false);
-    quizResults[quizResults.length - 1].skip = true;
+    const firstAns = !soloIsRepeat(id);
+    studyLogAnswer("solo", id, "skip", !firstAns);   // ★学習ログ
+    recordSoloAnswer(false);   // ★うしろにもう一度（正解するまで。recordSoloAnswer の中で回す）・記録は1回目だけ
+    if(firstAns) quizResults[quizResults.length - 1].skip = true;
     soloSkippedIds.add(id);
-    quizQueue.push(id);   // ★うしろにもう一度
     saveSoloSession();
     els["solo-skip-next-btn"].style.display = "block";
     return;
@@ -8190,13 +8229,13 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
   els["solo-skip-btn"].style.display = "none";
   els["solo-judge-row"].style.display = "none";
   els["solo-undo-row"].style.display = "none";
-  const firstSkip = !soloSkippedIds.has(sid);
+  const firstSkip = !soloIsRepeat(sid);
   studyLogAnswer("solo", sid, "skip", !firstSkip);   // ★学習ログ
-  recordSoloAnswer(false);   // ★出し直しでのスキップは記録しない（recordSoloAnswer の norecord）
+  // ★出し直しでのスキップは記録しない（recordSoloAnswer の norecord）。
+  //   あとでもう一度（同じ大問の残りの小問のうしろ・最後の手なら末尾）も recordSoloAnswer の中で回す（正解するまで）
+  recordSoloAnswer(false);
   if(firstSkip) quizResults[quizResults.length - 1].skip = true;
   soloSkippedIds.add(sid);
-  // ★2026-10-05 あとでもう一度（同じ大問の残りの小問のうしろ・最後の手なら末尾）。quizPos はもう次へ進んでいる
-  insertDaimonItemLater(quizQueue, quizPos, sid);
   saveSoloSession();
   els["solo-skip-next-btn"].style.display = "block";
 });
@@ -8221,16 +8260,19 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     const last = quizResults.pop();
     studyLogUndo("solo");   // ★学習ログ: 最後の1件を取りのぞく（やり直した判定はあとで入る）
     const qid = last.id;
+    // ★2026-10-06 ✕・スキップでうしろに回した同じ問を1つ取りのぞく（正解するまでぐるぐる）
+    if(last.requeued || last.skip){
+      const at = quizQueue.lastIndexOf(qid);
+      if(at > quizPos - 1) quizQueue.splice(at, 1);
+    }
+    if(last.skip) soloSkippedIds.delete(qid);
     if(last.norecord){
-      // ★2026-10-05 スキップのあとの出し直し（記録していない）は、並びを戻すだけ
+      // ★2回目からの答え（記録していない）は、並びを戻すだけ
     }else if(last.skip){
-      // ★2026-10-05 スキップを取り消す: ✕を戻し、うしろに足した同じ問を1つ取りのぞく（小問は記録する前の stats にまるごと戻す）
+      // ★2026-10-05 スキップを取り消す: ✕を戻す（小問は記録する前の stats にまるごと戻す）
       if(isDaimonItemId(qid) && last.before !== undefined){
         recRestore(qid, last.before);
       }else adjustStat(qid, "wrong", -1);
-      const at = quizQueue.lastIndexOf(qid);
-      if(at > quizPos - 1) quizQueue.splice(at, 1);
-      soloSkippedIds.delete(qid);
     }else if(isDaimonItemId(qid) && last.before !== undefined){
       // ★大問の小問（2026-09-30）: 記録する前の stats にまるごと戻す（box・正解日も元どおり）。分けての部分は部分の入れ物
       recRestore(qid, last.before);
@@ -8273,6 +8315,12 @@ els["solo-back"].addEventListener("click", ()=>{
   }
 });
 
+// このラウンドで、いちばん多く出た問題が何回出たか（＝何周したか）
+function soloLaps(){
+  const c = {};
+  quizResults.forEach(r => { c[r.id] = (c[r.id] || 0) + 1; });
+  return Object.values(c).reduce((m, v) => Math.max(m, v), 0);
+}
 function finishSoloQuiz(){
   stopSoloThink();
   clearSoloSession();
@@ -8282,7 +8330,8 @@ function finishSoloQuiz(){
   const correctCount = counted.filter(r=>r.correct).length;
   els["solo-result-score"].textContent = correctCount+" / "+counted.length;
   // ★一人では時間切れが起きないので、スキップの数だけ出す（時間切れが起きたときだけ書き足す）
-  els["solo-result-skipinfo"].textContent = reviewMode ? "" : ("スキップ " + quizResults.filter(r => r.skip).length + "問" + (soloTimeupCount ? "・時間切れ " + soloTimeupCount + "問" : ""));
+  els["solo-result-skipinfo"].textContent = reviewMode ? "" : ("スキップ " + quizResults.filter(r => r.skip).length + "問" + (soloTimeupCount ? "・時間切れ " + soloTimeupCount + "問" : "")
+    + "・正解するまで " + soloLaps() + "周");   // ★2026-10-06 いちばん多く出た問題の回数
 
   const misses = counted.filter(r=>!r.correct);
   saveLastMiss(misses.map(m=>m.id));
@@ -8294,7 +8343,8 @@ function finishSoloQuiz(){
   }else{
     els["solo-miss-title"].style.display = "block";
     els["solo-perfect-note"].style.display = "none";
-    els["solo-retry-miss-btn"].style.display = "block";
+    // ★2026-10-06 正解するまでぐるぐる回したので、「まちがえた問題をもう一度」は出さない（ラウンドの中で全部〇になっている）
+    els["solo-retry-miss-btn"].style.display = "none";
     misses.forEach(m=>{
       const d = getQById(m.id);
       const div = document.createElement("div");
@@ -8341,6 +8391,8 @@ els["resume-solo-btn"].addEventListener("click", ()=>{
   quizQueue = session.quizQueue;
   quizPos = session.quizPos;
   quizResults = session.quizResults;
+  soloSkippedIds = new Set(quizResults.filter(r => r.skip).map(r => r.id));   // ★2026-10-06
+  soloTimeupCount = 0;
   reviewMode = !!session.reviewMode;
   inSoloRetryRound = !!session.inSoloRetryRound;
   studyLogResume("solo", quizQueue, {review: reviewMode, retry: inSoloRetryRound});   // ★学習ログ: 途中の1回に戻る
@@ -9028,6 +9080,7 @@ function setupActions(){
       playAdvanceCue();
       scores = {host:0, guest:0};
       clearJudgeFix();   // ★新しいラウンド。前のラウンドの判定は直せない（つなぎ直しの resync では消さない）
+      battleAnsweredIds = new Set();   // ★2026-10-06
       studyLogStart("battle", questionIds, {role: "guest", retry: inMissRetryRound});   // ★学習ログ
       // ★ホストが1問目（大問の小問）をスキップしたときは、2問目以降から始まる（index つき・2026-09-30）
       showQuestion(typeof data.index === "number" ? data.index : 0);
@@ -9054,12 +9107,13 @@ function setupActions(){
     const forcedWrong = role === "host" && (inMissRetryRound || hostSkippedIds.has(qid));
     const finalCorrect = forcedWrong ? false : data.correct;
     // ★学習ログ（2026-10-05）: 自分の答えの〇✕（生の判定）。再開して判定ずみの問題に戻ったときは二重に入れない
+    const repeat = battleAnsweredIds.has(qid);   // ★2026-10-06 このラウンドで2回目から（記録しない）
     if(!(role === "host" && hostRecordedIdx === currentIndex)){
-      studyLogAnswer("battle", qid, data.correct ? "o" : "x", role === "host" && (hostSkippedIds.has(qid) || daimonSkipRecorded.has(qid)));
+      studyLogAnswer("battle", qid, data.correct ? "o" : "x", repeat || (role === "host" && (hostSkippedIds.has(qid) || daimonSkipRecorded.has(qid))));
     }
     // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
     //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
-    if(!(role === "host" && hostRecordedIdx === currentIndex) && !(role === "host" && daimonSkipRecorded.has(qid))){
+    if(!(role === "host" && hostRecordedIdx === currentIndex) && !(role === "host" && daimonSkipRecorded.has(qid)) && !repeat){
       // ★あとでゲストから「一個前を直す」が来たときのために、**記録する前の stats を丸ごと控える**。
       //   直すときは、この控えに戻してから入れ直す（＝correct/wrong/box が2回動かない）。
       //   ★ホストだけが控える。ゲストの記録（ホストが下した判定）は、この導線では直せない
@@ -9073,8 +9127,19 @@ function setupActions(){
         };
       }
       recordResult(qid, finalCorrect);
+      battleAnsweredIds.add(qid);
       if(!data.correct) myMissesThisRound.push(qid);
       if(role === "host"){ hostRecordedIdx = currentIndex; saveBattleSession(); }
+    }else if(role === "host" && repeat && hostRecordedIdx !== currentIndex){
+      // ★2回目からの答え: 記録はしないが、「一個前を直す」で点数と回し方だけ直せるように覚えておく
+      lastHostRecord = { qid: qid, idx: currentIndex, rawCorrect: data.correct, forcedWrong: false, statBefore: null, norecord: true };
+      hostRecordedIdx = currentIndex;
+    }
+    // ★2026-10-06 ホスト（子ども）が✕なら、〇になるまでラウンドのうしろへ回す（この添字では1回だけ）
+    if(role === "host" && hostRequeuedIdx !== currentIndex){
+      hostRequeuedIdx = currentIndex;
+      if(!data.correct){ battleRequeue(qid); if(lastHostRecord && lastHostRecord.idx === currentIndex) lastHostRecord.requeued = true; }
+      saveBattleSession();
     }
     updateMyResultUI(forcedWrong);
     // ★2026-10-05 ユーザー「親が正解やバツを押したら開いてください。子供が答えを見るを押さなくても進めたいです」。
@@ -9097,6 +9162,8 @@ function setupActions(){
 
   nextAction.onMessage = (data)=>{
     if(role === "host") return;
+    // ★2026-10-06 ホストが✕の問題をうしろへ回した並び（ids）が来たら、それをそのまま持つ
+    if(Array.isArray(data.ids)) questionIds = data.ids.slice();
     if(data.index >= questionIds.length) endGame();
     else{
       if(data.id) questionIds[data.index] = data.id;
@@ -9254,6 +9321,8 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   missesUnknown = !Array.isArray(session.misses);
   myMissesThisRound = missesUnknown ? [] : session.misses.slice();
   hostRecordedIdx = typeof session.recordedIdx === "number" ? session.recordedIdx : -1;
+  battleAnsweredIds = new Set(Array.isArray(session.answered) ? session.answered : []);   // ★2026-10-06
+  hostRequeuedIdx = typeof session.requeuedIdx === "number" ? session.requeuedIdx : -1;
   hostScoredIdx = -1;
   // 採点まで済んだ問題には戻らない（戻ると記録と得点が二重に入る）
   if(session.scoredIdx === currentIndex) currentIndex += 1;
@@ -9404,6 +9473,7 @@ function showQuestion(idx, hostPrivate){
 
   const d = getQById(questionIds[idx]);
   els["battle-counter"].textContent = (idx+1)+" / "+questionIds.length;
+  showLoopLeft("battle", questionIds.length - idx, true);
   els["battle-unit-tag"].textContent = d.u;
   els["battle-q-id"].textContent = "No."+d.id;
   els["battle-source-tag"].textContent = d.note ? "出典："+d.note : "";
@@ -9517,7 +9587,7 @@ function hostResyncQuestion(idx){
   saveBattleSession();
   if(room){
     if(idx === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
-    else nextAction.send({index: idx, id: questionIds[idx]});
+    else nextAction.send({index: idx, id: questionIds[idx], ids: questionIds});   // ★ids: ✕でうしろへ回した並び（2026-10-06）
   }
 }
 
@@ -9545,7 +9615,7 @@ function doAdvance(){
   if(room){
     // ★1問目（大問の小問）をスキップしたときは、ゲストはまだ始まっていないので startAction で始める（index つき）
     if(currentIndex === 0 || startNotSentYet) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), index: currentIndex});
-    else nextAction.send({index: currentIndex, id: questionIds[currentIndex]});
+    else nextAction.send({index: currentIndex, id: questionIds[currentIndex], ids: questionIds});   // ★ids: ✕でうしろへ回した並び（2026-10-06）
     startNotSentYet = false;
   }
   enterAnsweringPhase();
@@ -9570,6 +9640,25 @@ function moveCurrentToEndOfRound(){
 //   ゲストにはこの小問を出さない（ゲストの記録は付かない）。「つぎの問題へ」で次の小問へ進む
 let daimonSkipPending = false;   // ホストだけ: 「つぎの問題へ」で次の添字に進むか
 let daimonSkipRecorded = new Set();   // ★2026-10-05 ホストだけ: スキップで✕を付けた小問（出し直しでは記録しない）
+// ★2026-10-06 正解するまでぐるぐる（ユーザー「間違えた問題をもう一回をやめて、正解するまでぐるぐる回してください」）
+//   ・ホスト（子ども）が✕（ゲストの判定）だった問題は、〇になるまで何度でもラウンドのうしろへ回す（スキップ・時間切れはもともと回す）
+//   ・★記録は、このラウンドで1回目の答えだけ（両方の端末とも）。battleAnsweredIds に入っている問は記録しない
+//   ・並びを変えたら、つぎの合図（nextAction）で並び全体（ids）をゲストに送る
+let battleAnsweredIds = new Set();   // このラウンドで記録をつけた問題（ホスト・ゲストそれぞれの端末で）
+let hostRequeuedIdx = -1;            // ホストだけ: ✕でうしろへ回したのはどの添字か（つなぎ直しで二重に回さない）
+function battleRequeue(id){
+  if(isDaimonItemId(id)){
+    // 同じ大問／カードの、いまより後ろに続いている小問のうしろ。続きが無ければ末尾
+    const g = DAIMON_ITEM.get(id).g;
+    let end = currentIndex;
+    while(end + 1 < questionIds.length){ const nx = DAIMON_ITEM.get(questionIds[end + 1]); if(!nx || nx.g !== g) break; end++; }
+    if(end === currentIndex) questionIds.push(id); else questionIds.splice(end + 1, 0, id);
+  }else questionIds.push(id);
+}
+function battleUnrequeue(id, afterIdx){
+  const at = questionIds.lastIndexOf(id);
+  if(at > afterIdx) questionIds.splice(at, 1);
+}
 let startNotSentYet = false;     // ホストだけ: 1問目をスキップしたので、まだゲストに startAction を送っていない
 function performDaimonSkip(){
   clearTimeout(pendingSendTimer);
@@ -9581,7 +9670,8 @@ function performDaimonSkip(){
   // ★2026-10-05 ユーザー「あとで出しましょう」: 小問のスキップも一問一答とそろえて、答えを見せて✕で記録し、あとでもう一度出す。
   //   ✕を付けるのは1回目だけ（出し直しでまたスキップしても、出し直しで答えても、ホストの記録は付けない）
   if(hostRecordedIdx !== currentIndex && !daimonSkipRecorded.has(id)){
-    recordResult(id, false);
+    if(!battleAnsweredIds.has(id)) recordResult(id, false);   // ★記録は1回目だけ（2026-10-06）
+    battleAnsweredIds.add(id);
     if(myMissesThisRound.indexOf(id) < 0) myMissesThisRound.push(id);
     // ★hostRecordedIdx は動かさない（スキップした小問はうしろへ回り、いまの添字には次の小問が来るので、その記録を止めてしまう）
     daimonSkipRecorded.add(id);
@@ -9993,6 +10083,7 @@ function applyJudgeFixOnHost(data){
     reply(true, {correct: data.correct, scoreDelta: 0}); return;
   }
 
+  if(!r.norecord){   // ★2026-10-06 2回目からの答え（記録していない）は、記録もまちがいリストも触らない
   // ① 記録する前の状態に、まるごと戻す（打ち消し）
   if(isPartId(r.qid)) recRestore(r.qid, r.statBefore);   // ★分けての部分（2026-10-06）
   else if(r.statBefore === null) delete stats[r.qid];
@@ -10000,12 +10091,17 @@ function applyJudgeFixOnHost(data){
   // ② そのうえで入れ直す。＝ correct / wrong / box は、この問について1回しか動かない
   const finalCorrect = r.forcedWrong ? false : data.correct;
   recordResult(r.qid, finalCorrect);          // saveStats() はこの中で呼ばれる
-  studyLogFix("battle", r.qid, data.correct);   // ★学習ログの〇✕も直す
 
   // ③ 「まちがえた問題だけもう一勝負」のリスト。**生の判定**で決めるのは記録のときと同じ規則
   const at = myMissesThisRound.indexOf(r.qid);
   if(!data.correct && at < 0) myMissesThisRound.push(r.qid);
   if(data.correct && at >= 0) myMissesThisRound.splice(at, 1);
+  }
+  studyLogFix("battle", r.qid, data.correct);   // ★学習ログの〇✕も直す
+  // ★2026-10-06 正解するまでぐるぐる: 〇に直したら、うしろへ回した同じ問を取りのぞく。✕に直したら、うしろへ回す
+  if(data.correct && r.requeued){ battleUnrequeue(r.qid, Math.max(r.idx, currentIndex)); r.requeued = false; }
+  else if(!data.correct && !r.requeued){ if(r.idx === currentIndex) battleRequeue(r.qid); else questionIds.push(r.qid); r.requeued = true; }
+  saveBattleSession();
 
   // ④ 得点。★まだ採点していない問なら、ここでは動かさない。
   //    ⑤で opponentVerdictOfMe を直しておけば、maybeFinishQuestion が正しい側で数える
@@ -10168,7 +10264,8 @@ function endGame(){
   // and only if the room connection with the guest is still alive. when
   // eligible, don't wait for a tap -- fill-countdown the button and auto-start,
   // and let the guest follow along via a synced countdown of its own
-  if(role === "host" && room && myMissesThisRound.length > 0){
+  // ★2026-10-06 正解するまでぐるぐる回したので、「まちがえた問題だけもう一勝負」は出さない（ラウンドの中で全部〇になっている）
+  if(false && role === "host" && room && myMissesThisRound.length > 0){
     const label = "まちがえた問題だけもう一勝負（"+myMissesThisRound.length+"問）";
     els["result-retry-battle-btn"].style.display = "block";
     els["result-retry-battle-btn"].dataset.label = label;
@@ -10190,6 +10287,8 @@ function startMissRetryRound(){
   hostSkippedIds = new Set();
   battleTimeupCount = 0;
   daimonSkipRecorded = new Set();
+  battleAnsweredIds = new Set();
+  hostRequeuedIdx = -1;
   inMissRetryRound = true;
   scores = {host:0, guest:0};
   myMissesThisRound = [];
@@ -10267,6 +10366,8 @@ function maybeStartBattleTogether(){
 }
 function startBattleNow(){
   battleTimeupCount = 0;
+  battleAnsweredIds = new Set();   // ★2026-10-06
+  hostRequeuedIdx = -1;
   daimonSkipRecorded = new Set();
   scores = {host:0, guest:0};
   myMissesThisRound = [];
