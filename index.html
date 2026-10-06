@@ -10589,7 +10589,7 @@ async function sendOne(cfg, it){
   const testApi = typeof cfg.api === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(cfg.api) ? cfg.api : "";
   const api = (testApi || SEND_API).replace(/\/+$/, ""), repo = testApi && cfg.repo ? cfg.repo : SEND_REPO;
   const url = api + "/repos/" + repo + "/contents/" + it.path.split("/").map(encodeURIComponent).join("/");
-  const headers = { "Authorization": "Bearer " + cfg.token.trim(), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
+  const headers = { "Authorization": "Bearer " + cleanToken(cfg.token), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
   const body = { message: "battle " + it.kind + " " + it.path, content: sendB64(JSON.stringify(it.data, null, 1)), branch: "main" };
   try{
     if(it.overwrite){
@@ -10597,14 +10597,15 @@ async function sendOne(cfg, it){
       const g = await fetch(url + "?ref=main", { headers: headers, cache: "no-store" });
       if(g.status === 401 || g.status === 403) return "auth";
       if(g.ok){ const j = await g.json(); if(j && j.sha) body.sha = j.sha; }
-      else if(g.status !== 404) return "retry";
+      else if(g.status !== 404){ sendLastErr = "GitHub の返事が " + g.status; return "retry"; }
     }
     const r = await fetch(url, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, headers), body: JSON.stringify(body) });
     if(r.status === 200 || r.status === 201) return "ok";
     if(r.status === 401 || r.status === 403) return "auth";
     if(r.status === 422 && !it.overwrite) return "ok";   // ★もう同じファイルがある＝前に送れていた（二度送らない）
+    sendLastErr = "GitHub の返事が " + r.status;
     return "retry";
-  }catch(e){ return "retry"; }
+  }catch(e){ sendLastErr = describeSendError(e); console.error("send failed", e); return "retry"; }
 }
 // ためる（鍵が無いときは何もしない）→ すぐ送ってみる
 async function sendEnqueue(id, kind, path, data, overwrite){
@@ -10664,17 +10665,38 @@ function sendSnapshotIfDue(){
     sendEnqueue("snapshot_" + day, "snapshot", "battle/snapshot/" + day + ".json", { app: "battle", day: day, at: new Date().toISOString(), header: rows[0], rows: rows.slice(1) }, true);
   }catch(e){ console.error("send snapshot failed", e); }
 }
+// ★2026-10-06 いちばん新しい知らせを覚えておく（うしろで送り終わったときの数の書きかえで、「送れました」などが消えないように）
+let sendStatusMsg = "";
 async function sendShowStatus(msg){
   const el = document.getElementById("send-status");
   if(!el) return;
+  if(msg) sendStatusMsg = msg;
   const left = sendCfg() ? (await outboxAll()).length : 0;
-  el.textContent = (msg ? msg + " " : "") + (sendCfg() ? "（まだ送れていない記録: " + left + "件）" : "（鍵が入っていないので、送りません）");
+  el.textContent = (sendStatusMsg ? sendStatusMsg + " " : "") + (sendCfg() ?"（まだ送れていない記録: " + left + "件）" : "（鍵が入っていないので、送りません）");
+}
+// ★2026-10-06 鍵の掃除: 全角→半角（NFKC）にしてから、空白・改行・見えない文字（ゼロ幅など）を全部取る。
+//   ユーザーの端末で「つながらない」になった原因の疑い: 鍵に全角・改行・見えない文字が混じると Authorization ヘッダが不正になり、fetch が例外を出す
+function cleanToken(raw){
+  let t = String(raw || "");
+  try{ t = t.normalize("NFKC"); }catch(e){}
+  return t.replace(/[\s\u00A0\u180E\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u3000\uFEFF]/g, "");
+}
+function tokenLooksOk(t){ return /^github_pat_[A-Za-z0-9_]+$/.test(t); }
+let sendLastErr = "";   // いちばん新しい「送れなかった理由」（画面に短く出す）
+function describeSendError(e){
+  if(typeof navigator !== "undefined" && navigator.onLine === false) return "通信できない（オフライン）";
+  const m = String((e && (e.message || e)) || "");
+  if(/ISO-8859|header|ByteString|Headers/i.test(m)) return "ヘッダの文字が不正（鍵に使えない文字が入っています。貼り直してください）";
+  return "通信できない（" + m.slice(0, 60) + "）";
 }
 function sendSaveFromInput(){
-  const token = document.getElementById("send-token").value.trim();
+  const input = document.getElementById("send-token");
+  const token = cleanToken(input.value);
   let old = null;
   try{ old = JSON.parse(window.localStorage.getItem(SEND_CFG_KEY) || "null"); }catch(e){}
   if(!token){ try{ window.localStorage.removeItem(SEND_CFG_KEY); }catch(e){} return "cleared"; }
+  if(!tokenLooksOk(token)) return "badtoken";   // ★保存しない
+  input.value = token;   // 取りのぞいた後の鍵を見せる
   try{ window.localStorage.setItem(SEND_CFG_KEY, JSON.stringify(Object.assign({}, old || {}, { token: token }))); }catch(e){ return "fail"; }
   return "ok";
 }
@@ -10685,6 +10707,7 @@ function setupAutoSend(){
   sendAuthWarn((() => { try{ return !!c && window.localStorage.getItem(SEND_AUTH_KEY) === "1"; }catch(e){ return false; } })());
   document.getElementById("send-save-btn").addEventListener("click", async ()=>{
     const r = sendSaveFromInput();
+    if(r === "badtoken"){ sendShowStatus("鍵の形がちがいます（github_pat_ で始まる英数字だけ）。保存していません。"); return; }
     if(r === "fail"){ sendShowStatus("この端末に保存できませんでした。"); return; }
     if(r === "cleared"){ sendAuthWarn(false); sendShowStatus("鍵を消しました。もう送りません（ためていた分は残しています）。"); return; }
     sendShowStatus("保存しました。");
@@ -10694,13 +10717,15 @@ function setupAutoSend(){
   });
   document.getElementById("send-test-btn").addEventListener("click", async ()=>{
     const r = sendSaveFromInput();
+    if(r === "badtoken"){ sendShowStatus("鍵の形がちがいます（github_pat_ で始まる英数字だけ）。保存していません。"); return; }
     if(r !== "ok"){ sendShowStatus("先に鍵を貼ってください。"); return; }
+    sendLastErr = "";
     const now = new Date(), p = n => String(n).padStart(2, "0");
     const stamp = sendDay(now) + "_" + p(now.getHours()) + p(now.getMinutes()) + p(now.getSeconds());
     const res = await sendOne(sendCfg(), { kind: "test", path: "test/" + stamp + ".json", overwrite: false, data: { app: "battle", at: now.toISOString(), note: "ためしに送る" } });
     sendAuthWarn(res === "auth");
     if(res === "ok"){ await sendFlush(); sendShowStatus("送れました（kosuke-records の test/" + stamp + ".json）。"); }
-    else sendShowStatus("送れませんでした: " + SEND_WHY[res]);
+    else sendShowStatus("送れませんでした: " + (res === "auth" ? SEND_WHY.auth : (sendLastErr ? sendLastErr + "。あとで自動でもう一度送ります。" : SEND_WHY.retry)));
   });
   window.addEventListener("online", () => { sendFlush(); });
   sendShowStatus("");

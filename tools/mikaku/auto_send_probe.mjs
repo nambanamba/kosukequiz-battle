@@ -166,6 +166,22 @@ async function run(label, src) {
       toEvil.length === 0 && toGh.length >= 3, JSON.stringify(reqs.slice(0, 4)));
     // A8
     check("A8 コードに鍵を書いていない", !/github_pat_[A-Za-z0-9_]{20,}/.test(src) && !/ghp_[A-Za-z0-9]{20,}/.test(src));
+    // ===== A10〜A12 鍵の掃除・形の確かめ・オフラインの表示（2026-10-06 ユーザーの端末で「つながらない」になった件）=====
+    await pg.evaluate(a => localStorage.setItem("kq_battle_send_gh_v1", JSON.stringify({ api: a })), API_URL);
+    await pg.reload(); await pg.waitForTimeout(800);
+    const messy = "  ｇｉｔｈｕｂ＿ｐａｔ＿TEST ONLY_1234\n567890​　";
+    await pg.fill("#send-token", messy); await tap("#send-test-btn"); await pg.waitForTimeout(1500);
+    const a10 = { saved: await pg.evaluate(() => (JSON.parse(localStorage.getItem("kq_battle_send_gh_v1") || "{}")).token || ""), input: await pg.$eval("#send-token", e => e.value), st: await status() };
+    check("A10 全角・空白・改行・見えない文字まじりの鍵 → 取りのぞいて保存し、送れる", a10.saved === TOKEN && a10.input === TOKEN && /送れました/.test(a10.st), JSON.stringify(a10));
+    await pg.fill("#send-token", "github_pat_abc-def!ghi"); await tap("#send-save-btn"); await pg.waitForTimeout(500);
+    const a11 = { saved: await pg.evaluate(() => (JSON.parse(localStorage.getItem("kq_battle_send_gh_v1") || "{}")).token || ""), st: await status() };
+    check("A11 形がちがう鍵は「鍵の形がちがいます（github_pat_ で始まる英数字だけ）」・保存しない", a11.saved === TOKEN && /鍵の形がちがいます（github_pat_ で始まる英数字だけ）/.test(a11.st), JSON.stringify(a11));
+    await pg.fill("#send-token", TOKEN);
+    await ctx.setOffline(true);
+    await tap("#send-test-btn"); await pg.waitForTimeout(1500);
+    const a12 = await status();
+    await ctx.setOffline(false);
+    check("A12 オフラインのときは「通信できない（オフライン）」と出る", /送れませんでした: 通信できない（オフライン）/.test(a12), a12);
     check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await ctx.close(); }
