@@ -1675,6 +1675,17 @@
   .today-box{ margin:10px 0 14px; padding:14px 14px 12px; border:2px solid var(--gold); border-radius:14px; background:#fffaf0; }
   .today-title{ font-size:16px; font-weight:700; color:var(--navy-deep); line-height:1.5; text-align:center; }
   .today-box .start-btn{ margin-top:10px; }
+  .plan-box{ margin:10px 0 14px; padding:12px 14px; border:2px solid var(--gold); border-radius:14px; background:#fffaf0; }
+  .plan-head{ font-size:16px; font-weight:700; color:var(--navy-deep); text-align:center; }
+  .plan-msg{ margin:6px 0 2px; font-size:13.5px; color:var(--ink); text-align:center; line-height:1.5; }
+  .plan-row{ display:flex; align-items:center; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--paper-line); }
+  .plan-row-title{ flex:1; font-size:14.5px; font-weight:700; color:var(--ink); line-height:1.45; }
+  .plan-row.done .plan-row-title{ color:var(--ink-soft); }
+  .plan-mark{ font-size:12.5px; font-weight:700; color:var(--ok); white-space:nowrap; }
+  .plan-start-btn{ flex:0 0 auto; padding:12px 16px; border:none; border-radius:12px; background:var(--navy-deep); color:#fff; font-size:15px; font-weight:700; cursor:pointer; }
+  .plan-row.done .plan-start-btn{ background:#fff; color:var(--navy-deep); border:1.5px solid var(--navy-deep); }
+  .plan-start-btn:disabled{ opacity:.45; cursor:default; }
+  .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
     background:#fffaf0; color:var(--navy-deep); font-size:14px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent; }
@@ -1781,6 +1792,13 @@
       <div class="today-title" id="today-title"></div>
       <button class="start-btn" id="today-start-btn" style="display:none;">はじめる</button>
       <div class="today-note" id="today-note"></div>
+    </div>
+    <!-- ★2026-10-07 今日やること（kosuke-records の plan/今日.json）。ユーザー「今日の理科ってなにやるかとかってタブレットに配信できますか？」 -->
+    <div class="plan-box" id="plan-box" style="display:none;">
+      <div class="plan-head">今日やること</div>
+      <div class="plan-msg" id="plan-msg" style="display:none;"></div>
+      <div id="plan-items"></div>
+      <div class="plan-alldone" id="plan-done" style="display:none;">今日はおわり！</div>
     </div>
 
     <div class="stat-row">
@@ -4808,6 +4826,7 @@ function renderHome(){
   refreshResumeBattleButton();
   refreshDaimonButton();
   refreshPaperButton();
+  renderPlan();   // ★今日やることの「できた」を新しくする（2026-10-07）
 }
 
 function escapeHtml(s){
@@ -7159,6 +7178,7 @@ function studyLogClose(s, time, quit, done){
 }
 // 新しい1回を始める。ids ＝ この回に出す予定の問題（小問の id もそのまま）
 function studyLogStart(k, ids, opt){
+  if(k === "solo" && typeof planNoteStart === "function") planNoteStart();   // ★今日やることから始めた回か（2026-10-07）
   const now = Date.now();
   const old = studyLogCur(k);
   if(old && !old.done){
@@ -8324,6 +8344,7 @@ function soloLaps(){
 function finishSoloQuiz(){
   stopSoloThink();
   clearSoloSession();
+  planNoteFinish();   // ★今日やることの行を「できた」に（2026-10-07）
   studyLogFinish("solo");   // ★学習ログ（2026-10-05）
   // ★2026-10-05 スキップのあとの出し直し（norecord）は数に入れない（1問は1回）
   const counted = quizResults.filter(r => !r.norecord);
@@ -10589,21 +10610,7 @@ function setupTodayLink(){
   btn.style.display = n > 0 ? "" : "none";
 }
 document.getElementById("today-start-btn").addEventListener("click", ()=>{
-  const ids = todayLinkIds(todayLink);
-  if(ids.length === 0) return;
-  const q = expandDaimonIds(ids);
-  if(q.length === 0) return;
-  reviewMode = false;   // ★答える形で出す（保存はしない。次に設定を保存したときに入る）
-  els["review-mode-toggle"].classList.toggle("on", false);
-  quizQueue = q;
-  quizPos = 0;
-  quizResults = [];
-  inSoloRetryRound = false;
-  soloSkippedIds = new Set();
-  soloTimeupCount = 0;
-  studyLogStart("solo", quizQueue, {});   // ★学習ログ
-  startSoloCard();
-  showScreen("screen-solo");
+  startSoloWithIds(todayLinkIds(todayLink));   // ★「今日やること」と同じ始め方（2026-10-07 にまとめた）
 });
 
 // ============================================================
@@ -10834,6 +10841,145 @@ function setupAutoSend(){
   setTimeout(() => { sendSnapshotIfDue(); sendFlush().then(() => sendShowStatus("")); }, 1500);
 }
 
+// ============================================================
+// ★★今日やること（kosuke-records の plan/YYYY-MM-DD.json を読んでホームに出す・2026-10-07）
+// ============================================================
+// ユーザー「今日の理科ってなにやるかとかってタブレットに配信できますか？」。司令塔が毎日 push する:
+//   {"date":"2026-10-07","message":"ひとこと（なくてもよい）",
+//    "items":[{"subj":"理科","title":"②心臓と血管…（10枚）","ids":["r6p12",…]},
+//             {"subj":"社会","title":"朝：今週の回を10問","unit":"第6回.鎌倉時代","count":10}]}
+//   ・ids … その問題だけ・その順番／unit … その単元（count があればその数だけランダム）
+//   ・読むのは、この端末に保存ずみの「記録の送り先」の鍵（kosuke-records・Contents 読める）。日付は端末の日付
+//   ・★読みに行くのはアプリを開いてホームが出たとき1回。鍵が無い・ファイルが無い・オフラインなら何も出さない
+//     （前に読めた今日の分が端末にあれば、それを出す。kq_battle_plan_v1）
+//   ・各行の「はじめる」→ リンクで開く（start-link）のと同じく、一人の一問一答がすぐ始まる（問題数の設定より優先・設定は書きかえない）
+//   ・その日のうちに最後まで終えた行には「できた」（kq_battle_plan_done_v1）。全部できたら「今日はおわり！」
+const PLAN_CACHE_KEY = "kq_battle_plan_v1";       // {date, plan}
+const PLAN_DONE_KEY = "kq_battle_plan_done_v1";   // {date, done:[行の鍵]}
+const PLAN_ACTIVE_KEY = "kq_battle_plan_active_v1"; // {date, key} いま「今日やること」から始めた行（とちゅうでやめて再開しても続く）
+function planToday(){ return sendDay(); }
+function planLoad(key){ try{ return JSON.parse(window.localStorage.getItem(key) || "null"); }catch(e){ return null; } }
+function planSave(key, v){ try{ window.localStorage.setItem(key, JSON.stringify(v)); }catch(e){} }
+function planItemKey(it, i){ return i + ":" + String(it && it.title || ""); }
+function planCurrent(){
+  const c = planLoad(PLAN_CACHE_KEY);
+  return (c && c.date === planToday() && c.plan && Array.isArray(c.plan.items)) ? c.plan : null;
+}
+function planDoneSet(){
+  const d = planLoad(PLAN_DONE_KEY);
+  return new Set(d && d.date === planToday() && Array.isArray(d.done) ? d.done : []);
+}
+// 行の問題（QA_DATA の id）。unit で count があれば、その数だけランダムに選ぶ
+function planItemIds(it){
+  if(!it || typeof it !== "object") return [];
+  const subj = typeof it.subj === "string" ? it.subj : "";
+  if(Array.isArray(it.ids) && it.ids.length) return todayLinkIds({ subj: subj, ids: it.ids.map(String), units: [] });
+  if(typeof it.unit === "string" && it.unit){
+    let ids = todayLinkIds({ subj: subj, ids: [], units: [it.unit] });
+    const n = parseInt(it.count, 10);
+    if(n > 0 && ids.length > n) ids = shuffleArray(ids.slice()).slice(0, n);
+    return ids;
+  }
+  return [];
+}
+// 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
+let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える
+function startSoloWithIds(ids, planKey){
+  if(!ids || ids.length === 0) return false;
+  const q = expandDaimonIds(ids);
+  if(q.length === 0) return false;
+  reviewMode = false;   // ★答える形で出す（保存はしない）
+  els["review-mode-toggle"].classList.toggle("on", false);
+  quizQueue = q;
+  quizPos = 0;
+  quizResults = [];
+  inSoloRetryRound = false;
+  soloSkippedIds = new Set();
+  soloTimeupCount = 0;
+  planStarting = planKey || null;
+  studyLogStart("solo", quizQueue, {});   // ★学習ログ（ここで「今日やること」の行を覚える）
+  planStarting = null;
+  startSoloCard();
+  showScreen("screen-solo");
+  return true;
+}
+// studyLogStart("solo") から呼ぶ: 今日やることから始めた回か、ほかの回か
+function planNoteStart(){
+  if(planStarting) planSave(PLAN_ACTIVE_KEY, { date: planToday(), key: planStarting });
+  else try{ window.localStorage.removeItem(PLAN_ACTIVE_KEY); }catch(e){}
+}
+// finishSoloQuiz から呼ぶ: 今日やることから始めた回を最後まで終えたら「できた」
+function planNoteFinish(){
+  const a = planLoad(PLAN_ACTIVE_KEY);
+  try{ window.localStorage.removeItem(PLAN_ACTIVE_KEY); }catch(e){}
+  if(!a || a.date !== planToday() || reviewMode) return;
+  const done = planDoneSet();
+  done.add(a.key);
+  planSave(PLAN_DONE_KEY, { date: planToday(), done: Array.from(done) });
+}
+function renderPlan(){
+  const box = document.getElementById("plan-box");
+  if(!box) return;
+  const plan = planCurrent();
+  const list = document.getElementById("plan-items");
+  list.innerHTML = "";
+  if(!plan || plan.items.length === 0){ box.style.display = "none"; return; }
+  box.style.display = "";
+  const msg = document.getElementById("plan-msg");
+  msg.textContent = typeof plan.message === "string" ? plan.message : "";
+  msg.style.display = msg.textContent ? "" : "none";
+  const done = planDoneSet();
+  let all = true;
+  plan.items.forEach((it, i) => {
+    const key = planItemKey(it, i), ok = done.has(key), ids = planItemIds(it);
+    if(!ok) all = false;
+    const row = document.createElement("div");
+    row.className = "plan-row" + (ok ? " done" : "");
+    row.dataset.planKey = key;
+    const t = document.createElement("div");
+    t.className = "plan-row-title";
+    t.textContent = (it.subj ? it.subj + "：" : "") + (it.title || "");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "plan-start-btn";
+    b.textContent = ok ? "もう一度" : "はじめる";
+    b.disabled = ids.length === 0;
+    if(ids.length === 0) t.textContent += "（問題が見つかりません）";
+    b.addEventListener("click", () => startSoloWithIds(planItemIds(it), key));
+    const m = document.createElement("span");
+    m.className = "plan-mark";
+    m.textContent = ok ? "✔ できた" : "";
+    row.appendChild(t); row.appendChild(m); row.appendChild(b);
+    list.appendChild(row);
+  });
+  document.getElementById("plan-done").style.display = all ? "" : "none";
+}
+// GitHub から今日の分を読む（鍵があるときだけ）。読めなければ何もしない（端末にある今日の分を出す）
+async function fetchPlan(){
+  const cfg = sendCfg();
+  if(!cfg) return;
+  const testApi = typeof cfg.api === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(cfg.api) ? cfg.api : "";
+  const api = (testApi || SEND_API).replace(/\/+$/, ""), repo = testApi && cfg.repo ? cfg.repo : SEND_REPO;
+  const day = planToday();
+  try{
+    const r = await fetch(api + "/repos/" + repo + "/contents/plan/" + day + ".json?ref=main", { cache: "no-store",
+      headers: { "Authorization": "Bearer " + cleanToken(cfg.token), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } });
+    if(!r.ok) return;
+    const j = await r.json();
+    const bin = atob(String(j.content || "").replace(/\s/g, ""));
+    const bytes = new Uint8Array(bin.length);
+    for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const plan = JSON.parse(new TextDecoder().decode(bytes));
+    if(!plan || !Array.isArray(plan.items)) return;
+    if(plan.date && plan.date !== day) return;   // ちがう日の分は出さない
+    planSave(PLAN_CACHE_KEY, { date: day, plan: plan });
+    renderPlan();
+  }catch(e){ console.error("read plan failed", e); }
+}
+function setupTodayPlan(){
+  renderPlan();
+  fetchPlan();
+}
+
 loadStats();
 mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
@@ -10846,6 +10992,7 @@ applySettingsUI();
 // ★設定を移したときの知らせは、画面が揃ってから一度だけ（2026-09-26）
 showMigrationNoteOnce();
 setupTodayLink();
+setupTodayPlan();   // ★今日やること（kosuke-records の plan。2026-10-07）
 setupAutoSend();   // ★記録の自動送信（送り先が入っているときだけ送る。2026-10-06）   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
