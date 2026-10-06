@@ -84,12 +84,16 @@ FILES = {
     6: "第6回_ヒトと動物の呼吸循環.json",   # 2026-10-03 追加（第5回は作っていない）
 }
 
-# ★取り込みの単位（2026-10-06）。キーは --check / --apply に渡す文字。値は（回, id の文字, ファイル）。
+# ★取り込みの単位（2026-10-06）。キーは --check / --apply に渡す文字。値は（回, id の頭, ファイル）。
 #   ふつうの回は id が r<回>m<番号>。同じ回に別のファイル（「今回のポイント」など）があるときは
-#   id の文字を変えて（r6p01 など）別の単位にする。**単位ごとに、その id の形の行だけを入れかえる**ので、
+#   id の頭を変えて（r6p01 など）別の単位にする。**単位ごとに、その id の頭の行だけを入れかえる**ので、
 #   r6p を取り込んでも r6m には1字も触らない。
-SOURCES = {str(k): (k, "m", f) for k, f in FILES.items()}
-SOURCES["6p"] = (6, "p", "第6回_今回のポイント.json")   # 2026-10-06 追加（今回のポイント①〜⑤・45問）
+#   ★5年上の回（2026-10-06）は id の頭を r5u<回>… にする（r5u13p01 など）。回の数字が5年下とかぶっても
+#     id の頭がちがうので、5年下の第13回（r13m…）とは混ざらない。単元名も「5年上 第13回.〜」で
+#     「第N回.」で始まらないので、5年下の大問の単元さがし（第N回. を見る）にも拾われない。
+SOURCES = {str(k): (k, "r%dm" % k, f) for k, f in FILES.items()}
+SOURCES["6p"] = (6, "r6p", "第6回_今回のポイント.json")   # 2026-10-06 追加（今回のポイント①〜⑤・45問）
+SOURCES["5u13p"] = (13, "r5u13p", "5年上_第13回_ふり子.json")   # 2026-10-06 追加（5年上 第13回 ふり子・12問）
 
 # data.js に出力するキーと、その順番（既存の理科の行と同じ並び）
 OUT_KEYS = ["id", "subj", "u", "q", "note", "a", "img", "kai", "kind",
@@ -108,14 +112,14 @@ def die(msg):
     raise Stop(msg)
 
 
-def id_pattern(kai, letter="m"):
-    """その回の id の形。r<回><文字><番号>（ふつうは m）。番号は桁数を決めない（第3回に r3m102 がある）。"""
-    return re.compile(r"^r%d%s(\d+)$" % (kai, letter))
+def id_pattern(kai, head=None):
+    """その回の id の形。<id の頭><番号>（ふつうは r<回>m）。番号は桁数を決めない（第3回に r3m102 がある）。"""
+    return re.compile(r"^%s(\d+)$" % re.escape(head or ("r%dm" % kai)))
 
 
 # ---------------------------------------------------------------- id の決め方
 
-def ids_of(memo, kai, letter="m"):
+def ids_of(memo, kai, head=None):
     """memo 行の id を決める。**元データの id をそのまま使う。それ以外の道はない。**
 
     id が無いときは止める。黙って並び順から採番すると、
@@ -139,24 +143,24 @@ def ids_of(memo, kai, letter="m"):
             % (kai, len(memo)))
 
     # --- ここから先は「元データの id を使う」場合の検査 ---
-    pat = id_pattern(kai, letter)
+    pat = id_pattern(kai, head)
     bad = [i for i in ids if not pat.match(str(i))]
     if bad:
-        die("第%d回の元データに、この回の形（r%d%s<番号>）でない id があります: %s\n"
+        die("第%d回の元データに、この回の形（%s<番号>）でない id があります: %s\n"
             "  ★別の回の id がまじっていると、取り込みで他の回の問題を壊します。"
-            % (kai, kai, letter, ", ".join(map(str, bad[:10]))))
+            % (kai, head or ("r%dm" % kai), ", ".join(map(str, bad[:10]))))
     dup = sorted({i for i in ids if ids.count(i) > 1})
     if dup:
         die("第%d回の元データの中で id が重複しています: %s" % (kai, ", ".join(dup[:10])))
     return ids
 
 
-def convert(src_rows, kai, letter="m"):
+def convert(src_rows, kai, head=None):
     """元データの memo 行を data.js の1問に変換する。"""
     memo = [r for r in src_rows if r.get("kind") == "memo"]
     if not memo:
         die("第%d回の元データに memo 行がありません。" % kai)
-    ids = ids_of(memo, kai, letter)
+    ids = ids_of(memo, kai, head)
 
     out = []
     mapping = []
@@ -408,14 +412,14 @@ def verify_ids():
     print("=== 元データの id と data.js の id の突き合わせ（書きかえません）===")
     total = {"match": 0, "mismatch": 0}
     for key in SOURCES:
-        kai, letter, fname = SOURCES[key]
+        kai, head, fname = SOURCES[key]
         path = os.path.join(SRC, fname)
         if not os.path.exists(path):
             print("  第%d回  元データが見つかりません: %s" % (kai, fname))
             continue
         rows = json.load(io.open(path, encoding="utf-8"))
         memo = [r for r in rows if r.get("kind") == "memo"]
-        pat = id_pattern(kai, letter)
+        pat = id_pattern(kai, head)
         here = {i: q for i, q in live.items() if i and pat.match(i)}
 
         no_id = [r.get("no") for r in memo if not str(r.get("id", "")).strip()]
@@ -436,9 +440,9 @@ def verify_ids():
         bad_n = len(q_diff) + len(only_src) + len(only_js)
         total["match"] += ok_n
         total["mismatch"] += bad_n
-        print("  第%d回(r%d%s)  一致 %d件 / 食い違い %d件"
+        print("  第%d回(%s)  一致 %d件 / 食い違い %d件"
               "（問題文が違う %d・元データにしかない %d・data.js にしかない %d）"
-              % (kai, kai, letter, ok_n, bad_n, len(q_diff), len(only_src), len(only_js)))
+              % (kai, head, ok_n, bad_n, len(q_diff), len(only_src), len(only_js)))
         for i in q_diff[:5]:
             print("      ★%s 問題文が違う" % i)
             print("        元データ: %s" % str(src_q[i])[:60])
@@ -476,7 +480,7 @@ def main():
         die("--check か --apply に回の数字を渡してください（--selftest / --verify-ids もあります）。")
     if key not in SOURCES:
         die("%s のファイルを知りません（知っているもの: %s）。" % (key, ", ".join(SOURCES)))
-    kai, letter, fname = SOURCES[key]
+    kai, idhead, fname = SOURCES[key]
 
     path = os.path.join(SRC, fname)
     if not os.path.exists(path):
@@ -494,11 +498,11 @@ def main():
 
     existing = [id_of(p) for p in parts]
     existing_q = {id_of(p): q_of(p) for p in parts}
-    pat = id_pattern(kai, letter)
+    pat = id_pattern(kai, idhead)
     already = [i for i in existing if i and pat.match(i)]
 
     n_calc = len([r for r in src_rows if r.get("kind") == "calc"])
-    new_rows, mapping, memo = convert(src_rows, kai, letter)
+    new_rows, mapping, memo = convert(src_rows, kai, idhead)
 
     print("=== 第%d回 %s ===" % (kai, fname))
     print("  元データ: %d問（memo %d / calc %d）" % (len(src_rows), len(memo), n_calc))
@@ -507,7 +511,7 @@ def main():
     print("  取り込む: %d問  id: %s〜%s" % (len(new_rows), new_rows[0]["id"], new_rows[-1]["id"]))
     print("  data.js のいまの総数: %d問" % len(parts))
     print("  data.js にある %s*: %d問 %s"
-          % ("r%d%s" % (kai, letter), len(already), "（上書き更新）" if already else "（新規追加）"))
+          % (idhead, len(already), "（上書き更新）" if already else "（新規追加）"))
 
     # id の重複チェック（他の回とぶつかっていないか）
     dup = (set(existing) - set(already)) & set(r["id"] for r in new_rows)
@@ -552,12 +556,14 @@ def main():
         keep_parts = [p for p in parts if not pat.match(id_of(p) or "")]
         at = min(i for i, p in enumerate(parts) if pat.match(id_of(p) or ""))
         parts = keep_parts[:at] + new_text_rows + keep_parts[at:]
-    elif letter != "m":
+    elif idhead != "r%dm" % kai:
         # ★同じ回の別ファイル（r6p など）は、その回の行（r6m・r6p…）のいちばん後ろの直後に入れる
-        same_kai = re.compile(r"^r%d[a-z]\d+$" % kai)
+        #   5年上（r5u13p など）は r5u13… の仲間の後ろ。無ければ理科のいちばん後ろ
+        same_kai = re.compile(r"^%s[a-z]\d+$" % re.escape(idhead[:-1]))
         idxs = [i for i, p in enumerate(parts) if same_kai.match(id_of(p) or "")]
         if not idxs:
-            idxs = [i for i, p in enumerate(parts) if re.match(r"^r\d+m", id_of(p) or "")]
+            # 仲間が無ければ理科の行（r<数字><文字>…<番号>。r6m・r6p・r5u13p など）のいちばん後ろ
+            idxs = [i for i, p in enumerate(parts) if re.match(r"^r\d+[a-z][a-z0-9]*\d$", id_of(p) or "")]
         at = (max(idxs) + 1) if idxs else len(parts)
         parts = parts[:at] + new_text_rows + parts[at:]
     else:
