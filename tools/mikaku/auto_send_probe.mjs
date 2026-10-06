@@ -89,7 +89,7 @@ async function run(label, src) {
   const onSolo = () => pg.evaluate(() => document.getElementById("screen-solo").classList.contains("active"));
   const practice = async () => { await pg.evaluate(() => { const h = document.getElementById("solo-result-home-btn"); if (!document.getElementById("screen-home").classList.contains("active") && h) h.click(); }); await pg.waitForTimeout(200);
     await tap("#solo-start-btn"); await pg.waitForTimeout(300);
-    for (let k = 0; k < 5 && (await onSolo()); k++) { await tap("#solo-reveal-btn"); await pg.waitForTimeout(80); await tap(k === 0 ? "#solo-judge-ok" : "#solo-judge-ng"); await pg.waitForTimeout(200); } };
+    for (let k = 0; k < 5 && (await onSolo()); k++) { await tap("#solo-reveal-btn"); await pg.waitForTimeout(80); await tap(k === 1 ? "#solo-judge-ng" : "#solo-judge-ok");   /* ★2026-10-06 ✕の問は正解するまで回るので、2問目だけ✕ */ await pg.waitForTimeout(200); } };
   const sessFiles = () => [...files.keys()].filter(p => p.startsWith("battle/session/"));
   const puts = p => log.filter(l => l.method === "PUT" && l.path === p).length;
   const status = () => pg.$eval("#send-status", e => e.textContent).catch(() => "");
@@ -113,7 +113,7 @@ async function run(label, src) {
     const s1 = sessFiles();
     const c1 = s1.length ? files.get(s1[0]).content : null;
     check("A2 練習が終わると battle/session/" + day + "/<回のID>.json（学習ログの1回分・1問ごとの〇✕と秒）",
-      s1.length === 1 && s1[0] === "battle/session/" + day + "/" + c1.id + ".json" && c1.summary["回のID"] === c1.id && c1.q.length === 2 && c1.q[0].r === "o" && c1.q[1].r === "x" && typeof c1.q[0].sec === "number",
+      s1.length === 1 && s1[0] === "battle/session/" + day + "/" + c1.id + ".json" && c1.summary["回のID"] === c1.id && c1.q.length === 3 && c1.q[0].r === "o" && c1.q[1].r === "x" && c1.q[2].r === "o" && c1.q[2].re === 1 && typeof c1.q[0].sec === "number",
       JSON.stringify({ s1, q: c1 && c1.q }));
     // A3
     mode = "down";

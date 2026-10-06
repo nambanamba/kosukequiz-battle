@@ -13,6 +13,7 @@
 //   B3 ④ 大問の小問は、ゲストもホストの秒数×2（8秒）で開く。判定の時間切れも ホストの判定2秒×2（4秒）
 //   B4 ④ 390×844 で「こたえを見る」・時計・判定ボタンが両方の画面の中に見える（スクショあり）
 //   B5 ① もう一勝負で、ゲストが〇にした小問はゲストの記録も〇（✕にならない）
+//      ★2026-10-06 から「もう一勝負」は無く、✕の小問は同じラウンドで正解するまで回る。記録は1回目だけ（ゲスト〇1・ホスト✕1）
 //   B6 画面のエラー0
 // ■ 自己テスト = 直す前の版（1605b0d・コミットで固定）でも同じ手順を走らせ、鳴った件数を数える
 // 使い方: node tools/mikaku/bug0930_probe.mjs            （now と base の両方）
@@ -267,8 +268,8 @@ async function run(label, src) {
     if (skipVis) check("★B2 ⑤ ゲストにはスキップした小問(1)を出していない", !guestSeen.has(d1), [...guestSeen].join(","));
     const gBefore = (await stats(G))[d3];
     check("B5 （下じき）1回目: ゲストは(3)を〇で記録", gBefore && (gBefore.wrong || 0) === 0 && gBefore.correct === 1, JSON.stringify(gBefore));
-    step = "もう一勝負";
-    // ---- もう一勝負（自動）: 出る手はぜんぶ両方〇 ----
+    step = "正解するまで";
+    // ---- ★2026-10-06 正解するまでぐるぐる（同じラウンドの続き）: 回ってきた手はぜんぶ両方〇 ----
     for (let k = 0; k < 6; k++) {
       const got = await H.waitForFunction(() => { const a = document.querySelector(".screen.active"); return a && a.id === "screen-battle" && getComputedStyle(document.getElementById("advance-btn")).display !== "none"; }, null, { timeout: 15000 }).then(() => true).catch(() => false);
       if (!got) break;
@@ -281,9 +282,9 @@ async function run(label, src) {
       await H.waitForTimeout(300);
     }
     const gAfter = (await stats(G))[d3];
-    check("★B5 ① もう一勝負でゲストが〇にした(3)は、ゲストの記録も〇（wrong0・correct2）", gAfter && (gAfter.wrong || 0) === 0 && gAfter.correct === 2, JSON.stringify(gAfter));
+    check("★B5 ① 回ってきた(3)をゲストが〇にしても、ゲストの記録は1回目の〇だけ（wrong0・correct1）", gAfter && (gAfter.wrong || 0) === 0 && gAfter.correct === 1, JSON.stringify(gAfter));
     const hAfter = (await stats(H))[d3];
-    check("B5 ① ホストの(3)はこれまでどおり（もう一勝負の〇も✕で記録＝wrong2）", hAfter && hAfter.wrong === 2, JSON.stringify(hAfter));
+    check("B5 ① ホストの(3)は1回目の✕だけ（回ってきて〇でも記録しない＝wrong1・correct0）", hAfter && hAfter.wrong === 1 && !(hAfter.correct > 0), JSON.stringify(hAfter));
   } catch (e) { check("二人の手順が最後まで進む", false, step + ": " + String(e).split("\n")[0]); }
   allErrs.push(...host.errs, ...guest.errs);
   check("B6 画面のエラー0", allErrs.length === 0, allErrs.slice(0, 2).join(" | "));
