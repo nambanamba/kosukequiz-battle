@@ -12,6 +12,7 @@
 //   A6 「ためしに送る」で test/<日時>.json が書かれ「送れました」
 //   A7 401（鍵の期限切れ）→ ホームに「記録の送り先の鍵を作り直してください」・ためた分は残る → 鍵を直すと送られて知らせが消える
 //   A8 コードに鍵を書いていない
+//   A9 検査用の api 差しかえは 127.0.0.1 / localhost だけ。外のアドレスを入れても github 以外に送らない
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -152,6 +153,17 @@ async function run(label, src) {
     await tap("#send-save-btn"); await pg.waitForTimeout(1800);
     const w2 = await vis("#send-auth-warn");
     check("A7 401 → 「鍵を作り直してください」・ためた分は残る → 直ると送られて知らせが消える", w && /まだ送れていない記録: 1件/.test(st7) && !w2 && sessFiles().length === 4, JSON.stringify({ w, st7, w2 }));
+    // A9 検査用の api 差しかえは 127.0.0.1 / localhost だけ。外のアドレスを入れても github 以外に送らない（鍵をよそに送らない）
+    const reqs = [];
+    await ctx.route(/evil\.example|api\.github\.com/, r => { reqs.push(r.request().url()); r.abort(); });
+    for (const bad of ["http://evil.example.test", "https://127.0.0.1.evil.example.test", "http://localhost.evil.example.test"]) {
+      await pg.evaluate(a => localStorage.setItem("kq_battle_send_gh_v1", JSON.stringify({ token: a[1], api: a[0], repo: "someone/other" })), [bad, TOKEN]);
+      await pg.reload(); await pg.waitForTimeout(800);
+      await tap("#send-test-btn"); await pg.waitForTimeout(1200);
+    }
+    const toEvil = reqs.filter(u => /evil\.example/.test(u)), toGh = reqs.filter(u => /^https:\/\/api\.github\.com\/repos\/nambanamba\/kosuke-records\//.test(u));
+    check("A9 api に外のアドレスを入れても、github（nambanamba/kosuke-records）以外に送らない（よそ " + toEvil.length + "件・github " + toGh.length + "件）",
+      toEvil.length === 0 && toGh.length >= 3, JSON.stringify(reqs.slice(0, 4)));
     // A8
     check("A8 コードに鍵を書いていない", !/github_pat_[A-Za-z0-9_]{20,}/.test(src) && !/ghp_[A-Za-z0-9]{20,}/.test(src));
     check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));

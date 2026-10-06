@@ -10584,7 +10584,10 @@ function sendAuthWarn(on){
 }
 // 1件を GitHub に書く。戻り値 "ok" / "auth"（401・403）/ "retry"（そのほか・電波なし）
 async function sendOne(cfg, it){
-  const api = (cfg.api || SEND_API).replace(/\/+$/, ""), repo = cfg.repo || SEND_REPO;
+  // ★検査用の差しかえ（cfg.api）は、この端末の中（http://127.0.0.1 / http://localhost）のときだけ効く。
+  //   それ以外は無視して api.github.com に送る（鍵をよそのサーバに送らないため。2026-10-06 司令塔）
+  const testApi = typeof cfg.api === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(cfg.api) ? cfg.api : "";
+  const api = (testApi || SEND_API).replace(/\/+$/, ""), repo = testApi && cfg.repo ? cfg.repo : SEND_REPO;
   const url = api + "/repos/" + repo + "/contents/" + it.path.split("/").map(encodeURIComponent).join("/");
   const headers = { "Authorization": "Bearer " + cfg.token.trim(), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" };
   const body = { message: "battle " + it.kind + " " + it.path, content: sendB64(JSON.stringify(it.data, null, 1)), branch: "main" };
