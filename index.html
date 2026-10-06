@@ -1664,6 +1664,10 @@
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
   .hint-box{ margin:10px 0 6px; }
+  .today-box{ margin:10px 0 14px; padding:14px 14px 12px; border:2px solid var(--gold); border-radius:14px; background:#fffaf0; }
+  .today-title{ font-size:16px; font-weight:700; color:var(--navy-deep); line-height:1.5; text-align:center; }
+  .today-box .start-btn{ margin-top:10px; }
+  .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
     background:#fffaf0; color:var(--navy-deep); font-size:14px; font-weight:700; cursor:pointer; -webkit-tap-highlight-color:transparent; }
   .hint-btn:disabled{ opacity:.55; cursor:default; }
@@ -1762,6 +1766,13 @@
     <div class="toggle-row" id="subject-toggle-row" style="margin-top:0;">
       <div class="toggle on" id="subject-social" data-subject="社会">社会</div>
       <div class="toggle" id="subject-science" data-subject="理科">理科</div>
+    </div>
+    <!-- ★2026-10-06 リンク（?subj=理科&unit=… / ?ids=…）で開いたときだけ出す「今日やるカード」。
+         ユーザー「今日、理科はどのカードをやればいいですか？わかるようにするか、勝手に設定してほしいです」 -->
+    <div class="today-box" id="today-box" style="display:none;">
+      <div class="today-title" id="today-title"></div>
+      <button class="start-btn" id="today-start-btn" style="display:none;">はじめる</button>
+      <div class="today-note" id="today-note"></div>
     </div>
 
     <div class="stat-row">
@@ -10397,6 +10408,77 @@ els["battle-img"].addEventListener("click", ()=>{
 setupInlineEdit("solo", ()=> quizQueue[quizPos] !== undefined ? quizQueue[quizPos] : null);
 setupInlineEdit("battle", ()=> questionIds[currentIndex]);
 
+// ============================================================
+// ★★リンクで「今日やるカード」を開く（2026-10-06）
+// ============================================================
+// ユーザー「今日、理科はどのカードをやればいいですか？わかるようにするか、勝手に設定してほしいです」。
+// 応援ページの「今日やること」から、このアプリを次のどちらかのリンクで開く:
+//   ?subj=理科&unit=第6回.今回のポイント①ヒトの呼吸（unit は何個でも。「第N回.」を省いた名前でもよい）
+//   ?ids=r6p01,r6p02,…（その問題だけ・この順番）
+// ・ホームのいちばん上に「今日の理科：今回のポイント①ヒトの呼吸（8問）」と「はじめる」を出す。押すと一人の一問一答がすぐ始まる
+// ・★問題数の設定・段の絞りこみ・単元の選択は使わない（URL が優先）。設定は書きかえない。チェックのみは切る（答える形で出す）
+// ・大問・答えが複数のカードは、ふだんと同じく小問・部分に開く（expandDaimonIds）。数え方も同じ（weightOf）
+// ・URL が無いときは何も出さない（今までどおり）
+function readTodayLink(search){
+  let p;
+  try{ p = new URLSearchParams(search || ""); }catch(e){ return null; }
+  const ids = (p.get("ids") || "").split(/[,、\s]+/).map(s => s.trim()).filter(Boolean);
+  const units = p.getAll("unit").map(s => s.trim()).filter(Boolean);
+  if(!ids.length && !units.length) return null;
+  return { subj: (p.get("subj") || "").trim(), ids: ids, units: units };
+}
+const stripKai = u => String(u || "").replace(/^第\d+回\./, "");
+// リンクの問題（QA_DATA の id。大問は大問の id のまま）。見つからない id・単元は除く
+function todayLinkIds(t){
+  if(!t) return [];
+  const usable = d => d && d.kind !== "calc" && (!t.subj || d.subj === t.subj);
+  if(t.ids.length){
+    const out = [];
+    t.ids.forEach(id => { const d = QA_DATA.find(x => x.id === id); if(usable(d) && !out.includes(id)) out.push(id); });
+    return out;
+  }
+  return QA_DATA.filter(d => usable(d) && t.units.some(u => d.u === u || stripKai(d.u) === u)).map(d => d.id);
+}
+const todayLink = readTodayLink(location.search);
+function setupTodayLink(){
+  const box = document.getElementById("today-box");
+  if(!todayLink){ box.style.display = "none"; return; }
+  const ids = todayLinkIds(todayLink);
+  const title = document.getElementById("today-title"), btn = document.getElementById("today-start-btn"), note = document.getElementById("today-note");
+  box.style.display = "";
+  if(ids.length === 0){
+    title.textContent = "リンクの問題が見つかりませんでした";
+    note.textContent = "リンクの単元名・問題の番号を確かめてください。";
+    btn.style.display = "none";
+    return;
+  }
+  const first = QA_DATA.find(d => d.id === ids[0]);
+  const subj = todayLink.subj || (first && first.subj) || "";
+  const units = [];
+  ids.forEach(id => { const d = QA_DATA.find(x => x.id === id); const u = stripKai(d && d.u); if(u && !units.includes(u)) units.push(u); });
+  const n = ids.reduce((a, id) => a + weightOf(QA_DATA.findIndex(d => d.id === id)), 0);
+  title.textContent = "今日の" + subj + "：" + (todayLink.ids.length ? "えらんだ問題" + (units.length === 1 ? "（" + units[0] + "）" : "") : units.join("・")) + "（" + n + "問）";
+  note.textContent = n > 0 ? "問題数の設定は使わず、この問題だけを出します" : "どれもいまは答える問題がありません";
+  btn.style.display = n > 0 ? "" : "none";
+}
+document.getElementById("today-start-btn").addEventListener("click", ()=>{
+  const ids = todayLinkIds(todayLink);
+  if(ids.length === 0) return;
+  const q = expandDaimonIds(ids);
+  if(q.length === 0) return;
+  reviewMode = false;   // ★答える形で出す（保存はしない。次に設定を保存したときに入る）
+  els["review-mode-toggle"].classList.toggle("on", false);
+  quizQueue = q;
+  quizPos = 0;
+  quizResults = [];
+  inSoloRetryRound = false;
+  soloSkippedIds = new Set();
+  soloTimeupCount = 0;
+  studyLogStart("solo", quizQueue, {});   // ★学習ログ
+  startSoloCard();
+  showScreen("screen-solo");
+});
+
 loadStats();
 mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
@@ -10408,6 +10490,7 @@ renderUnitChoices();
 applySettingsUI();
 // ★設定を移したときの知らせは、画面が揃ってから一度だけ（2026-09-26）
 showMigrationNoteOnce();
+setupTodayLink();   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
 </body>
