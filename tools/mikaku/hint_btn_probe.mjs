@@ -19,9 +19,11 @@ const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT
 const DATA = fs.readFileSync(path.join(ROOT, "data.js"), "utf8");
 const QA = new Function(DATA.replace(/^const /gm, "var ") + "\nreturn QA_DATA;")();
 const U = "第6回.ヒトと動物の呼吸・循環";
-const X = QA.find(q => q.u === U && q.img && q.kind !== "calc").id;           // 図のある一問一答
-const Z = QA.filter(q => q.u === U && q.img && q.kind !== "calc")[1].id;      // 図のある一問一答（データのヒントを入れる）
-const Y = QA.find(q => q.u === U && !q.img && q.kind !== "calc").id;           // 図の無い一問一答
+// ★2026-10-06 答えが2つ以上（①… や（ア）…）のカードは「分けて」で部分に開くので、1枚で出る一問一答を選ぶ（分けたときのヒントは multi_part_probe で見る）
+const ONE = q => !/^\s*([①-⑳]|[（(][ア-ン][）)]…)/.test(q.a || "");
+const X = QA.find(q => q.u === U && q.img && q.kind !== "calc" && ONE(q)).id;           // 図のある一問一答
+const Z = QA.filter(q => q.u === U && q.img && q.kind !== "calc" && ONE(q))[1].id;      // 図のある一問一答（データのヒントを入れる）
+const Y = QA.find(q => q.u === U && !q.img && q.kind !== "calc" && ONE(q)).id;           // 図の無い一問一答
 const CUSTOM = ["（検査用）図の左上を見よう", "（検査用）矢印の向きを決めよう"];
 function dataWithHint() {
   const needle = '"id": "' + Z + '",';
