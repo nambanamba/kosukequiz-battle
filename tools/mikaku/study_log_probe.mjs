@@ -123,6 +123,8 @@ async function run(label, src) {
     seq.push(await qid(pg, "solo")); await pg.waitForTimeout(300); await tap(pg, "#solo-skip-btn"); await pg.waitForTimeout(200); await tap(pg, "#solo-skip-next-btn"); await pg.waitForTimeout(250);
     seq.push(await qid(pg, "solo")); await pg.waitForTimeout(2200); await tap(pg, "#solo-reveal-btn"); await pg.waitForTimeout(100); await tap(pg, "#solo-judge-ng"); await pg.waitForTimeout(250);
     seq.push(await qid(pg, "solo")); await pg.waitForTimeout(300); await tap(pg, "#solo-reveal-btn"); await pg.waitForTimeout(100); await tap(pg, "#solo-judge-ok"); await pg.waitForTimeout(300);
+    // ★2026-10-06 正解するまでぐるぐる: ✕の g6r3 がもう一度出る（〇で終わる）
+    for (let k = 0; k < 3 && (await onSolo(pg)); k++) { seq.push(await qid(pg, "solo")); await pg.waitForTimeout(300); await tap(pg, "#solo-reveal-btn"); await pg.waitForTimeout(100); await tap(pg, "#solo-judge-ok"); await pg.waitForTimeout(300); }
     const finished = !(await onSolo(pg));
     let log = null;
     try { log = await grab(pg, "#export-studylog-link"); } catch (e) { log = null; }
@@ -131,7 +133,7 @@ async function run(label, src) {
     check("L1 一人の1回が学習ログCSVに1行（" + seq.join(" ") + "）", finished && log && /^社会一問一答_学習ログ_\d{8}\.csv$/.test(log.name) && log.text.charCodeAt(0) === 0xFEFF && sess.length === 1
       && /^s\d+/.test(s1["回のID"] || "") && s1["一人・対戦"] === "一人" && s1["形式"] === "一問一答" && s1["教科"] === "社会" && s1["単元"] === U && s1["やり直し"] === "いいえ"
       && s1["予定の問題数"] === "3" && s1["出した問題数"] === "3" && s1["答えた数"] === "2" && s1["正解数"] === "1" && s1["まちがい数"] === "1"
-      && s1["スキップ数"] === "1" && s1["時間切れ数"] === "0" && s1["出し直しで答えた数"] === "1" && s1["途中でやめた"] === "いいえ" && s1["再開した回数"] === "0",
+      && s1["スキップ数"] === "1" && s1["時間切れ数"] === "0" && s1["出し直しで答えた数"] === "2" && s1["何周"] === "2" && s1["途中でやめた"] === "いいえ" && s1["再開した回数"] === "0",
       JSON.stringify(s1));
     const avg = +s1["1問の平均秒"], mx = +s1["1問の最長秒"], allMin = +s1["全体の分"], act = +s1["解いていた分"];
     check("L1 平均秒・最長秒・分が入る（〇1.2秒くらい・✕2.2秒くらい → 平均1.5〜2.6・最長2.1〜3.5）", avg >= 1.5 && avg <= 2.6 && mx >= 2.1 && mx <= 3.5 && allMin > 0 && act > 0 && act <= allMin + 0.05
@@ -139,9 +141,9 @@ async function run(label, src) {
     let det = null;
     try { det = await grab(pg, "#export-studylog-detail-link"); } catch (e) { det = null; }
     const drows = det ? asObjs(parseCSV(det.text)) : [];
-    check("L2 1問ごとのCSV: 〇／スキップ／✕／〇（出し直し）・考えた秒", det && /^社会一問一答_学習ログ_1問ごと_\d{8}\.csv$/.test(det.name) && drows.length === 4
+    check("L2 1問ごとのCSV: 〇／スキップ／✕／〇（出し直し）／〇（✕の出し直し・正解するまで）・考えた秒・何回目", det && /^社会一問一答_学習ログ_1問ごと_\d{8}\.csv$/.test(det.name) && drows.length === 5
       && drows.every(r => r["回のID"] === s1["回のID"])
-      && drows.map(r => r["結果"]).join(",") === "〇,スキップ,✕,〇" && drows.map(r => r["出し直し"]).join(",") === ",,,はい"
+      && drows.map(r => r["結果"]).join(",") === "〇,スキップ,✕,〇,〇" && drows.map(r => r["出し直し"]).join(",") === ",,,はい,はい" && drows.map(r => r["何回目"]).join(",") === "1,1,1,2,2"
       && drows.map(r => r["ID"]).join(" ") === seq.join(" ") && +drows[0]["考えた秒"] >= 1.1 && +drows[2]["考えた秒"] >= 2.1 && drows[0]["問題"].length > 0,
       JSON.stringify(drows.map(r => [r["ID"], r["結果"], r["考えた秒"], r["出し直し"]])));
     const logFile = path.join(TMP, label + "_log.csv"), detFile = path.join(TMP, label + "_det.csv"), recFile = path.join(TMP, label + "_rec.csv");
@@ -149,7 +151,7 @@ async function run(label, src) {
     // ===== K1（入れ物の場所） =====
     const a1 = await idb(pg);
     const lsHas = await pg.evaluate(k => localStorage.getItem(k) !== null, OLD_KEY);
-    check("K1 学習ログは IndexedDB に入る（localStorage には書かない）", a1 && a1.sessions.length === 1 && a1.sessions[0].q.length === 4 && !lsHas, JSON.stringify({ n: a1 && a1.sessions.length, lsHas }));
+    check("K1 学習ログは IndexedDB に入る（localStorage には書かない）", a1 && a1.sessions.length === 1 && a1.sessions[0].q.length === 5 && !lsHas, JSON.stringify({ n: a1 && a1.sessions.length, lsHas }));
     // ===== C1 正誤の記録をぜんぶクリア → 記録のCSVを取り込み =====
     const c0 = JSON.stringify(a1 && a1.sessions);
     await tap(pg, "#stat-clear-link"); await pg.waitForTimeout(400);
@@ -237,8 +239,8 @@ async function run(label, src) {
     const ir = irows && irows.find(r => r["回のID"] === s1["回のID"]);
     const same = ir && ["開始日時", "終了日時", "解いていた分", "一人・対戦", "形式", "単元", "出した問題数", "答えた数", "正解数", "まちがい数", "スキップ数", "出し直しで答えた数", "途中でやめた", "1問の平均秒", "1問の最長秒"].every(h => ir[h] === s1[h]);
     check("I1 学習ログの取り込み: 1問ごと→学習ログの順で元どおり（同じ数・同じ秒）／もう一度取り込んでも二重にならない／前からある回は消えない",
-      ownId && i0 && i0.sessions.length === 2 && i1 && i1.sessions.length === 2 && i1.sessions.some(s => s.id === ownId) && imp && imp.q.length === 4 && same
-      && idet && idet.filter(r => r["回のID"] === s1["回のID"]).length === 4,
+      ownId && i0 && i0.sessions.length === 2 && i1 && i1.sessions.length === 2 && i1.sessions.some(s => s.id === ownId) && imp && imp.q.length === 5 && same
+      && idet && idet.filter(r => r["回のID"] === s1["回のID"]).length === 5,
       JSON.stringify({ n0: i0 && i0.sessions.length, n1: i1 && i1.sessions.length, same, ir }));
     // ===== B1 二人 =====
     const host = await fresh(["g6r1", "g6r2"]), guest = await fresh(["g6r1", "g6r2"]); all.push(host, guest);
