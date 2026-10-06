@@ -14,6 +14,7 @@
 //   P7 記録のCSV（正解・不正解）の見出しと行の数が直す前と同じ（部分の行を足さない）
 //   P8 「正誤の記録をぜんぶクリア」で部分の記録は消さない（クリア→直した記録CSVの取り込み、で記録を直す使い方のため）
 //   P9 部分の記録の書き出し・取り込み（引越し用）: 移る・同じ id は新しいほう・二重にならない
+//   P10 数え方（ユーザー回答 B）: 分けて出すカードは部分1つ＝1問。15問を選ぶと答える回数が15
 //   B1 二人: ホストが分けてで出すとゲストにも同じ部分が出る・「分けて」・両方の部分の記録に付く・カードの記録は付かない
 //   B2 二人: 分けての時間切れ: 記録しない・あとでもう一度
 //   E  画面のエラー 0
@@ -53,7 +54,7 @@ const SEED = (arg) => {
   localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
   localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(mig));
   localStorage.setItem("kq_battle_daimon_merged_v1", "1");
-  localStorage.setItem("kq_battle_settings_v1", JSON.stringify(Object.assign({ subject: "理科", unitsBySubject: { "理科": [o.unit] }, units: [o.unit], count: ids.length, shuffle: false, tiers: [0, 1],
+  localStorage.setItem("kq_battle_settings_v1", JSON.stringify(Object.assign({ subject: "理科", unitsBySubject: { "理科": [o.unit] }, units: [o.unit], count: "all", shuffle: false, tiers: [0, 1],
     filterUnmastered: false, filterWeak: false, fairMode: false, headStartSec: 30, answerTimeSec: 60, judgeTimeSec: 600, nextTimeSec: 600, skipNextTimeSec: 600, speedLevel: 2 }, o.extra || {})));
 };
 const READ_IDB = () => new Promise(res => {
@@ -190,6 +191,14 @@ async function run(label, src) {
       check("P9 同じ id は新しいほうを残す（取り込む側の ~1 が新しい → そのまま）・もう一度取り込んでも二重にならない", !!pcsv && eq(got1["r6m36~1"], newer) && eq(got1, got2), JSON.stringify(got1["r6m36~1"]));
       solo.errs.push(...B.errs);
     } finally { await B.ctx.close(); }
+    // ===== P10 数え方（ユーザー回答 B）: 分けて出すカードは部分1つ＝1問。15問を選んだら答える回数が15 =====
+    const r6ids = await pg.evaluate(() => QA_DATA.filter(d => /^r6m/.test(d.id) && d.kind !== "calc").map(d => d.id));
+    await pg.evaluate(SEED, [MIG, r6ids, { unit: U, extra: { count: 15 } }]); await pg.reload(); await pg.waitForTimeout(800);
+    await start(pg);
+    const p10 = { cnt: await txt(pg, "#solo-counter"), seen: [] };
+    for (let k = 0; k < 30 && (await onSolo(pg)); k++) { p10.seen.push(await qid(pg, "solo")); await ok(pg); }
+    check("P10 15問を選ぶと答える回数が15（分けた部分も1問と数える。" + p10.cnt + "・部分 " + p10.seen.filter(x => /~/.test(x)).length + "）",
+      /1 \/ 15$/.test(p10.cnt.trim()) && p10.seen.length === 15 && p10.seen.some(x => /~/.test(x)), p10.seen.join(" "));
     // ===== B 二人 =====
     for (const p of [host.page, guest.page]) { await p.evaluate(SEED, [MIG, ["r6m36"], { unit: U, extra: { headStartSec: 3, judgeTimeSec: 600 } }]); await p.reload(); await p.waitForTimeout(800); }
     await tap(host.page, "#create-btn");

@@ -2665,7 +2665,10 @@ function answerItemIds(d){
 }
 function weightOf(i){
   const d = QA_DATA[i];
-  return isDaimonEntry(d) ? answerItemIds(d).length : 1;
+  if(isDaimonEntry(d)) return answerItemIds(d).length;
+  // ★2026-10-06 ユーザー回答「B」: 分けて出すカードは、答える部分1つ＝1問（大問と同じ）。まとめてのときは1枚＝1問
+  if(splitModeOf(d.id) === "split") return splitAskIds(d.id).length || 1;
+  return 1;
 }
 function sumWeight(list){ return list.reduce((a, i) => a + weightOf(i), 0); }
 // 並んだ順に取り、cap をこえるものは飛ばす（★大問を切って数を合わせることはしない）。
