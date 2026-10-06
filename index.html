@@ -4680,11 +4680,11 @@ function saveBattleSession(){
       inMissRetryRound: inMissRetryRound,
       // ★再開で失うと困るもの（2026-09-13）: まちがいリスト／記録ずみ・採点ずみの問題番号
       misses: myMissesThisRound,
+      doneIds: Array.from(battleDoneIds),   // ★2026-10-07 〇になった問題（「のこり◯問」に使う）
       recordedIdx: hostRecordedIdx,
       scoredIdx: hostScoredIdx,
       // ★2026-10-06 記録ずみ（1回目を答えた）の問題と、✕でうしろへ回した添字
       answered: Array.from(battleAnsweredIds),
-      doneIds: Array.from(battleDoneIds),
       requeuedIdx: hostRequeuedIdx
     }));
   }catch(e){}
@@ -10409,11 +10409,11 @@ function maybeStartBattleTogether(){
   startBattleNow();
 }
 function startBattleNow(){
-  battleDoneIds = new Set();
   battleTimeupCount = 0;
   battleAnsweredIds = new Set();   // ★2026-10-06
   hostRequeuedIdx = -1;
   daimonSkipRecorded = new Set();
+  battleDoneIds = new Set();   // ★2026-10-07 「のこり◯問」
   scores = {host:0, guest:0};
   myMissesThisRound = [];
   missesUnknown = false;
