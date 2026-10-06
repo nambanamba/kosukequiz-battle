@@ -112,6 +112,7 @@
 | `mikaku/mikaku_check2.mjs` | **実機（本物のChrome・スマホ幅390px）で実際に出題して目で見る**（B-12）。科目の切りかえに対応 |
 | `smoke-test.mjs` | 主要な機能の通し確認。**配信前は自作テストと両方** |
 | `mikaku/start_link_probe.mjs` | ★リンク（`?subj=理科&unit=…` / `?ids=…`）で「今日やるカード」を開き、「はじめる」1回で一人が始まるか（2026-10-06）。問題数の設定より URL が優先・設定は変わらない |
+| `mikaku/auto_send_probe.mjs` | ★記録の自動送信（GitHub の非公開リポジトリ kosuke-records へ。2026-10-06）を**まねの API サーバ**で見る。鍵なしで何もしない・session／snapshot が書かれる・つながらないとき→あとで・422／sha で二重にならない・401 の知らせ。★本物の GitHub には書かない |
 | `test_battle_start.mjs` | **本物の trystero を読ませて**、部屋が作れるかを見る（スタブではない） |
 | `mikaku/judge_fix_probe.mjs` | ★**ゲストが「一個前の判定」を直したら、ホストの記録が本当に変わるか。**本物の Chrome 2枚＋まねごとの待ち合わせ先（スタブではない） |
 | `mikaku/meet_probe.mjs` | ★**本物の待ち合わせ場所ごしに、2つの画面が実際に出会えるか。**下の⚠️を必ず読むこと |
