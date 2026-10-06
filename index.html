@@ -1947,9 +1947,13 @@
       <div id="studylog-save-warn" style="display:none; font-size:12px; color:#c0392b; margin:4px 0 0; text-align:center;">学習ログが端末に保存できませんでした。記録の書き出しをしてください（学習ログのエクスポート）。</div>
       <div class="back-link" id="import-link">CSVから記録をインポートする（元のアプリと記録を共有）</div>
       <div class="back-link" id="import-studylog-link">学習ログのCSVをインポートする（端末の引越し用）</div>
+      <!-- ★2026-10-06 答えが複数のカードの「分けて」の部分の記録（別の入れ物）。端末の引越し用 -->
+      <div class="back-link" id="export-parts-link">分けて答えた部分の記録をエクスポート（CSV・引越し用）</div>
+      <div class="back-link" id="import-parts-link">分けて答えた部分の記録をインポートする（引越し用）</div>
       <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
       <input type="file" id="import-studylog-file" accept=".csv,text/csv" style="display:none;">
+      <input type="file" id="import-parts-file" accept=".csv,text/csv" style="display:none;">
 
       <a class="btn-secondary" id="calc-setup-btn" href="https://nambanamba.github.io/keisan-print-app/" target="_blank" rel="noopener" style="margin-top:20px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🧮 今日の計算問題（別アプリで開く）</a>
 
@@ -3366,7 +3370,7 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print",
  "subject-social","subject-science",
- "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-edits-link",
+ "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-parts-link","import-parts-link","import-parts-file","export-edits-link",
  "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
  "paper-pick-all","paper-pick-none","paper-pick-go",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
@@ -4698,15 +4702,14 @@ function refreshStatRow(){
 }
 
 els["stat-clear-link"].addEventListener("click", ()=>{
-  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（大問の記録・分けての部分の記録もふくみます。この操作は元に戻せません）")) return;
+  if(!confirm("正解・不正解の記録をぜんぶ消してもよいですか？（大問の記録もふくみます。この操作は元に戻せません）")) return;
   stats = {};
   saveStats();
   // ★大問（テスト形式）の記録も消す（2026-09-27）。別の入れ物なので、ここで消さないとどこからも消せなくなる
   daimonStats = {};
   saveDaimonStats();
-  // ★答えが複数のカードの部分の記録（分けて）も消す（2026-10-06）。消さないと、記録を消したのに「まとめて」で出てしまう
-  partStats = {};
-  savePartStats();
+  // ★答えが複数のカードの部分の記録（kq_battle_parts_v1）は消さない（2026-10-06 司令塔）。
+  //   ユーザーは「ぜんぶクリア → 直した記録CSVを取り込み」を記録の直しとして使うため（学習ログと同じ扱い）
   refreshStatRow();
   refreshCreateButton();
 });
@@ -7375,6 +7378,64 @@ function studyLogImportRows(rows){
   if(touched.size) studyLogSave();
   return res;
 }
+// ---- 分けて答えた部分の記録（kq_battle_parts_v1）の書き出し・取り込み（端末の引越し用・2026-10-06）----
+//   ・★今の「正解・不正解の記録」CSV とは別のファイル（あちらの列・形は変えない）
+//   ・取り込み: 部分の id で突き合わせる。★同じ id があれば、最終回答が新しいほうを残す（足し算しない＝二重にならない）。
+//     いまのデータに無い部分の id は入れない（数だけ知らせる）。今ある記録は何も消さない
+const PARTS_HEADER = ["部分ID","カードID","部分","こたえ","正解した回数","まちがえた回数","連続正解数","最終正答(ms)","最終回答(ms)","最近の〇✕","最終回答日時"];
+function partRows(){
+  const rows = [PARTS_HEADER.slice()];
+  Object.keys(partStats).sort().forEach(id => {
+    const s = partStats[id] || {}, dm = DAIMON_ITEM.get(id);
+    const h = (Array.isArray(s.h) ? s.h : []).map(e => e[0] + ":" + e[1]).join(" ");
+    rows.push([id, dm ? dm.g.key : id.replace(/~\d+$/, ""), dm ? dm.it.label : "", dm ? dm.it.a : "", s.correct || 0, s.wrong || 0, s.box || 0,
+      s.lastCorrectAt || "", s.lastAnswered || "", h, fmtDateTime(s.lastAnswered)]);
+  });
+  return rows;
+}
+function partImportRows(rows){
+  const head = rows[0] || [], col = n => head.indexOf(n);
+  if(head[0] !== "部分ID" || col("最終回答(ms)") < 0) return null;
+  const res = { added: 0, replaced: 0, kept: 0, unknown: 0, bad: 0 };
+  const num = v => (v === "" || v == null || isNaN(+v)) ? 0 : +v;
+  rows.slice(1).forEach(r => {
+    const id = String(r[col("部分ID")] || "").trim();
+    if(!id){ if(r.some(v => String(v || "").trim())) res.bad++; return; }
+    if(!isPartId(id)){ res.unknown++; return; }
+    const s = { correct: num(r[col("正解した回数")]), wrong: num(r[col("まちがえた回数")]), box: num(r[col("連続正解数")]) };
+    const lc = num(r[col("最終正答(ms)")]), la = num(r[col("最終回答(ms)")]);
+    if(lc) s.lastCorrectAt = lc;
+    if(la) s.lastAnswered = la;
+    s.h = String(r[col("最近の〇✕")] || "").split(/\s+/).filter(Boolean).map(x => x.split(":").map(Number))
+      .filter(e => e.length === 2 && e[0] > 0 && (e[1] === 0 || e[1] === 1));
+    const have = partStats[id];
+    if(!have){ partStats[id] = s; res.added++; return; }
+    if((have.lastAnswered || 0) >= (s.lastAnswered || 0)){ res.kept++; return; }
+    partStats[id] = s; res.replaced++;
+  });
+  if(res.added || res.replaced) savePartStats();
+  return res;
+}
+els["export-parts-link"].addEventListener("click", ()=>{
+  const rows = partRows();
+  if(rows.length <= 1){ alert("分けて答えた部分の記録はまだありません。"); return; }
+  downloadCsv(rows, "社会一問一答_分けた部分の記録");
+});
+els["import-parts-link"].addEventListener("click", ()=> els["import-parts-file"].click());
+els["import-parts-file"].addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  els["import-parts-file"].value = "";
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    let r = null;
+    try{ r = partImportRows(parseCSV(String(ev.target.result))); }catch(err){ console.error(err); }
+    if(!r){ alert("分けた部分の記録のCSVとして読み取れませんでした。このアプリの「分けて答えた部分の記録をエクスポート」で書き出したファイルを選んでください。"); return; }
+    alert(["分けて答えた部分の記録を取り込みました。", "新しく入れた部分: " + r.added, "こちらより新しかったので入れかえた部分: " + r.replaced,
+           "こちらのほうが新しい・同じなので入れなかった部分: " + r.kept].concat(r.unknown ? ["いまの問題に無い部分: " + r.unknown] : []).concat(r.bad ? ["読めなかった行: " + r.bad] : []).join(String.fromCharCode(10)));
+  };
+  reader.readAsText(file, "UTF-8");
+});
 els["import-studylog-link"].addEventListener("click", ()=> els["import-studylog-file"].click());
 els["import-studylog-file"].addEventListener("change", (e)=>{
   const file = e.target.files[0];

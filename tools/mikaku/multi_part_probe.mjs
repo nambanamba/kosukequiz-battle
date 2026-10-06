@@ -12,6 +12,8 @@
 //   P5 分けての「ひとつ前の判定をやり直す」: 部分の記録が前に戻る
 //   P6 学習ログ（1問ごとのCSV）に「分けて」「まとめて」の列
 //   P7 記録のCSV（正解・不正解）の見出しと行の数が直す前と同じ（部分の行を足さない）
+//   P8 「正誤の記録をぜんぶクリア」で部分の記録は消さない（クリア→直した記録CSVの取り込み、で記録を直す使い方のため）
+//   P9 部分の記録の書き出し・取り込み（引越し用）: 移る・同じ id は新しいほう・二重にならない
 //   B1 二人: ホストが分けてで出すとゲストにも同じ部分が出る・「分けて」・両方の部分の記録に付く・カードの記録は付かない
 //   B2 二人: 分けての時間切れ: 記録しない・あとでもう一度
 //   E  画面のエラー 0
@@ -164,6 +166,30 @@ async function run(label, src) {
     const col = det ? det[0].indexOf("分けて・まとめて") : -1;
     const tags = det && col >= 0 ? det.slice(1).map(r => r[col]) : [];
     check("P6 学習ログ（1問ごと）に「分けて」「まとめて」が残る", col >= 0 && tags.includes("分けて") && tags.includes("まとめて"), det ? det[0].join(",") : "CSVなし");
+    // ===== P8 「ぜんぶクリア」では部分の記録を消さない（ユーザーはクリア→直した記録CSVの取り込みで記録を直すため）=====
+    const partsBefore = await pg.evaluate(() => localStorage.getItem("kq_battle_parts_v1"));
+    await tap(pg, "#stat-clear-link").catch(() => {}); await pg.waitForTimeout(300);
+    const p8 = { same: partsBefore !== null && partsBefore === await pg.evaluate(() => localStorage.getItem("kq_battle_parts_v1")),
+      stats: await pg.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}")).length) };
+    check("P8 「正誤の記録をぜんぶクリア」で正誤は消える・部分の記録は1文字も変わらない", p8.same && p8.stats === 0, JSON.stringify(p8));
+    // ===== P9 部分の記録の書き出し → 別の端末で取り込み（同じ id は新しいほう・二重にしない）=====
+    let pcsv = null; try { pcsv = await grab(pg, "#export-parts-link"); } catch (e) { pcsv = null; }
+    const pA = JSON.parse(partsBefore || "{}");
+    const B = await mk();
+    try {
+      const newer = { correct: 9, wrong: 0, box: 9, lastCorrectAt: Date.now() + 1e7, lastAnswered: Date.now() + 1e7, h: [[Date.now() + 1e7, 1]] };
+      await B.page.evaluate(arg => { localStorage.setItem("kq_battle_parts_v1", JSON.stringify({ "r6m36~1": arg })); }, newer);
+      await B.page.reload(); await B.page.waitForTimeout(800);
+      const imp = async () => { await B.page.setInputFiles("#import-parts-file", { name: "parts.csv", mimeType: "text/csv", buffer: Buffer.from(pcsv || "", "utf8") }); await B.page.waitForTimeout(600); return B.page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_parts_v1") || "{}")); };
+      const got1 = pcsv ? await imp() : {};
+      const got2 = pcsv ? await imp() : {};
+      // 中身で比べる（欄の並びの順は問わない）
+      const norm = v => (v && typeof v === "object" && !Array.isArray(v)) ? Object.keys(v).sort().reduce((o, k) => (o[k] = norm(v[k]), o), {}) : (Array.isArray(v) ? v.map(norm) : v);
+      const eq = (a, b) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
+      check("P9 書き出し→取り込み: 部分の記録が移る（~2・~3 は同じ・h も同じ）", !!pcsv && eq(got1["r6m36~2"], pA["r6m36~2"]) && eq(got1["r6m36~3"], pA["r6m36~3"]) && eq(got1["r6m51~1"], pA["r6m51~1"]), JSON.stringify(got1["r6m36~3"]));
+      check("P9 同じ id は新しいほうを残す（取り込む側の ~1 が新しい → そのまま）・もう一度取り込んでも二重にならない", !!pcsv && eq(got1["r6m36~1"], newer) && eq(got1, got2), JSON.stringify(got1["r6m36~1"]));
+      solo.errs.push(...B.errs);
+    } finally { await B.ctx.close(); }
     // ===== B 二人 =====
     for (const p of [host.page, guest.page]) { await p.evaluate(SEED, [MIG, ["r6m36"], { unit: U, extra: { headStartSec: 3, judgeTimeSec: 600 } }]); await p.reload(); await p.waitForTimeout(800); }
     await tap(host.page, "#create-btn");
