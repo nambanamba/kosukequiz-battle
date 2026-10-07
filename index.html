@@ -1694,6 +1694,13 @@
   .plan-btns .plan-start-btn{ padding:10px 14px; }
   .plan-battle-btn{ background:#fff !important; color:var(--navy-deep) !important; border:1.5px solid var(--navy-deep) !important; }
   .plan-weak-note{ margin-top:2px; font-size:12px; font-weight:700; color:#b5533f; }
+  .plan-peek-btn{ padding:6px 10px; border:1px solid var(--paper-line); border-radius:10px; background:#fff; color:var(--ink-soft); font-size:12.5px; font-weight:700; cursor:pointer; }
+  .plan-peek{ margin:6px 0 4px; padding:8px 10px; border:1px dashed var(--paper-line); border-radius:10px; background:#fff; }
+  .plan-peek-list{ margin:0; padding-left:22px; font-size:13px; line-height:1.5; }
+  .plan-peek-list li{ margin:4px 0; }
+  .plan-peek-meta{ font-size:11.5px; color:var(--ink-soft); }
+  .plan-peek-a{ font-size:12.5px; color:var(--ok); font-weight:700; }
+  .plan-peek-ans-btn{ margin-top:6px; padding:6px 10px; border:1px solid var(--navy-deep); border-radius:10px; background:#fff; color:var(--navy-deep); font-size:12.5px; font-weight:700; cursor:pointer; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
@@ -11040,6 +11047,65 @@ function planItemPick(it, no, idx){
   return out;
 }
 function planItemIds(it, no, idx){ return planItemPick(it, no, idx).ids; }
+// ★★2026-10-07 ユーザー「中身を見るをお願いします」: 行ごとに「中身を見る」。その行で出す問題の一覧（答えは別のボタンで）。
+//   ・押した時点で、実際に出す問題と順番を決めて（order:"weak"・count・unit のランダムも）端末に保存する（kq_battle_plan_pick_v2）
+//   ・そのあと「一人で」「二人で」は、保存した一覧の問題を同じ順番で出す（見たものと出るものが違わない）。
+//     その日のうちに記録が増えて並びが変わっても、保存した一覧を使う。その行が「できた」になったら保存は消す（次はまた選び直す）
+const PLAN_PICK_KEY = "kq_battle_plan_pick_v2";   // {番号: {行の鍵: {ids, miss}}}
+function planSavedPick(no, key){
+  const a = planLoad(PLAN_PICK_KEY) || {};
+  const p = a[no] && a[no][key];
+  return (p && Array.isArray(p.ids)) ? p : null;
+}
+function planSavePick(no, key, pick){
+  const a = planLoad(PLAN_PICK_KEY) || {};
+  a[no] = a[no] || {};
+  if(pick) a[no][key] = { ids: pick.ids.slice(), miss: pick.miss || 0 }; else delete a[no][key];
+  planSave(PLAN_PICK_KEY, a);
+}
+// 出す問題: 保存した一覧があればそれ、無ければ選ぶ（保存はしない＝今までどおり）
+function planRowPick(it, no, idx){
+  const sv = planSavedPick(no, planItemKey(it, idx));
+  return sv ? { ids: sv.ids.filter(id => QA_DATA.some(d => d.id === id)), miss: sv.miss || 0, saved: true } : planItemPick(it, no, idx);
+}
+// 一覧の1行の状態（苦手／まだ／定着）。並べ替え（planWeakRank）と同じ見方（分けては部分・大問は小問）
+function planTierLabel(id){ return ({ 1: "苦手", 2: "まだ", 3: "定着" })[planWeakRank(id, new Set()).r] || ""; }
+function renderPlanPeek(panel, ids){
+  panel.innerHTML = "";
+  const ol = document.createElement("ol");
+  ol.className = "plan-peek-list";
+  ids.forEach(id => {
+    const d = QA_DATA.find(x => x.id === id);
+    if(!d) return;
+    const li = document.createElement("li");
+    li.dataset.qid = id;
+    const head = document.createElement("div");
+    head.className = "plan-peek-q";
+    const qt = isDaimonEntry(d) ? (daimonName(d.daimon) + "（小問" + d.itemIds.length + "）　" + (d.q || "")) : (getQById(id) || d).q;
+    head.textContent = String(qt || "").replace(/\s+/g, " ").slice(0, 46) + (String(qt || "").length > 46 ? "…" : "");
+    const meta = document.createElement("div");
+    meta.className = "plan-peek-meta";
+    const tier = planTierLabel(id);
+    meta.textContent = (d.u || "") + "　" + tier;
+    meta.dataset.tier = tier;
+    const ans = document.createElement("div");
+    ans.className = "plan-peek-a";
+    ans.style.display = "none";
+    ans.textContent = "こたえ：" + (isDaimonEntry(d) ? d.daimon.items.map(x => (x.label ? x.label + " " : "") + x.a).join("／") : (getQById(id) || d).a);
+    li.appendChild(head); li.appendChild(meta); li.appendChild(ans);
+    ol.appendChild(li);
+  });
+  panel.appendChild(ol);
+  const ab = document.createElement("button");
+  ab.type = "button"; ab.className = "plan-peek-ans-btn"; ab.textContent = "答えを見る（親用）";
+  ab.addEventListener("click", () => {
+    const show = ab.dataset.on !== "1";
+    ab.dataset.on = show ? "1" : "";
+    ab.textContent = show ? "答えをかくす" : "答えを見る（親用）";
+    panel.querySelectorAll(".plan-peek-a").forEach(e => { e.style.display = show ? "" : "none"; });
+  });
+  panel.appendChild(ab);
+}
 // 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
 let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
 function startSoloWithIds(ids, planRef){
@@ -11082,6 +11148,7 @@ function planMarkDone(no, key, miss){
   if(!d[key]) d[key] = Date.now();
   all[no] = d;
   planSave(PLAN_DONE_KEY, all);
+  planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は、やり終えたら消す（次はまた選び直す）
   const ms = planLoad(PLAN_MISS_KEY) || {};
   const m = ms[no] || {};
   m[key] = Array.from(new Set((miss || []).map(planCardIdOf)));
@@ -11143,7 +11210,7 @@ function renderPlanSet(container, no, prefix){
   }
   const done = planDoneOf(no);
   s.items.forEach((it, i) => {
-    const key = planItemKey(it, i), ok = !!done[key], pick = planItemPick(it, no, i), ids = pick.ids;
+    const key = planItemKey(it, i), ok = !!done[key], pick = planRowPick(it, no, i), ids = pick.ids;
     const row = document.createElement("div");
     row.className = "plan-row" + (ok ? " done" : "");
     row.dataset.planKey = key; row.dataset.planNo = String(no);
@@ -11162,15 +11229,32 @@ function renderPlanSet(container, no, prefix){
     b.type = "button"; b.className = "plan-start-btn";
     b.textContent = ok ? "もう一度（一人）" : "一人で";
     b.disabled = ids.length === 0;
-    b.addEventListener("click", () => startSoloWithIds(planItemIds(it, no, i), { no: no, key: key }));
+    b.addEventListener("click", () => startSoloWithIds(planRowPick(it, no, i).ids, { no: no, key: key }));
     const b2 = document.createElement("button");
     b2.type = "button"; b2.className = "plan-start-btn plan-battle-btn";
     b2.textContent = "二人で";
     b2.disabled = ids.length === 0;
-    b2.addEventListener("click", () => startBattleWithIds(planItemIds(it, no, i), { no: no, key: key }));
-    btns.appendChild(b); btns.appendChild(b2);
+    b2.addEventListener("click", () => startBattleWithIds(planRowPick(it, no, i).ids, { no: no, key: key }));
+    const b3 = document.createElement("button");
+    b3.type = "button"; b3.className = "plan-peek-btn";
+    b3.textContent = "中身を見る";
+    b3.disabled = ids.length === 0;
+    btns.appendChild(b); btns.appendChild(b2); btns.appendChild(b3);
     row.appendChild(t); row.appendChild(mk); row.appendChild(btns);
     container.appendChild(row);
+    const panel = document.createElement("div");
+    panel.className = "plan-peek";
+    panel.style.display = "none";
+    container.appendChild(panel);
+    b3.addEventListener("click", () => {
+      if(panel.style.display !== "none"){ panel.style.display = "none"; b3.textContent = "中身を見る"; return; }
+      // ★押した時点で出す問題と順番を決めて保存（すでに保存してあればそれ）
+      let p = planSavedPick(no, key);
+      if(!p){ p = planItemPick(it, no, i); planSavePick(no, key, p); }
+      renderPlanPeek(panel, p.ids);
+      panel.style.display = "";
+      b3.textContent = "中身をとじる";
+    });
   });
   return true;
 }
