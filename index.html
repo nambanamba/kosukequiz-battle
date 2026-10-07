@@ -1699,6 +1699,7 @@
   .plan-peek-list{ margin:0; padding-left:22px; font-size:13px; line-height:1.5; }
   .plan-peek-list li{ margin:4px 0; }
   .plan-peek-meta{ font-size:11.5px; color:var(--ink-soft); }
+  .plan-peek-count{ font-size:12px; color:var(--ink-soft); font-weight:700; margin-bottom:4px; }
   .plan-peek-a{ font-size:12.5px; color:var(--ok); font-weight:700; }
   .plan-peek-ans-btn{ margin-top:6px; padding:6px 10px; border:1px solid var(--navy-deep); border-radius:10px; background:#fff; color:var(--navy-deep); font-size:12.5px; font-weight:700; cursor:pointer; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
@@ -11022,7 +11023,29 @@ function planWeakRank(id, missSet){
   }
   return { r: tier === 1 ? 1 : (tier === 0 ? 2 : 3), at: at === Infinity ? 0 : at };
 }
-// 行の問題を決める。戻り値 {ids, miss}（miss … ①から選んだ数）
+// ★2026-10-08 ユーザー「理科だけで35問出ました。ちゃんと理科20と社会15出るようにしてください」
+//   count は「カードの枚数」ではなく「答える回数」（weightOf と同じ数え方: 分けて出すカードは出す部分の数・まとめては1・大問は答える小問の数）。
+//   並んだ順に取り、入れると count をこえるカードは飛ばして次の小さいカードで埋める（takeByWeight と同じ）。
+//   それでも足りないときだけ、こえる分が2問までのカードを1枚足す（いちばんこえ方が小さいもの。並びの元の位置に入れる）。答える問題が0のカードは入れない
+function planIdWeight(id){ const i = QA_DATA.findIndex(d => d.id === id); return i < 0 ? 0 : weightOf(i); }
+function planTakeCount(ids, n){
+  const out = [], skipped = [];
+  let total = 0;
+  ids.forEach((id, k) => {
+    const w = planIdWeight(id);
+    if(w <= 0) return;
+    if(total >= n){ return; }
+    if(total + w > n){ skipped.push({ id: id, k: k, w: w }); return; }
+    out.push({ id: id, k: k }); total += w;
+  });
+  if(total < n){
+    const c = skipped.filter(x => total + x.w - n <= 2).sort((a, b) => (a.w - b.w) || (a.k - b.k))[0];
+    if(c){ out.push({ id: c.id, k: c.k }); out.sort((a, b) => a.k - b.k); }
+  }
+  return out.map(x => x.id);
+}
+function planSumWeight(ids){ return ids.reduce((a, id) => a + planIdWeight(id), 0); }
+// 行の問題を決める。戻り値 {ids, miss}（miss … ①から選んだ数。答える回数で数える）
 function planItemPick(it, no, idx){
   const out = { ids: [], miss: 0 };
   if(!it || typeof it !== "object") return out;
@@ -11037,12 +11060,13 @@ function planItemPick(it, no, idx){
     if(s) s.items.forEach((x, j) => { if(j < idx) (missAll[planItemKey(x, j)] || []).forEach(id => missSet.add(id)); });
     const ranked = ids.map((id, k) => Object.assign({ id: id, k: k }, planWeakRank(id, missSet)))
       .sort((a, b) => (a.r - b.r) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
-    const pick = n > 0 ? ranked.slice(0, n) : ranked;
-    out.ids = pick.map(x => x.id);
-    out.miss = pick.filter(x => x.r === 0).length;
+    const rankedIds = ranked.map(x => x.id);
+    out.ids = n > 0 ? planTakeCount(rankedIds, n) : rankedIds;
+    const missIds = new Set(ranked.filter(x => x.r === 0).map(x => x.id));
+    out.miss = planSumWeight(out.ids.filter(id => missIds.has(id)));
     return out;
   }
-  if(!(Array.isArray(it.ids) && it.ids.length) && n > 0 && ids.length > n) ids = shuffleArray(ids.slice()).slice(0, n);
+  if(!(Array.isArray(it.ids) && it.ids.length) && n > 0 && planSumWeight(ids) > n) ids = planTakeCount(shuffleArray(ids.slice()), n);
   out.ids = ids;
   return out;
 }
@@ -11072,6 +11096,10 @@ function planRowPick(it, no, idx){
 function planTierLabel(id){ return ({ 1: "苦手", 2: "まだ", 3: "定着" })[planWeakRank(id, new Set()).r] || ""; }
 function renderPlanPeek(panel, ids){
   panel.innerHTML = "";
+  const cnt = document.createElement("div");
+  cnt.className = "plan-peek-count";
+  cnt.textContent = "答える問題：" + planSumWeight(ids) + "問（" + ids.length + "枚）";
+  panel.appendChild(cnt);
   const ol = document.createElement("ol");
   ol.className = "plan-peek-list";
   ids.forEach(id => {
