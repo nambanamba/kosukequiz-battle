@@ -8646,7 +8646,8 @@ function startAnswerCountdown(){
   pieces.forEach(p=>p.classList.remove("eaten"));
   mouse.style.left = "0%";
   els["answer-countdown"].style.display = "block";
-  els["answer-reveal-btn"].style.display = "block";
+  // ★2026-10-08 二人のときのホスト（子ども）は「こたえを見る」を出さない（hostWaitsJudge）
+  els["answer-reveal-btn"].style.display = hostWaitsJudge() ? "none" : "block";
   let eaten = 0;
   const stepMs = (answerSec*1000)/CHEESE_COUNT;
   cheeseInterval = setInterval(()=>{
@@ -8656,7 +8657,23 @@ function startAnswerCountdown(){
     mouse.style.left = (eaten/CHEESE_COUNT*100)+"%";
     if(eaten >= CHEESE_COUNT) clearInterval(cheeseInterval);
   }, stepMs);
-  cheeseTimeout = setTimeout(revealAnswer, answerSec*1000);
+  cheeseTimeout = setTimeout(hostWaitsJudge() ? hostAnswerTimeUp : revealAnswer, answerSec*1000);
+}
+// ★2026-10-08 ユーザー「ホストの答えを出すタイミングを、時間や本人が答えを見るを押したときじゃなくて、
+//   親がまるばつを付けたタイミングで見れるようにしてほしい」。
+//   二人のときのホスト（子ども）の画面の答えは、ゲスト（親）が〇か✕を押したときだけ開く（judgeAction.onMessage → revealAnswer）。
+//   ・ホストには「こたえを見る」を出さない。答える時間（チーズ）が切れても開かない（hostAnswerTimeUp）
+//   ・ゲストが判定しないままでも、ゲストの画面の時間切れ（チーズ→判定の自動〇）で判定が届くので止まらない
+//   ・スキップ（答えを見て✕・あとでもう一度）・考える時間の時間切れ（答えを出さず・あとでもう一度）は変えない
+//   ・ゲストの「こたえを見る」（guestPeek）・子どもが見たふだは変えない。一人・相手なしの対戦画面も変えない
+function hostWaitsJudge(){ return role === "host" && !!room; }
+function hostAnswerTimeUp(){
+  clearInterval(cheeseInterval);
+  els["answer-countdown"].style.display = "none";
+  els["answer-reveal-btn"].style.display = "none";
+  els["status-banner"].classList.remove("win","lose");
+  els["status-banner"].classList.add("show","info");
+  els["status-banner"].textContent = "相手が〇✕をつけると、こたえが出ます。";
 }
 function stopAnswerCountdown(){
   clearInterval(cheeseInterval);
@@ -8685,6 +8702,7 @@ function resetRevealSync(fullClear){
 }
 function requestReveal(){
   if(iAskedRevealIdx === currentIndex) return;
+  if(hostWaitsJudge()) return;   // ★2026-10-08 二人のときのホストは自分で開かない（親の〇✕で開く）
   iAskedRevealIdx = currentIndex;
   if(!room){ revealAnswer(); return; } // ひとりで見ているときは待たない
   try{ revealAction.send({idx: currentIndex}); }catch(e){}
@@ -9214,7 +9232,7 @@ function setupActions(){
     updateMyResultUI(forcedWrong);
     // ★2026-10-05 ユーザー「親が正解やバツを押したら開いてください。子供が答えを見るを押さなくても進めたいです」。
     //   ゲスト（親）が判定したら、ホスト（子ども）の画面でもまだ開いていなければ答えを開く（判定ボタンも出る）。
-    //   子どもの「答えを見る」は残る（押せば今までどおり先に開く）。記録は上で付けたとおり（変えない）
+    //   ★2026-10-08 から二人のときは子どもの「答えを見る」を出さない＝ここだけで開く（hostWaitsJudge）。記録は上で付けたとおり（変えない）
     if(role === "host" && !els["battle-a-block"].classList.contains("show")){
       revealByJudge = true;
       revealAnswer();
@@ -9884,9 +9902,10 @@ function enterAnsweringPhase(){
   els["advance-btn"].style.display = "none";
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
-  els["status-banner"].textContent = "それぞれ声に出してこたえを言いましょう！";
+  els["status-banner"].textContent = hostWaitsJudge() ? "声に出してこたえを言いましょう！ 相手が〇✕をつけると、こたえが出ます。"
+                                                      : "それぞれ声に出してこたえを言いましょう！";
   startAnswerCountdown();
-  scrollBattleDaimonTo("answer-reveal-btn");   // ★大問の小問だけ。「こたえを見る」と時計が見えるように
+  scrollBattleDaimonTo(hostWaitsJudge() ? "answer-countdown" : "answer-reveal-btn");   // ★大問の小問だけ。「こたえを見る」と時計が見えるように
 }
 
 // ★判定ボタンは0.3秒遅れて出す（2026-09-16 ユーザー原文「わかったを押した瞬間に画面が切り替わって、

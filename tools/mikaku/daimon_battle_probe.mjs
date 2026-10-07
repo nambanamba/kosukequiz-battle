@@ -179,6 +179,8 @@ async function run(label, src) {
     if (!S.aFile) console.log("  （このデータには aFile 付きの非紙の大問が無いため、B4 は省略）");
     await host.page.evaluate(SETTINGS, { u3: S.u3, n: S.plan.length });
     await guest.page.evaluate(() => { localStorage.clear(); localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 })); });
+    // ★2026-10-08 答える時間はゲストの画面で測るので、ゲストも同じ秒数にする（一問一答はそれぞれの端末の秒数）
+    await guest.page.evaluate(SETTINGS, { u3: S.u3, n: S.plan.length });
     await host.page.reload(); await guest.page.reload(); await host.page.waitForTimeout(800); await guest.page.waitForTimeout(600);
     const statsBefore = await host.page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1")));
     // 小問のうしろにある小問（B2 で「まだ無い」を見る）: [いまの手の id] → 出てはいけない問題文
@@ -246,10 +248,16 @@ async function run(label, src) {
         if (S.g1.indexOf(id) === S.g1.length - 2) await shot(guest.page, "guest_before_last_g1");
       }
       // ---- 答えが開くまで待つ（★時間を測る）----
-      await host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
+      // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く。答える時間はゲストの画面で測る
+      await guest.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
       const took = Date.now() - tA;
-      if (!isItem) check("B5 答える時間: 一問一答は3秒未満で開く（下じき・2秒）", took < 3000, took + "ms");
-      else if (S.g1.indexOf(id) === 0) check("★B5 答える時間: 小問は3.5秒たってから開く（2倍・2秒×2）", took >= 3500, took + "ms");
+      if (!isItem) check("B5 答える時間: 一問一答は3秒未満で開く（下じき・2秒・ゲストの画面）", took < 3000, took + "ms");
+      else if (S.g1.indexOf(id) === 0) check("★B5 答える時間: 小問は3.5秒たってから開く（2倍・2秒×2・ゲストの画面）", took >= 3500, took + "ms");
+      const hostWrong = id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 1;
+      check("R ホスト " + id + ": ゲストが判定するまで答えは開かない", !(await aShown(host.page)));
+      await waitVisible(guest.page, "#judge-row", 30000);
+      await tap(guest.page, hostWrong ? "#judge-ng" : "#judge-ok");
+      await host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
       if (isItem) {
         const html = await screenHtml(host.page), tx = await screenText(host.page);
         if (S.aFile && S.g5[S.af] === id) check("★B4 答えを開いたら、答えの図が出る", html.includes(S.aFile));
@@ -260,9 +268,8 @@ async function run(label, src) {
         }
       }
       // ---- 判定: G5 の1つめの答える小問だけ、ゲストがホストを✕にする ----
-      const hostWrong = id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 1;
-      await waitVisible(host.page, "#judge-row", 30000); await waitVisible(guest.page, "#judge-row", 30000);
-      await tap(host.page, "#judge-ok"); await tap(guest.page, hostWrong ? "#judge-ng" : "#judge-ok");
+      await waitVisible(host.page, "#judge-row", 30000);
+      await tap(host.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       if (t === 0) check("B1 分母は答える小問で数えた " + S.plan.length, (await txt(host.page, "#battle-counter")) === "1 / " + S.plan.length, await txt(host.page, "#battle-counter"));
       if (id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 2) check("★B9 ✕にした小問は同じラウンドでもう一度出る・分母は最初の数のまま・「もう一度」の印（" + (await txt(host.page, "#battle-counter")) + "）", (await txt(host.page, "#battle-counter")).endsWith(" / " + S.plan.length) && /もう一度/.test(await txt(host.page, "#battle-left")), await txt(host.page, "#battle-left"));

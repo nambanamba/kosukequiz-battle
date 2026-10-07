@@ -235,7 +235,8 @@ async function run(label, src) {
     await noteGuest();
     t0 = Date.now();
     await G.waitForTimeout(300);
-    check("★B4 ④ ホスト: 「こたえを見る」が画面の中", await inView(H, "#answer-reveal-btn"));
+    // ★2026-10-08 から二人のときのホストには「こたえを見る」が出ない（ゲストの〇✕で開く）
+    check("★B4 ④ ホスト: 「こたえを見る」は出ない（ゲストの〇✕で開く）", !(await H.evaluate(() => { const e = document.getElementById("answer-reveal-btn"); return getComputedStyle(e).display !== "none" && e.offsetParent !== null; })));
     check("★B4 ④ ゲスト: 「こたえを見る」が画面の中", await inView(G, "#answer-reveal-btn"));
     check("B4 ④ ホスト・ゲスト: 時計（チーズ）が画面の中", (await inView(H, "#answer-countdown")) && (await inView(G, "#answer-countdown")));
     await H.screenshot({ path: path.join(SHOTS, label + "_host_daimon_answering.png") });
@@ -243,15 +244,18 @@ async function run(label, src) {
     await G.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 30000 });
     const gOpenD = Date.now() - t0;
     check("★B3 ④ 小問: ゲストもホストの秒数×2（8秒）で開く（7秒以上）", gOpenD >= 7000, gOpenD + "ms");
-    await waitVis(G, "#judge-row"); await waitVis(H, "#judge-row");
+    await waitVis(G, "#judge-row");
     const tj = Date.now();
-    check("★B4 ④ 判定ボタンが画面の中（ホスト・ゲスト）", (await inView(H, "#judge-row")) && (await inView(G, "#judge-row")));
-    await H.screenshot({ path: path.join(SHOTS, label + "_host_daimon_judge.png") });
+    const gJudgeIn = await inView(G, "#judge-row");
     await G.screenshot({ path: path.join(SHOTS, label + "_guest_daimon_judge.png") });
     // だれも押さない → ゲストの判定の時間切れ（自動〇）までの時間
     await G.waitForFunction(() => getComputedStyle(document.getElementById("judge-row")).display === "none", null, { timeout: 30000 });
     const gJudge = Date.now() - tj;
     check("★B3 ④ 小問の判定の時間切れは ホストの判定2秒×2（3.5秒以上）", gJudge >= 3500, gJudge + "ms");
+    // ★2026-10-08 ホストの判定ボタンは、ゲストの判定（ここでは時間切れの自動〇）が届いて答えが開いてから出る
+    await waitVis(H, "#judge-row");
+    check("★B4 ④ 判定ボタンが画面の中（ホスト・ゲスト）", (await inView(H, "#judge-row")) && gJudgeIn);
+    await H.screenshot({ path: path.join(SHOTS, label + "_host_daimon_judge.png") });
     await H.waitForFunction(() => getComputedStyle(document.getElementById("judge-row")).display === "none", null, { timeout: 30000 }).catch(() => {});
     await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 30000 });
     await tap(H, "#next-btn");

@@ -142,10 +142,12 @@ async function run(label, src) {
       await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       gseq.push(await qid(guest.page, "battle")); gcnt.push(await txt(guest.page, "#battle-counter"));
-      await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
-      await waitVis(host.page, "#judge-row", 15000); await waitVis(guest.page, "#judge-row", 15000);
+      // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く（ホストに「こたえを見る」は無い）
+      await tap(guest.page, "#answer-reveal-btn");
+      await waitVis(guest.page, "#judge-row", 15000);
       const hostOk = !(id === A && firstA); if (id === A) firstA = false;
-      await tap(guest.page, hostOk ? "#judge-ok" : "#judge-ng"); await tap(host.page, "#judge-ok");
+      await tap(guest.page, hostOk ? "#judge-ok" : "#judge-ng");
+      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn"); await host.page.waitForTimeout(500);
     }

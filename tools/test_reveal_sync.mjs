@@ -61,6 +61,10 @@ function newDevice(name){
     hostOpenedIdx: -1, hostOpenedSec: 0, guestShownAt: Date.now(),
     badge: 0,
     updateHostSeenBadge(){ ctx.badge++; },
+    // ★2026-10-08 二人のときのホストは自分で開かない（親の〇✕で開く）。実物は role==="host" && room。
+    //   【1】〜の「二人そろう」仕組みの検査は hostWaits=false で回し、【H】で true のときを見る
+    hostWaits: false,
+    hostWaitsJudge(){ return ctx.hostWaits; },
     _btn: btn
   };
   const src = REAL + "\n;return {resetRevealSync, requestReveal, maybeReveal, revealAction,"
@@ -206,6 +210,18 @@ console.log("\n【9】★ホストの画面で答えが開いた知らせは、�
   check("開く数え（相手が押した）には入らない・ゲストの画面も開かない", [guest.peek().p, guest.revealed, guest.peeked], [-1, 0, 0]);
   guest.revealAction.onMessage({idx: 5, opened: true});   // 別の問題の知らせは使わない
   check("別の問題の知らせは使わない", guest.hostOpenedIdx, 0);
+}
+
+// ============ H. ★2026-10-08 二人のときのホストは自分で開かない ============
+console.log("\n【H】二人のときのホスト（hostWaitsJudge）は「こたえを見る」を押しても開かない・合図も送らない（親の〇✕で開く）");
+{
+  const host = newDevice("host"), guest = newDevice("guest");
+  host.hostWaits = true;
+  host.resetRevealSync(); guest.resetRevealSync();
+  guest.requestReveal(); deliver(guest, host);
+  host.requestReveal();
+  check("ホストは開かない・合図も送らない", [host.revealed, host.sent.length, host.peek().i], [0, 0, -1]);
+  check("ゲストは自分の画面だけ開いている（先に見る）", [guest.peeked, guest.revealed], [1, 0]);
 }
 
 console.log("\n===== 合計: " + pass + " 件成功 / " + fail + " 件失敗 =====");
