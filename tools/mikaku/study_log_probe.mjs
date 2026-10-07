@@ -44,7 +44,7 @@ const OLD_KEY = "kq_battle_study_log_v1";
 // 答えるのは ids だけ（社会 第6回のほかの一問一答と大問は全部おぼえ済み）。大問の小問の1つだけ ✕ の記録を入れる（D1 用）
 const SEED = (arg) => {
   const [mig, ids, o] = arg;
-  const now = Date.now(), known = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }, st = {};
+  const now = Date.now(), known = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8, correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"] }, st = {};
   QA_DATA.forEach(d => { if (d.subj === "社会" && d.kind !== "daimon" && !ids.includes(d.id)) st[d.id] = Object.assign({}, known); });
   DAIMON_DATA.forEach(h => h.items.forEach(it => { st[it.id] = Object.assign({}, known); }));
   const firstDaimon = QA_DATA.find(d => d.kind === "daimon");

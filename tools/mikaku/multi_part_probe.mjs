@@ -47,7 +47,7 @@ const U = "第6回.ヒトと動物の呼吸・循環";
 // 答えるのは ids だけ（理科のほかの一問一答と大問の小問は全部おぼえ済み）
 const SEED = (arg) => {
   const [mig, ids, o] = arg;
-  const now = Date.now(), known = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8 }, st = {};
+  const now = Date.now(), known = { correct: 2, wrong: 0, box: 2, lastCorrectAt: now - 9e8, lastAnswered: now - 9e8, correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"] }, st = {};
   QA_DATA.forEach(d => { if (d.subj === "理科" && d.kind !== "daimon" && !ids.includes(d.id)) st[d.id] = Object.assign({}, known); });
   DAIMON_DATA.forEach(h => h.items.forEach(it => { st[it.id] = Object.assign({}, known); }));
   localStorage.clear();

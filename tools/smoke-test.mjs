@@ -399,10 +399,10 @@ await test("復習ミックスの優先順位", async t => {
     localStorage.clear();
     const st = {};
     // 対象単元の他の問題は「定着ずみ・直近に正解」にして後ろに回す
-    QA_DATA.filter(q => q.u === tg.unit).forEach(q => { st[q.id] = { correct: 5, wrong: 0, box: 5, lastCorrectAt: r, lastAnswered: r }; });
-    st[tg.ids[0]] = { correct: 3, wrong: 5, box: 2, lastCorrectAt: o, lastAnswered: o };  // A 立ち直り中
+    QA_DATA.filter(q => q.u === tg.unit).forEach(q => { st[q.id] = { correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"], correct: 5, wrong: 0, box: 5, lastCorrectAt: r, lastAnswered: r }; });
+    st[tg.ids[0]] = { correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"], correct: 3, wrong: 5, box: 2, lastCorrectAt: o, lastAnswered: o };  // A 立ち直り中
     st[tg.ids[1]] = { correct: 3, wrong: 5, box: 0, lastCorrectAt: o, lastAnswered: o };  // B いま苦手
-    st[tg.ids[2]] = { correct: 10, wrong: 1, box: 4, lastCorrectAt: o, lastAnswered: o }; // C 定着ずみ
+    st[tg.ids[2]] = { correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"], correct: 10, wrong: 1, box: 4, lastCorrectAt: o, lastAnswered: o }; // C 定着ずみ
     st[tg.ids[3]] = { correct: 0, wrong: 2, box: 0, lastAnswered: o };                    // D 未正解
     localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
@@ -463,7 +463,7 @@ await test("未クリア優先（両方ONのとき未クリアが先）", async 
     // 正解ずみだが苦手: 正解はあるが直近で間違えている（isMastered=true, isWeak=true）
     tg.weak.forEach(id => { st[id] = { correct: 3, wrong: 5, box: 0, lastCorrectAt: o, lastAnswered: o }; });
     // 残りは定着ずみ（どちらのフィルタにも入らない＝プールから消える）
-    tg.rest.forEach(id => { st[id] = { correct: 5, wrong: 0, box: 5, lastCorrectAt: o, lastAnswered: o }; });
+    tg.rest.forEach(id => { st[id] = { correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"], correct: 5, wrong: 0, box: 5, lastCorrectAt: o, lastAnswered: o }; });
     localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
     localStorage.setItem("kq_battle_migrations_v1", JSON.stringify({ "kaki1-4": 1, "lastcorrect-backfill": 1 }));
   }, [target, old]);
@@ -626,7 +626,7 @@ async function seedTiers(t, withRest) {
       //   ⚠️ ここを全部 wrong:0 で作ると、**苦手判定から box の条件を外しても
       //   テストが鳴りません**（wrong が0なので段が動かない）。実際に鳴らず、
       //   壊して確かめたおかげで気づきました
-      g.rest.forEach((id, i) => { st[id] = { correct: 3, wrong: (i % 2 ? 2 : 0), box: 2,
+      g.rest.forEach((id, i) => { st[id] = { correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"], correct: 3, wrong: (i % 2 ? 2 : 0), box: 2,
         lastCorrectAt: T0 - (100 + i * 5) * DAY, lastAnswered: T0 }; });
     } else {
       // ★3段目を作らない版: box を上げず、間違えた記録にして2段目に寄せる
@@ -862,7 +862,7 @@ await test("補う: 苦手が0問でも「全部」で始められる", async t 
   // 2段目の4問を卒業させる（box 2）→ 苦手が0問になる。★日付は3段目より新しいまま
   await t.page.evaluate(ids => {
     const st = JSON.parse(localStorage.getItem("kq_battle_stats_v1"));
-    ids.forEach(id => { st[id].box = 2; });
+    ids.forEach(id => { st[id].box = 2; st[id].correctDays = ["2026-09-01", "2026-09-02", "2026-09-03"]; });   // ★2026-10-08 から定着はちがう日に3回正解も要る
     localStorage.setItem("kq_battle_stats_v1", JSON.stringify(st));
   }, g.weak);
   await t.reload();
@@ -998,7 +998,7 @@ await test("正解数＝連続正解数: まちがえると未クリアにもど
   const T = new Date(2026, 8, 1).getTime();
   const seed = {
     [ids[0]]: { correct: 5, wrong: 2, box: 0, lastCorrectAt: T, lastAnswered: T },   // ① 累計5回正解・直近まちがえた
-    [ids[1]]: { correct: 3, wrong: 0, box: 3, lastCorrectAt: T, lastAnswered: T },   // ② 3回続けて正解
+    [ids[1]]: { correctDays: ["2026-09-01", "2026-09-02", "2026-09-03"], correct: 3, wrong: 0, box: 3, lastCorrectAt: T, lastAnswered: T },   // ② 3回続けて正解
     [ids[2]]: { correct: 1, wrong: 1, box: 0, lastCorrectAt: T, lastAnswered: T },   // ③ 1回正解してから、まちがえた
   };                                                                                // ④ ids[3] は記録なし
   await t.page.evaluate(s => {

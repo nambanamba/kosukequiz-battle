@@ -2017,6 +2017,9 @@
       <!-- ★2026-10-06 答えが複数のカードの「分けて」の部分の記録（別の入れ物）。端末の引越し用 -->
       <div class="back-link" id="export-parts-link">分けて答えた部分の記録をエクスポート（CSV・引越し用）</div>
       <div class="back-link" id="import-parts-link">分けて答えた部分の記録をインポートする（引越し用）</div>
+      <!-- ★2026-10-08 正解した日の一覧（定着＝ちがう日に3回正解）。上の記録CSVとは別のファイル。端末の引越し用 -->
+      <div class="back-link" id="export-days-link">正解した日の記録をエクスポート（CSV・引越し用）</div>
+      <div class="back-link" id="import-days-link">正解した日の記録をインポートする（引越し用・先に上の記録のCSVを）</div>
       <!-- ★2026-10-06 記録の自動送信（親向け）。ユーザー「記録の書き出しですが何とかもう少し自動化できませんか?」。
            送り先は GitHub の非公開リポジトリ（nambanamba/kosuke-records）。鍵（トークン）は、この端末にだけ保存する（コードには書かない） -->
       <div class="send-auth-warn" id="send-auth-warn" style="display:none;">記録の送り先の鍵を作り直してください（鍵の期限切れなどで送れていません。記録は端末にためてあります）</div>
@@ -2033,6 +2036,7 @@
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
       <input type="file" id="import-studylog-file" accept=".csv,text/csv" style="display:none;">
       <input type="file" id="import-parts-file" accept=".csv,text/csv" style="display:none;">
+      <input type="file" id="import-days-file" accept=".csv,text/csv" style="display:none;">
 
       <a class="btn-secondary" id="calc-setup-btn" href="https://nambanamba.github.io/keisan-print-app/" target="_blank" rel="noopener" style="margin-top:20px; display:block; text-align:center; text-decoration:none; box-sizing:border-box;">🧮 今日の計算問題（別アプリで開く）</a>
 
@@ -3456,7 +3460,7 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print",
  "subject-social","subject-science",
- "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-parts-link","import-parts-link","import-parts-file","export-edits-link",
+ "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-parts-link","import-parts-link","import-parts-file","export-days-link","import-days-link","import-days-file","export-edits-link",
  "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
  "paper-pick-all","paper-pick-none","paper-pick-go",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
@@ -3803,14 +3807,44 @@ function scheduleNext(s, correct){
   s.box = correct ? Math.min((s.box||0) + 1, BOX_INTERVAL_DAYS.length - 1) : 0;
   s.nextDue = Date.now() + BOX_INTERVAL_DAYS[s.box] * 24 * 60 * 60 * 1000;
 }
+// ============================================================
+// ★「定着した」＝ちがう日に3回正解（2026-10-08 ユーザー）
+// ============================================================
+//   ユーザー「定着したになる基準を厳しくする → ちがう日に3回正解したら定着（同じ日に何回正解しても1回）」
+//   （いままでは1〜2回の正解で定着になり、その問題が出なくなっていた）
+//   ・カードの記録（stats の1件）に correctDays（正解した日 "YYYY-MM-DD" の一覧・重ならない・古い順）を足す。
+//     ★ほかの欄（correct/wrong/box/nextDue/lastCorrectAt/lastAnswered）は今までどおり。記録の形は足すだけ
+//   ・★correctDays が無い今までの記録は、lastCorrectAt があればその日を1日として数える（読むときに補う。書きかえない）
+//     ＝今「定着」でも、ちがう日の正解が3日たまるまでは「苦手な問題」（2段目）に入る
+//   ・✕・スキップ・時間切れの扱い（box を0に戻す・苦手）は今までどおり
+//   ・一覧の「定着した」ボタン（setStatus）は manualMastered の印で定着にする（実際に無かった正解の日は書かない）。
+//     ✕がついたら印は外す
+//   ・★分けての部分の記録（kq_battle_parts_v1）は今までどおり（tierOfStat の oldRule）
+const MASTER_DAYS = 3;
+function correctDaysOf(s){
+  if(!s) return [];
+  if(Array.isArray(s.correctDays)) return s.correctDays;
+  return s.lastCorrectAt ? [dateToYMD(s.lastCorrectAt)] : [];
+}
+// 正解した日を1日足す（同じ日なら何もしない）。今までの記録は lastCorrectAt の日から始める
+function addCorrectDay(s, ts){
+  const k = dateToYMD(ts);
+  if(!k || k.indexOf("NaN") >= 0) return;
+  const ds = correctDaysOf(s).slice();
+  if(ds.indexOf(k) < 0){ ds.push(k); ds.sort(); }
+  s.correctDays = ds;
+}
 function recordResult(id, correct){
   // ★2026-10-06 答えが複数のカードの「分けて」の部分は、別の入れ物へ（カードの記録 stats には書かない）
   if(typeof DAIMON_ITEM !== "undefined" && isPartId(id)){ recordPartResult(id, correct); daimonMark[id] = !!correct; return; }
   const s = stats[id] || {correct:0, wrong:0};
   if(correct){
     s.correct = (s.correct||0) + 1;
-    s.lastCorrectAt = Date.now(); // 復習ミックスの「正解したのが一番昔の問題」判定に使う
+    const now = Date.now();
+    addCorrectDay(s, now);   // ★先に（今までの記録は、前の lastCorrectAt の日から数えはじめる）
+    s.lastCorrectAt = now; // 復習ミックスの「正解したのが一番昔の問題」判定に使う
   }else{
+    delete s.manualMastered;
     s.wrong = (s.wrong||0) + 1;
   }
   s.lastAnswered = Date.now();
@@ -3825,7 +3859,7 @@ const daimonMark = {};   // 小問id → 直近の判定（true=〇）。たた�
 function setStatus(id, status){
   if(status === "unseen") delete stats[id];        // ★記録ごと消す＝1段目に戻る
   else if(status === "mastered"){                   // ★まちがえずに正解＝3段目
-    const s = {correct:1, wrong:0, lastAnswered: Date.now(), lastCorrectAt: Date.now()};
+    const s = {correct:1, wrong:0, lastAnswered: Date.now(), lastCorrectAt: Date.now(), manualMastered: 1};   // ★印で定着（2026-10-08）
     scheduleNext(s, true);
     stats[id] = s;
   }
@@ -3842,10 +3876,10 @@ function adjustStat(qid, field, delta){
   const maxBox = BOX_INTERVAL_DAYS.length - 1;
   if(field === "correct"){
     s.box = Math.min(maxBox, Math.max(0, (s.box||0) + delta));
-    if(delta > 0){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = Date.now(); }
+    if(delta > 0){ s.correct = (s.correct||0) + 1; const now = Date.now(); addCorrectDay(s, now); s.lastCorrectAt = now; }
   }else{
     s.wrong = Math.max(0, (s.wrong||0) + delta);
-    if(delta > 0) s.box = 0;
+    if(delta > 0){ s.box = 0; delete s.manualMastered; }
   }
   s.nextDue = Date.now() + BOX_INTERVAL_DAYS[s.box||0] * 24 * 60 * 60 * 1000;
   if((s.box||0) === 0 && (s.wrong||0) === 0){
@@ -4306,7 +4340,7 @@ function mergeStatEntries(a, b){
   if(!a) return Object.assign({}, b);
   if(!b) return Object.assign({}, a);
   const box = Math.min(a.box || 0, b.box || 0);
-  return {
+  const out = {
     correct: (a.correct || 0) + (b.correct || 0),
     wrong: (a.wrong || 0) + (b.wrong || 0),
     box: box,
@@ -4314,6 +4348,10 @@ function mergeStatEntries(a, b){
     lastAnswered: Math.max(a.lastAnswered || 0, b.lastAnswered || 0) || undefined,
     lastCorrectAt: Math.max(a.lastCorrectAt || 0, b.lastCorrectAt || 0) || undefined
   };
+  // ★正解した日（2026-10-08）は両方を合わせる（重ならない）
+  const days = Array.from(new Set(correctDaysOf(a).concat(correctDaysOf(b)))).sort();
+  if(days.length) out.correctDays = days;
+  return out;
 }
 function runStatsMigrations(){
   let done = {};
@@ -5402,13 +5440,16 @@ function tierOf(i){
   return tierOfStat(stats[d.id]);
 }
 // 1つの記録から段を出す（一問一答・小問で同じ）
-function tierOfStat(s){
+function tierOfStat(s, oldRule){
   // 1段目: まだ一度も正解していない（未実施 ＋ 答えたが未正解）
   // ★correct も見るのは、lastCorrectAt を入れる前の記録や CSV インポートで作られた記録に
   //   「正解しているのに正解日が無い」ものがあるため（backfillLastCorrectAt のコメント参照）。
   //   lastAnswered が無いと backfill が届かないので、ここで取りこぼさないようにする。
   if(!s || (!s.lastCorrectAt && !((s.correct||0) > 0))) return 0;
   if((s.wrong||0) > 0 && (s.box||0) <= 1) return 1;  // 2段目: 一度は正解したが、まだ2連続正解していない
+  // ★2026-10-08 3段目（定着した）は「ちがう日に3回正解」（MASTER_DAYS）か、一覧で手で「定着した」にしたもの。
+  //   それまでは2段目（苦手な問題＝まだ定着していない）。oldRule は分けての部分の記録用（今までどおり）
+  if(!oldRule && !s.manualMastered && correctDaysOf(s).length < MASTER_DAYS) return 1;
   return 2;                                          // 3段目: それ以外
 }
 // 3段に分けて、各段を「最後に正解した日が古い順」に並べ、繋げて返す。
@@ -7003,6 +7044,8 @@ els["import-file"].addEventListener("change", (e)=>{
           if(colIdx === -1 || !row[colIdx]) return;
           const ts = new Date(row[colIdx]+"T00:00:00").getTime();
           if(isNaN(ts)) return;
+          // ★最終正答日は、正解した日の一覧（2026-10-08）にも足す（重ならない。今ある日は消さない）
+          if(field === "lastCorrectAt") addCorrectDay(next, ts);
           if(!next[field] || ts > next[field]) next[field] = ts; // 新しいほうを採る
         };
         mergeDate("lastCorrectAt", lastCorrectIdx);
@@ -7551,6 +7594,68 @@ els["import-parts-file"].addEventListener("change", (e)=>{
     if(!r){ alert("分けた部分の記録のCSVとして読み取れませんでした。このアプリの「分けて答えた部分の記録をエクスポート」で書き出したファイルを選んでください。"); return; }
     alert(["分けて答えた部分の記録を取り込みました。", "新しく入れた部分: " + r.added, "こちらより新しかったので入れかえた部分: " + r.replaced,
            "こちらのほうが新しい・同じなので入れなかった部分: " + r.kept].concat(r.unknown ? ["いまの問題に無い部分: " + r.unknown] : []).concat(r.bad ? ["読めなかった行: " + r.bad] : []).join(String.fromCharCode(10)));
+  };
+  reader.readAsText(file, "UTF-8");
+});
+// ---- 正解した日の記録（stats の correctDays）の書き出し・取り込み（端末の引越し用・2026-10-08）----
+//   ・★今の「正解・不正解の記録」CSV とは別のファイル（あちらの列・形は変えない）
+//   ・1行＝1枚のカード（小問も）。正解した日は「YYYY-MM-DD」を半角スペースで並べる。手で定着＝一覧の「定着した」ボタンの印（1）
+//   ・correctDays が無い今までの記録は、最終正答日を1日として出す（correctDaysOf と同じ）
+//   ・取り込み: ID で突き合わせ、★日は合わせる（重ならない・今ある日は消さない＝二重にならない）。
+//     ★記録がまだ無いカードには作らない（先に「正解・不正解の記録」のCSVを取り込む。数だけ知らせる）
+const DAYS_HEADER = ["ID","正解した日","手で定着"];
+function correctDayRows(){
+  const rows = [DAYS_HEADER.slice()];
+  Object.keys(stats).sort().forEach(id => {
+    const s = stats[id];
+    if(!s || isPartId(id)) return;
+    const ds = correctDaysOf(s);
+    if(!ds.length && !s.manualMastered) return;
+    rows.push([id, ds.join(" "), s.manualMastered ? 1 : ""]);
+  });
+  return rows;
+}
+function correctDayImportRows(rows){
+  const head = rows[0] || [], col = n => head.indexOf(n);
+  if(head[0] !== "ID" || col("正解した日") < 0) return null;
+  const res = { merged: 0, same: 0, norecord: 0, bad: 0 };
+  let dirty = false;
+  rows.slice(1).forEach(r => {
+    const id = String(r[col("ID")] || "").trim();
+    if(!id){ if(r.some(v => String(v || "").trim())) res.bad++; return; }
+    const days = String(r[col("正解した日")] || "").split(/\s+/).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x));
+    const manual = col("手で定着") >= 0 && String(r[col("手で定着")] || "").trim() === "1";
+    const s = stats[id];
+    if(!s || isPartId(id)){ res.norecord++; return; }
+    const before = JSON.stringify([correctDaysOf(s), !!s.manualMastered]);
+    const have = correctDaysOf(s);
+    days.filter(k => have.indexOf(k) < 0).forEach(k => addCorrectDay(s, new Date(k + "T00:00:00").getTime()));   // ★増える日があるときだけ書く
+    if(manual && !((s.wrong||0) > 0 && (s.box||0) === 0)) s.manualMastered = 1;
+    if(JSON.stringify([correctDaysOf(s), !!s.manualMastered]) !== before){ res.merged++; dirty = true; } else res.same++;
+  });
+  if(dirty) saveStats();
+  return res;
+}
+els["export-days-link"].addEventListener("click", ()=>{
+  const rows = correctDayRows();
+  if(rows.length <= 1){ alert("正解した日の記録はまだありません。"); return; }
+  downloadCsv(rows, "社会一問一答_正解した日の記録");
+});
+els["import-days-link"].addEventListener("click", ()=> els["import-days-file"].click());
+els["import-days-file"].addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  els["import-days-file"].value = "";
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{
+    let r = null;
+    try{ r = correctDayImportRows(parseCSV(String(ev.target.result))); }catch(err){ console.error(err); }
+    if(!r){ alert("正解した日の記録のCSVとして読み取れませんでした。このアプリの「正解した日の記録をエクスポート」で書き出したファイルを選んでください。"); return; }
+    renderHome();
+    if(els["screen-list"].classList.contains("active")) renderListItems();
+    alert(["正解した日の記録を取り込みました。", "日を足したカード: " + r.merged, "すでに同じだったカード: " + r.same]
+      .concat(r.norecord ? ["記録がまだ無いので入れなかったカード: " + r.norecord + "（先に「CSVから記録をインポートする」で記録を入れてから、もう一度取り込んでください）"] : [])
+      .concat(r.bad ? ["読めなかった行: " + r.bad] : []).join(String.fromCharCode(10)));
   };
   reader.readAsText(file, "UTF-8");
 });
@@ -10941,7 +11046,10 @@ function sendSnapshotIfDue(){
   try{
     const rows = recordCsvRows();
     try{ window.localStorage.setItem(SEND_SNAP_KEY, day); }catch(e){}
-    sendEnqueue("snapshot_" + day, "snapshot", "battle/snapshot/" + day + ".json", { app: "battle", day: day, at: new Date().toISOString(), header: rows[0], rows: rows.slice(1) }, true);
+    // ★2026-10-08 正解した日（定着＝ちがう日に3回正解）は、header/rows の形を変えずに別の欄 correctDays に { ID: ["YYYY-MM-DD", …] }
+    const correctDays = {};
+    correctDayRows().slice(1).forEach(r => { if(r[1]) correctDays[r[0]] = r[1].split(" "); });
+    sendEnqueue("snapshot_" + day, "snapshot", "battle/snapshot/" + day + ".json", { app: "battle", day: day, at: new Date().toISOString(), header: rows[0], rows: rows.slice(1), correctDays: correctDays }, true);
   }catch(e){ console.error("send snapshot failed", e); }
 }
 // ★2026-10-06 いちばん新しい知らせを覚えておく（うしろで送り終わったときの数の書きかえで、「送れました」などが消えないように）
@@ -11070,14 +11178,14 @@ function planMissOf(no){ const m = planLoad(PLAN_MISS_KEY) || {}; return m[no] |
 // 小問・部分の id → カード／大問の id（候補と同じ形）
 function planCardIdOf(id){ const dm = DAIMON_ITEM.get(id); return dm ? dm.g.key : id; }
 function planWeakRank(id, missSet){
-  if(missSet.has(id)) return { r: 0, at: 0 };
+  if(missSet.has(id)) return { r: 0, o: 0, at: 0 };
   const i = QA_DATA.findIndex(d => d.id === id);
-  if(i < 0) return { r: 3, at: 0 };
+  if(i < 0) return { r: 3, o: 3, at: 0 };
   const d = QA_DATA[i];
   let tier, at;
   if(splitModeOf(id) === "split"){
     const g = SPLIT_CARD.get(id);
-    tier = g.items.reduce((m, it) => Math.min(m, tierOfStat(partStats[it.id])), 2);
+    tier = g.items.reduce((m, it) => Math.min(m, tierOfStat(partStats[it.id], true)), 2);   // ★部分は今までどおり
     at = g.items.reduce((m, it) => Math.min(m, (partStats[it.id] && partStats[it.id].lastCorrectAt) || 0), Infinity);
   }else if(isDaimonEntry(d)){
     tier = tierOf(i);
@@ -11086,7 +11194,13 @@ function planWeakRank(id, missSet){
     tier = tierOf(i);
     at = (stats[id] && stats[id].lastCorrectAt) || 0;
   }
-  return { r: tier === 1 ? 1 : (tier === 0 ? 2 : 3), at: at === Infinity ? 0 : at };
+  const r = tier === 1 ? 1 : (tier === 0 ? 2 : 3);
+  // ★2026-10-08 定着＝ちがう日に3回正解。まだ定着していない（2段目）でも、まちがえていなくて今日もう正解したカードは、
+  //   今日もう一度やっても定着に近づかない（同じ日は1回）ので、並びだけ「まだ正解していない」のうしろに回す（o）。r（見出しの苦手／まだ／定着）は変えない
+  const s0 = stats[id];
+  const o = (r === 1 && !isDaimonEntry(d) && splitModeOf(id) !== "split" && s0 && !((s0.wrong||0) > 0 && (s0.box||0) <= 1)
+    && correctDaysOf(s0).indexOf(dateToYMD(Date.now())) >= 0) ? 2.5 : r;
+  return { r: r, o: o, at: at === Infinity ? 0 : at };
 }
 // ★2026-10-08 ユーザー「理科だけで35問出ました。ちゃんと理科20と社会15出るようにしてください」
 //   count は「カードの枚数」ではなく「答える回数」（weightOf と同じ数え方: 分けて出すカードは出す部分の数・まとめては1・大問は答える小問の数）。
@@ -11124,7 +11238,7 @@ function planItemPick(it, no, idx){
     const missSet = new Set();
     if(s) s.items.forEach((x, j) => { if(j < idx) (missAll[planItemKey(x, j)] || []).forEach(id => missSet.add(id)); });
     const ranked = ids.map((id, k) => Object.assign({ id: id, k: k }, planWeakRank(id, missSet)))
-      .sort((a, b) => (a.r - b.r) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
+      .sort((a, b) => (a.o - b.o) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
     const rankedIds = ranked.map(x => x.id);
     out.ids = n > 0 ? planTakeCount(rankedIds, n) : rankedIds;
     const missIds = new Set(ranked.filter(x => x.r === 0).map(x => x.id));
