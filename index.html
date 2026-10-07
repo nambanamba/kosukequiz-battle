@@ -1700,6 +1700,11 @@
   .plan-peek-list li{ margin:4px 0; }
   .plan-peek-meta{ font-size:11.5px; color:var(--ink-soft); }
   .plan-peek-count{ font-size:12px; color:var(--ink-soft); font-weight:700; margin-bottom:4px; }
+  .plan-peek-ans-btn{ margin:0 0 6px; padding:6px 10px; border:1px solid var(--navy-deep); border-radius:10px; background:#fff; color:var(--navy-deep); font-size:12.5px; font-weight:700; cursor:pointer; }
+  .plan-peek-fig{ display:block; max-width:140px; max-height:100px; width:auto; height:auto; margin:3px 0; border:1px solid var(--paper-line); border-radius:6px; cursor:zoom-in; }
+  .plan-peek-item{ margin:3px 0 3px 6px; padding-left:6px; border-left:2px solid var(--paper-line); }
+  .plan-peek-item-q{ font-size:12.5px; }
+  .plan-peek-a{ font-size:12.5px; color:var(--ok); font-weight:700; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
@@ -11092,15 +11097,39 @@ function planRowPick(it, no, idx){
 }
 // 一覧の1行の状態（苦手／まだ／定着）。並べ替え（planWeakRank）と同じ見方（分けては部分・大問は小問）
 function planTierLabel(id){ return ({ 1: "苦手", 2: "まだ", 3: "定着" })[planWeakRank(id, new Set()).r] || ""; }
-// ★2026-10-08 「中身を見る」の一覧には答えを出さない（ユーザー「いらないので消してください」＝#25 の親の合言葉と
-//   「答えを見る（合言葉）」を取り除いた）。答えの文字はどの端末でも画面（DOM）に作らない。
-//   前に保存した kq_battle_parent_pass_v1 が端末に残っていても読まない（消しもしない）
+// ★2026-10-08 「中身を見る」（ユーザー「中身を見るに、イラストや答えを出してほしい」）。#25 の親の合言葉は取り除いた
+//   （前に保存した kq_battle_parent_pass_v1 が端末に残っていても読まない・消しもしない）。
+//   ・各問題に図を小さく出す（タップで大きく）。大問は大問の図＋小問ごとの図、分けてはカードの図
+//   ・一覧の上に「答えを見る／答えをかくす」（最初はかくす）。かくしている間は、答えの文字・答えの図を画面（DOM）に作らない
+//   ・一覧を閉じたら、次に開くときはまたかくす
+function planPeekFig(parent, name){
+  if(!name) return;
+  const img = document.createElement("img");
+  img.className = "plan-peek-fig";
+  img.src = "images/" + name;
+  img.alt = "図";
+  img.loading = "lazy";
+  img.addEventListener("click", () => openLightbox(img.src));
+  parent.appendChild(img);
+}
+function planPeekAns(parent, text){
+  const el = document.createElement("div");
+  el.className = "plan-peek-a";
+  el.textContent = text;
+  parent.appendChild(el);
+}
 function renderPlanPeek(panel, ids){
   panel.innerHTML = "";
+  const showAns = panel.dataset.ans === "1";
   const cnt = document.createElement("div");
   cnt.className = "plan-peek-count";
   cnt.textContent = "答える問題：" + planSumWeight(ids) + "問（" + ids.length + "枚）";
   panel.appendChild(cnt);
+  const tg = document.createElement("button");
+  tg.type = "button"; tg.className = "plan-peek-ans-btn";
+  tg.textContent = showAns ? "答えをかくす" : "答えを見る";
+  tg.addEventListener("click", () => { if(showAns) delete panel.dataset.ans; else panel.dataset.ans = "1"; renderPlanPeek(panel, ids); });
+  panel.appendChild(tg);
   const ol = document.createElement("ol");
   ol.className = "plan-peek-list";
   ids.forEach(id => {
@@ -11118,6 +11147,30 @@ function renderPlanPeek(panel, ids){
     meta.textContent = (d.u || "") + "　" + tier;
     meta.dataset.tier = tier;
     li.appendChild(head); li.appendChild(meta);
+    if(isDaimonEntry(d)){
+      const g = d.daimon;
+      planPeekFig(li, g.file);
+      g.items.forEach((it, k) => {
+        const sub = document.createElement("div");
+        sub.className = "plan-peek-item";
+        const lab = document.createElement("div");
+        lab.className = "plan-peek-item-q";
+        const iq = String(it.q || "").replace(/\s+/g, " ");
+        lab.textContent = (it.label || ("(" + (k + 1) + ")")) + " " + iq.slice(0, 40) + (iq.length > 40 ? "…" : "");
+        sub.appendChild(lab);
+        planPeekFig(sub, it.file);
+        if(showAns){ planPeekAns(sub, "こたえ：" + it.a); planPeekFig(sub, it.aFile); }
+        li.appendChild(sub);
+      });
+    }else{
+      const v = getQById(id) || d;
+      planPeekFig(li, v.img);
+      if(showAns){
+        const sp = SPLIT_CARD.get(id);
+        if(sp) sp.items.forEach(it => planPeekAns(li, "こたえ " + it.label + " " + it.a));
+        else planPeekAns(li, "こたえ：" + v.a);
+      }
+    }
     ol.appendChild(li);
   });
   panel.appendChild(ol);
@@ -11263,7 +11316,7 @@ function renderPlanSet(container, no, prefix){
     panel.style.display = "none";
     container.appendChild(panel);
     b3.addEventListener("click", () => {
-      if(panel.style.display !== "none"){ panel.style.display = "none"; panel.innerHTML = ""; b3.textContent = "中身を見る"; return; }
+      if(panel.style.display !== "none"){ panel.style.display = "none"; delete panel.dataset.ans; panel.innerHTML = ""; b3.textContent = "中身を見る"; return; }
       // ★押した時点で出す問題と順番を決めて保存（すでに保存してあればそれ）
       let p = planSavedPick(no, key);
       if(!p){ p = planItemPick(it, no, i); planSavePick(no, key, p); }

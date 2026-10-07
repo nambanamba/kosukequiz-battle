@@ -1,9 +1,10 @@
 // 今日やること「中身を見る」（2026-10-07 ユーザー「中身を見るをお願いします」）
 // 本物の Chrome・390x844・まねの GitHub API サーバ（本物の GitHub には触らない）。使い方: node tools/mikaku/plan_peek_probe.mjs
 // 見ること:
-//   K1 各行に「中身を見る」→ その行で出す問題の一覧（単元・苦手／まだ／定着）。★答えは画面（DOM）に無く、答えのボタンも出ない
-//   P  ★親の合言葉は取り除いた（2026-10-08 ユーザー「いらないので消してください」）: 合言葉の欄が無い・
-//      前に保存した kq_battle_parent_pass_v1 が残っていても、答えのボタンも答えも出ない
+//   K1 各行に「中身を見る」→ その行で出す問題の一覧（単元・苦手／まだ／定着）。★はじめは答えをかくす（答えは画面（DOM）に無い）
+//   F  ★各問題に図を小さく出す・タップで大きく（2026-10-08 ユーザー「中身を見るに、イラストや答えを出してほしい」）
+//   P  ★親の合言葉は取り除いた。「答えを見る／答えをかくす」で答えを切りかえる（合言葉なし）・閉じて開き直すとまたかくす
+//   D  大問は小問ごとに図と答え（答えの図は「答えを見る」のときだけ）
 //   K2 order:"weak"＋count の行: 見た一覧＝出る問題・同じ順番（そのあと別の行で記録が変わって並びが変わっても、保存した一覧で出す）
 //   K3 unit＋count（ランダム）の行: 見た一覧＝出る問題・同じ順番（二人でも同じ）
 //   K4 その行を「できた」にしたら、保存した一覧は消える
@@ -31,12 +32,18 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, "127.0.0.1", r));
 const PAGE_URL = "http://127.0.0.1:" + server.address().port + "/index.html";
+// D 用: 図つきの小問が2つ以上ある大問（紙・ロング編でないもの。答えの図があればそれを選ぶ）を、いまの daimon_data.js から選ぶ
+const DM = await (async () => { const vm = await import("node:vm"); const c = {}; vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, "daimon_data.js"), "utf8").replace(/^const /mg, "var "), c);
+  const gs = (c.DAIMON_DATA || []).filter(g => !g.paper && !g.long && g.items.filter(i => i.file).length >= 2);
+  return gs.find(g => g.items.some(i => i.aFile)) || gs[0]; })();
 const SETS = {
   "plan/index.json": { sets: [1] },
   "plan/0001.json": { no: 1, label: "10/8 のぶん", items: [
     { subj: "理科", title: "朝：②心臓と血管（2枚）", ids: ["r6p12", "r6p11"] },
     { subj: "理科", title: "夜：朝まちがえたのから2問", ids: ["r6p13", "r6p11", "r6p12", "r6p14"], order: "weak", count: 2 },
-    { subj: "社会", title: "今週の回から3問", unit: "第6回.鎌倉時代", count: 3 } ] }
+    { subj: "社会", title: "今週の回から3問", unit: "第6回.鎌倉時代", count: 3 },
+    { subj: DM && DM.subj === "社会" ? "社会" : "理科", title: "大問（図）", ids: [DM ? DM.key : "none"] } ] }
 };
 const TOKEN = "github_pat_TESTONLY_1234567890";
 let mode = "up", gets = 0, written = new Map();
@@ -98,19 +105,52 @@ async function run(label, src) {
     const k1 = await peek(1);
     await pg.screenshot({ path: path.join(SHOTS, label + "_K1.png"), fullPage: true }).catch(() => {});
     const ansHidden = k1 && k1.ids.every(id => !k1.text.includes(A[id]));
-    check("K1 「中身を見る」→ 一覧（" + (k1 && k1.ids.join(" ")) + "・" + (k1 && k1.tiers.join(" ")) + "）・合言葉なし: 答えは画面に無い・答えのボタンも無い（" + (k1 && k1.ansBtn) + "）",
-      k1 && k1.vis && k1.ids.length === 2 && k1.tiers.every(t => t === "まだ") && ansHidden && k1.ansBtn === "", JSON.stringify(k1 && k1.ids));
-    // P: 親の合言葉は取り除いた（2026-10-08 ユーザー「いらないので消してください」）。
-    //    #25 のころに保存した合言葉（変換した値）が端末に残っていても、答えのボタン・答えは出ない。ホームに合言葉の欄も無い
-    await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[1].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(150);   // とじる
-    await pg.evaluate(() => localStorage.setItem("kq_battle_parent_pass_v1", "0123456789abcdef"));   // 残っている合言葉（読まれないはず）
+    check("K1 「中身を見る」→ 一覧（" + (k1 && k1.ids.join(" ")) + "・" + (k1 && k1.tiers.join(" ")) + "）・はじめは答えをかくす（答えは画面に無い）・「" + (k1 && k1.ansBtn) + "」が出る",
+      k1 && k1.vis && k1.ids.length === 2 && k1.tiers.every(t => t === "まだ") && ansHidden && k1.ansBtn === "答えを見る", JSON.stringify(k1 && k1.ids));
+    // F: 図（2026-10-08 ユーザー「中身を見るに、イラストや答えを出してほしい」）。r6p11〜14 はどれも図つき
+    const figs = await pg.evaluate(() => [...document.querySelectorAll("#plan-cur .plan-peek")[1].querySelectorAll("li")].map(l => [...l.querySelectorAll("img.plan-peek-fig")].map(i => i.getAttribute("src"))));
+    const wantFig = await pg.evaluate(ids => ids.map(id => "images/" + QA_DATA.find(d => d.id === id).img), (k1 && k1.ids) || []);
+    const lb = await pg.evaluate(() => { const i = document.querySelectorAll("#plan-cur .plan-peek")[1].querySelector("img.plan-peek-fig"); if (!i) return false; i.click(); const o = document.getElementById("lightbox-overlay"); const ok = o.classList.contains("show"); document.getElementById("lightbox-close").click(); return ok; });
+    check("F 各問題に図が小さく出る・タップで大きく（" + JSON.stringify(figs) + "）", figs.length === 2 && figs.every((f, k) => f.length === 1 && f[0] === wantFig[k]) && lb, JSON.stringify({ wantFig, lb }));
+    // P: 親の合言葉は取り除いた。答えは「答えを見る／答えをかくす」で切りかえる（合言葉なし）
+    await pg.evaluate(() => localStorage.setItem("kq_battle_parent_pass_v1", "0123456789abcdef"));   // #25 のころの合言葉が残っていても関係ない
     const passBox = await pg.evaluate(() => !!(document.getElementById("parent-pass") || document.getElementById("parent-pass-box")));
-    const p1 = await peek(1);
+    const clickTg = () => pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-peek")[1].querySelector(".plan-peek-ans-btn").click());
+    const panelNow = () => pg.evaluate(() => { const p = document.querySelectorAll("#plan-cur .plan-peek")[1]; return { text: p.textContent, btn: (p.querySelector(".plan-peek-ans-btn") || {}).textContent || "" }; });
+    await clickTg(); await pg.waitForTimeout(100);
+    const shown = await panelNow();
     await pg.screenshot({ path: path.join(SHOTS, label + "_P.png"), fullPage: true }).catch(() => {});
-    check("P 合言葉の欄が無い・合言葉が端末に残っていても「中身を見る」に答えのボタンも答えも出ない",
-      !passBox && p1 && p1.ids.length === 2 && p1.ansBtn === "" && p1.ids.every(id => !p1.text.includes(A[id])) && !p1.text.includes("合言葉"),
-      JSON.stringify({ passBox, btn: p1 && p1.ansBtn }));
+    await clickTg(); await pg.waitForTimeout(100);
+    const hidden = await panelNow();
+    await clickTg(); await pg.waitForTimeout(100);
+    await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[1].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(150);   // とじる
+    const p2 = await peek(1);   // 開き直す
+    const ids1 = (k1 && k1.ids) || [];
+    check("P 合言葉の欄が無い・「答えを見る」で各問題の答えが出る →「答えをかくす」で消える",
+      !passBox && shown.btn === "答えをかくす" && ids1.every(id => shown.text.includes(A[id])) && hidden.btn === "答えを見る" && ids1.every(id => !hidden.text.includes(A[id])) && !shown.text.includes("合言葉"),
+      JSON.stringify({ passBox, b1: shown.btn, b2: hidden.btn }));
+    check("P 一覧を閉じて開き直すと、また答えはかくれている", p2 && p2.ansBtn === "答えを見る" && p2.ids.every(id => !p2.text.includes(A[id])), JSON.stringify(p2 && p2.ansBtn));
     await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[1].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(150);
+    // D: 大問は小問ごとに図と答え（4行目＝図つきの大問1つ）
+    await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[3].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(200);
+    const dm = await pg.evaluate(key => {
+      const p = document.querySelectorAll("#plan-cur .plan-peek")[3];
+      const d = QA_DATA.find(x => x.id === key);
+      if (!p || !d) return null;
+      const before = { items: p.querySelectorAll(".plan-peek-item").length, figs: [...p.querySelectorAll("img.plan-peek-fig")].map(i => i.getAttribute("src")), text: p.textContent };
+      const b = p.querySelector(".plan-peek-ans-btn"); if (!b) return { before };
+      b.click();
+      const after = { text: p.textContent, figs: [...p.querySelectorAll("img.plan-peek-fig")].map(i => i.getAttribute("src")) };
+      const g = d.daimon;
+      return { id: d.id, n: g.items.length, before, after,
+        wantQ: [g.file, ...g.items.map(it => it.file)].filter(Boolean).map(f => "images/" + f),
+        wantA: g.items.map(it => it.a), aFiles: g.items.map(it => it.aFile).filter(Boolean).map(f => "images/" + f) };
+    }, DM && DM.key);
+    await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[3].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(150);
+    check("D 大問: 小問ごとに図・答えを見ると小問ごとの答え（" + (dm && dm.id) + "）",
+      dm && !dm.none && dm.before.items === dm.n && JSON.stringify(dm.before.figs) === JSON.stringify(dm.wantQ) && dm.wantA.every(a => !dm.before.text.includes("こたえ：" + a))
+        && dm.wantA.every(a => dm.after.text.includes("こたえ：" + a)) && dm.aFiles.every(f => dm.after.figs.includes(f) && !dm.before.figs.includes(f)),
+      JSON.stringify(dm && { n: dm.n, items: dm.before && dm.before.items, figs: dm.before && dm.before.figs.length, want: dm.wantQ && dm.wantQ.length }));
     // K2: 朝の行で r6p12 を1回目✕ → 並べ替えなら r6p12 が先頭に来るはずだが、保存した一覧（見たもの）で出す
     await startRow("#plan-cur", 0); await pg.waitForTimeout(300);
     await answerBy((id, n) => !(id === "r6p12" && n === 1)); await home();
