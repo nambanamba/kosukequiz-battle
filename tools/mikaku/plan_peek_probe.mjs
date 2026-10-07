@@ -1,9 +1,9 @@
 // 今日やること「中身を見る」（2026-10-07 ユーザー「中身を見るをお願いします」）
 // 本物の Chrome・390x844・まねの GitHub API サーバ（本物の GitHub には触らない）。使い方: node tools/mikaku/plan_peek_probe.mjs
 // 見ること:
-//   K1 各行に「中身を見る」→ その行で出す問題の一覧（単元・苦手／まだ／定着）。★合言葉が無い端末では答えは画面（DOM）に無く、答えのボタンも出ない
-//   P  ★親の合言葉（2026-10-08 ユーザー「答えを見るですが、親に用意して、本人からは消してください」）: ホームで合言葉を保存 →
-//      「答えを見る（合言葉）」が出る → ちがう合言葉では開かない → 正しい合言葉で答えが出る → 一覧を閉じて開き直すと、また閉じている
+//   K1 各行に「中身を見る」→ その行で出す問題の一覧（単元・苦手／まだ／定着）。★答えは画面（DOM）に無く、答えのボタンも出ない
+//   P  ★親の合言葉は取り除いた（2026-10-08 ユーザー「いらないので消してください」）: 合言葉の欄が無い・
+//      前に保存した kq_battle_parent_pass_v1 が残っていても、答えのボタンも答えも出ない
 //   K2 order:"weak"＋count の行: 見た一覧＝出る問題・同じ順番（そのあと別の行で記録が変わって並びが変わっても、保存した一覧で出す）
 //   K3 unit＋count（ランダム）の行: 見た一覧＝出る問題・同じ順番（二人でも同じ）
 //   K4 その行を「できた」にしたら、保存した一覧は消える
@@ -14,7 +14,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_plan_peek"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "ada874e";   // 直す前（合言葉の前。答えのボタンが子どもにも見えていた）
+const BASE_COMMIT = "b3f7f51";   // 直す前（親の合言葉があった。残っている合言葉で答えのボタンが出る）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -100,31 +100,16 @@ async function run(label, src) {
     const ansHidden = k1 && k1.ids.every(id => !k1.text.includes(A[id]));
     check("K1 「中身を見る」→ 一覧（" + (k1 && k1.ids.join(" ")) + "・" + (k1 && k1.tiers.join(" ")) + "）・合言葉なし: 答えは画面に無い・答えのボタンも無い（" + (k1 && k1.ansBtn) + "）",
       k1 && k1.vis && k1.ids.length === 2 && k1.tiers.every(t => t === "まだ") && ansHidden && k1.ansBtn === "", JSON.stringify(k1 && k1.ids));
-    // P: 親の合言葉
-    const PASS = "oya-1234";
-    const passSet = await pg.evaluate(p => { const i = document.getElementById("parent-pass"), b = document.getElementById("parent-pass-save-btn"); if (!i || !b) return false; i.value = p; b.click(); return true; }, PASS);
-    await pg.waitForTimeout(200);
-    const stored = await pg.evaluate(() => localStorage.getItem("kq_battle_parent_pass_v1") || "");
-    const p1 = await peek(1);
-    const pBtn = p1 && p1.ansBtn === "答えを見る（合言葉）" && p1.ids.every(id => !p1.text.includes(A[id]));
-    const tryPass = async t => { await pg.evaluate(t => { const p = document.querySelectorAll("#plan-cur .plan-peek")[1]; const ab = p.querySelector(".plan-peek-ans-btn:not(.plan-peek-pass-go)"); if (ab && ab.style.display !== "none") ab.click();
-      const i = p.querySelector(".plan-peek-pass"); if (i) { i.value = t; p.querySelector(".plan-peek-pass-go").click(); } }, t); await pg.waitForTimeout(150);
-      return pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-peek")[1].textContent); };
-    const wrong = await tryPass("chigau");
-    const right = await tryPass(PASS);
-    await pg.screenshot({ path: path.join(SHOTS, label + "_P.png"), fullPage: true }).catch(() => {});
+    // P: 親の合言葉は取り除いた（2026-10-08 ユーザー「いらないので消してください」）。
+    //    #25 のころに保存した合言葉（変換した値）が端末に残っていても、答えのボタン・答えは出ない。ホームに合言葉の欄も無い
     await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[1].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(150);   // とじる
-    const p2 = await peek(1);   // 開き直す
-    const ids1 = (p1 && p1.ids) || [];
-    check("P 合言葉を保存（端末だけ・そのままは置かない）→「答えを見る（合言葉）」が出る",
-      passSet && stored && !stored.includes(PASS) && pBtn, JSON.stringify({ passSet, stored, btn: p1 && p1.ansBtn }));
-    check("P ちがう合言葉では答えが出ない・正しい合言葉で答えが出る",
-      ids1.length === 2 && ids1.every(id => !wrong.includes(A[id])) && ids1.every(id => right.includes(A[id])) && wrong.includes("合言葉がちがいます"), "");
-    check("P 一覧を閉じて開き直すと、また答えは閉じている", p2 && p2.ids.every(id => !p2.text.includes(A[id])) && p2.ansBtn === "答えを見る（合言葉）", JSON.stringify(p2 && p2.ansBtn));
-    // 子どもの端末と同じに戻す（合言葉を消す）→ ボタンが消える
-    await pg.evaluate(() => { document.getElementById("parent-pass").value = ""; document.getElementById("parent-pass-save-btn").click(); }); await pg.waitForTimeout(200);
-    const p3 = await peek(1);
-    check("P 合言葉を消すと、答えのボタンは出ない", p3 && p3.ansBtn === "" && !(await pg.evaluate(() => localStorage.getItem("kq_battle_parent_pass_v1"))), JSON.stringify(p3 && p3.ansBtn));
+    await pg.evaluate(() => localStorage.setItem("kq_battle_parent_pass_v1", "0123456789abcdef"));   // 残っている合言葉（読まれないはず）
+    const passBox = await pg.evaluate(() => !!(document.getElementById("parent-pass") || document.getElementById("parent-pass-box")));
+    const p1 = await peek(1);
+    await pg.screenshot({ path: path.join(SHOTS, label + "_P.png"), fullPage: true }).catch(() => {});
+    check("P 合言葉の欄が無い・合言葉が端末に残っていても「中身を見る」に答えのボタンも答えも出ない",
+      !passBox && p1 && p1.ids.length === 2 && p1.ansBtn === "" && p1.ids.every(id => !p1.text.includes(A[id])) && !p1.text.includes("合言葉"),
+      JSON.stringify({ passBox, btn: p1 && p1.ansBtn }));
     await pg.evaluate(() => document.querySelectorAll("#plan-cur .plan-row")[1].querySelector(".plan-peek-btn").click()); await pg.waitForTimeout(150);
     // K2: 朝の行で r6p12 を1回目✕ → 並べ替えなら r6p12 が先頭に来るはずだが、保存した一覧（見たもの）で出す
     await startRow("#plan-cur", 0); await pg.waitForTimeout(300);
