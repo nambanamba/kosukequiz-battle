@@ -6513,8 +6513,8 @@ function buildListRow(i){
       metaTagsHtml(d)+
       (d.note ? '<div class="list-source">出典：'+escapeHtml(d.note)+'</div>' : '')+
       (d.img ? '<div class="list-img-wrap"><img class="'+(isTallImg(d.img)?'tall':'')+'" src="images/'+escapeHtml(d.img)+'" alt="資料"'+(IMG_SIZES[d.img] ? ' width="'+IMG_SIZES[d.img][0]+'" height="'+IMG_SIZES[d.img][1]+'"' : '')+'></div>' : '')+
-      '<div class="list-q">'+escapeHtml(d.q)+'</div>'+
-      '<div class="list-a">こたえ：'+escapeHtml(d.a)+'</div>'+
+      '<div class="list-q">'+escapeHtml(displayQ(d.q))+'</div>'+
+      '<div class="list-a">こたえ：'+escapeHtml(displayA(d.q, d.a))+'</div>'+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
       listStatControlsHtml(base.id, tier)+
       '<div class="list-item-footer">'+
@@ -8084,8 +8084,8 @@ function startSoloCard(){
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q-id"].textContent = "No."+d.id;
   els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
-  els["solo-q"].textContent = d.q;
-  els["solo-a"].textContent = d.a;
+  els["solo-q"].textContent = displayQ(d.q);
+  els["solo-a"].textContent = displayA(d.q, d.a);
   els["solo-sol"].textContent = d.sol || "";
   els["solo-sol-block"].style.display = d.sol ? "block" : "none";
   els["solo-view"].style.display = "block";
@@ -8418,7 +8418,7 @@ function finishSoloQuiz(){
       const d = getQById(m.id);
       const div = document.createElement("div");
       div.className = "miss-item";
-      div.innerHTML = '<div class="q">'+escapeHtml(d.q)+'</div><div class="a">'+escapeHtml(d.a)+'</div>';
+      div.innerHTML = '<div class="q">'+escapeHtml(displayQ(d.q))+'</div><div class="a">'+escapeHtml(displayA(d.q, d.a))+'</div>';
       els["solo-miss-list"].appendChild(div);
     });
   }
@@ -8570,6 +8570,49 @@ function buildCheeseTrack(){
 //     答えの数 … 答えの中の丸数字（①〜⑳）の数。無ければ「…」の数（「Ⅰ…文永　Ⅱ…弘安」の形）。どちらも無ければ1
 //   大問の小問: これまでどおり b×2（式は使わない。大問は図があり問いも長いので、式にすると上限に張りつくため）
 //   最後に速さの倍率（SPEED_FACTORS）をかける。小数は四捨五入、最低1秒
+// ============================================================
+// ★選ぶ問題の見せ方（2026-10-08 ユーザー「社会の長文の正しいものを選ぶ問題ですが、改行してほしい、
+//   記号をつけてほしい、もう少し時間を延ばしてほしい」）。data.js は変えず、表示だけ変える
+// ============================================================
+//   対象: 問いの文の最後に「…」「…」が2つ以上続けて並び、本文に「正しい／まちがい／選ぶ／どれ／どの」があるもの
+//         （例 g6r44・g6r45。「「魏」「漢」…を古い順に」のように後ろに文が続くものは対象外）
+//   問い: 本文 → 1行あけ → 「ア　…」「イ　…」と1つずつ改行
+//   答え: 答えの文に出てくる選択肢の文に同じ記号を付けて「ア（…）」（見つからなければ今のまま）
+//   時間: 選択肢1つにつき 基本×0.5（基本10秒なら+5秒）を足す（上限の3倍とは別に足す）。最後に速さの倍率
+const CHOICE_LABELS = ["ア", "イ", "ウ", "エ", "オ", "カ", "キ", "ク", "ケ", "コ"];
+const CHOICE_TIME_FACTOR = 0.5;
+const choiceSplitCache = new Map();
+function splitChoiceQ(q){
+  const s = String(q || "");
+  if(choiceSplitCache.has(s)) return choiceSplitCache.get(s);
+  let res = null;
+  const m = /^([\s\S]*?[^」\s　])[\s　]*((?:「[^「」]+」[、・\s　]*){2,})$/.exec(s);
+  if(m && /正し|まちが|誤|選|どれ|どの/.test(m[1])){
+    const choices = (m[2].match(/「[^「」]+」/g) || []).map(c => c.slice(1, -1));
+    if(choices.length >= 2 && choices.length <= CHOICE_LABELS.length) res = { stem: m[1], choices: choices };
+  }
+  choiceSplitCache.set(s, res);
+  return res;
+}
+function choiceCountOf(q){ const c = splitChoiceQ(q); return c ? c.choices.length : 0; }
+function displayQ(q){
+  const c = splitChoiceQ(q);
+  if(!c) return String(q == null ? "" : q);
+  return c.stem + "\n\n" + c.choices.map((t, i) => CHOICE_LABELS[i] + "　" + t).join("\n");
+}
+function displayA(q, a){
+  const c = splitChoiceQ(q);
+  let s = String(a == null ? "" : a);
+  if(!c) return s;
+  // 長い選択肢から置きかえる（短い文が長い文の一部のとき、二重に記号が付かないように）
+  const order = c.choices.map((t, i) => i).sort((x, y) => c.choices[y].length - c.choices[x].length);
+  order.forEach(i => {
+    const t = c.choices[i], tok = "\u0000" + i + "\u0000";
+    if(s.indexOf("（" + t + "）") >= 0) s = s.split("（" + t + "）").join(tok);
+    else if(s.indexOf(t) >= 0) s = s.split(t).join(tok);
+  });
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => CHOICE_LABELS[+i] + "（" + c.choices[+i] + "）");
+}
 function answerCountOf(a){
   const s = String(a || "");
   const circ = new Set((s.match(/[①-⑳]/g) || []));
@@ -8588,7 +8631,7 @@ function thinkSecFor(id){
     const len = String(d.q || "").length;
     const longSteps = len > 60 ? Math.ceil((len - 60) / 20) : 0;
     const mult = 1 + 0.5 * (n - 1) + (d.img ? 0.5 : 0) + 0.1 * longSteps;
-    sec = b * Math.min(3, mult);
+    sec = b * Math.min(3, mult) + b * CHOICE_TIME_FACTOR * choiceCountOf(d.q);   // ★選ぶ問題は選択肢1つにつき＋（上のコメント）
   }
   return Math.max(1, Math.round(sec * SPEED_FACTORS[speedLevel]));
 }
@@ -8868,7 +8911,7 @@ function showGuestWaitStatus(data){
   hideBigVerdict();
   if(data.type === "skipped"){
     // 問題文だけは、データに入れた改行をそのまま出す（お知らせの文面のほうは今までどおり）
-    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(data.q)+"</span>";
+    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(displayQ(data.q))+"</span>";
   }else if(data.type === "timeup"){
     // ★時間切れ。スキップと違って記録は何も変わらないので、そう伝える。
     //   問題文は出さない（この問題はあとでもう一度出てくるため）
@@ -9577,8 +9620,8 @@ function showQuestion(idx, hostPrivate){
   ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
     els[k].style.display = "";
   });
-  els["battle-q"].textContent = d.q;
-  els["battle-a"].textContent = d.a;
+  els["battle-q"].textContent = displayQ(d.q);
+  els["battle-a"].textContent = displayA(d.q, d.a);
   els["battle-sol"].textContent = d.sol || "";
   els["battle-sol-block"].style.display = d.sol ? "block" : "none";
   els["battle-view"].style.display = "block";
@@ -9816,8 +9859,8 @@ function performSkip(){
   hostSkippedIds.add(skippedId);
 
   const skipped = getQById(skippedId);
-  els["battle-q"].textContent = skipped.q;
-  els["battle-a"].textContent = skipped.a;
+  els["battle-q"].textContent = displayQ(skipped.q);
+  els["battle-a"].textContent = displayA(skipped.q, skipped.a);
   els["battle-sol"].textContent = skipped.sol || "";
   els["battle-sol-block"].style.display = skipped.sol ? "block" : "none";
   els["battle-a-block"].classList.add("show");
@@ -11160,6 +11203,12 @@ function renderPlanPeek(panel, ids){
     head.className = "plan-peek-q";
     const qt = isDaimonEntry(d) ? (daimonName(d.daimon) + "（小問" + d.itemIds.length + "）　" + (d.q || "")) : (getQById(id) || d).q;
     head.textContent = String(qt || "").replace(/\s+/g, " ").slice(0, 46) + (String(qt || "").length > 46 ? "…" : "");
+    const pc = isDaimonEntry(d) ? null : splitChoiceQ(qt);   // ★選ぶ問題は、選択肢を1つずつ改行して記号つきで（切らない）
+    if(pc){
+      const st = pc.stem.replace(/\s+/g, " ");
+      head.textContent = st.slice(0, 46) + (st.length > 46 ? "…" : "") + "\n" + pc.choices.map((t, i) => CHOICE_LABELS[i] + "　" + t).join("\n");
+      head.style.whiteSpace = "pre-wrap";
+    }
     const meta = document.createElement("div");
     meta.className = "plan-peek-meta";
     const tier = planTierLabel(id);
@@ -11187,7 +11236,7 @@ function renderPlanPeek(panel, ids){
       if(showAns){
         const sp = SPLIT_CARD.get(id);
         if(sp) sp.items.forEach(it => planPeekAns(li, "こたえ " + it.label + " " + it.a));
-        else planPeekAns(li, "こたえ：" + v.a);
+        else planPeekAns(li, "こたえ：" + displayA(v.q, v.a));   // ★選ぶ問題は「ア（…）」（#26）
       }
     }
     ol.appendChild(li);
