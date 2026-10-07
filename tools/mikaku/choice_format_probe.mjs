@@ -156,8 +156,9 @@ async function run(label, src) {
       const one = pg2 => pg2.evaluate(() => ({ q: document.getElementById("battle-q").textContent, a: document.getElementById("battle-a").textContent }));
       bs[id] = { sec, h: await one(host.page), g: await one(guest.page) };
       if (id === "g6r44") { await shot(host.page, "B1_host"); await shot(guest.page, "B1_guest"); }
-      await waitVis(host.page, "#judge-row", 15000); await waitVis(guest.page, "#judge-row", 15000);
-      await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+      // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+      await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
+      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
       if (k === 0) { await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }); await tap(host.page, "#next-btn"); }
     }
     const b = bs.g6r44;
