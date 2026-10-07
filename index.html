@@ -1664,6 +1664,10 @@
   /* ★2026-10-02 答え合わせが終わった前の小問は1行にたたむ（タップで開く）。いまの小問が図のすぐ下に来る */
   .daimon-fold{ border-top:1px dashed var(--paper-line); margin-top:6px; }
   .hint-box{ margin:10px 0 6px; }
+  .long-lead{ margin:10px 0 4px; }
+  .long-lead-btn{ display:block; width:100%; padding:10px 12px; border:1.5px solid var(--navy-deep); border-radius:10px; background:#fff; color:var(--navy-deep); font-size:14.5px; font-weight:700; cursor:pointer; }
+  .long-lead-body{ margin-top:8px; padding:10px 12px; border:1px dashed var(--paper-line); border-radius:10px; background:#fffdf7; }
+  .long-where{ margin:6px 0 8px; padding:8px 10px; border-left:4px solid var(--gold); background:#fffaf0; font-size:13.5px; line-height:1.6; color:var(--ink); white-space:pre-wrap; }
   .loop-left{ margin:2px 0 6px; font-size:12.5px; color:var(--ink-soft); text-align:right; }
   .send-box{ margin:16px 0 8px; padding:12px; border:1px dashed var(--paper-line); border-radius:10px; }
   .send-title{ font-size:13px; font-weight:700; color:var(--ink-soft); margin-bottom:6px; }
@@ -2539,7 +2543,8 @@ function daimonSubj(g){ return g && g.subj === "社会" ? "社会" : "理科"; }
   const qaIds = new Set(QA_DATA.map(d => d.id));
   DAIMON.forEach(g => {
     const subj = daimonSubj(g);
-    const u = unitOfKai[subj + "|" + String(g.kai)];
+    // ★2026-10-07 ロング編（g.long）は、ふつうの回とは別の単元（g.unit 例「ロング編.組分け第6回」）に入れる
+    const u = (g.long && typeof g.unit === "string" && g.unit) ? g.unit : unitOfKai[subj + "|" + String(g.kai)];
     // ★単元が見つからない・id がかぶる大問は足さない（黙って別の単元に入れない）
     if(!u || !Array.isArray(g.items) || g.items.length === 0 || qaIds.has(g.key)) return;
     if(g.items.some(it => qaIds.has(it.id) || DAIMON_ITEM.has(it.id))) return;
@@ -7251,6 +7256,12 @@ function studyLogShow(k, id){
   s.la = Date.now();
   // ★書くのは答えたときにまとめて
 }
+// ★ロング編: 本文を開いた（いま出ている問題に印を付ける）
+function studyLogMarkLead(k){
+  const s = studyLogCur(k);
+  if(!s || s.done || !s.cur) return;
+  s.cur.lead = 1;
+}
 // 「こたえを見る」を押した（答えが開いた）
 function studyLogReveal(k){
   const s = studyLogCur(k);
@@ -7266,10 +7277,12 @@ function studyLogAnswer(k, id, r, re){
   const sec = c ? Math.round(((c.rv || now) - c.at) / 100) / 10 : "";
   if(!Array.isArray(s.q)) s.q = [];
   const e = [id, sec, r];
+  const lead = c && c.lead ? 1 : 0;   // ★ロング編: 本文を開いたか（2026-10-07）。6つ目に残す
   // ★2026-10-06 答えが複数のカードは、分けて／まとめての別を5つ目に残す（4つ目は出し直しの印。無いときは0）
   const tag = isPartId(id) ? "分けて" : (SPLIT_CARD.has(id) ? "まとめて" : "");
-  if(re || tag) e.push(re ? 1 : 0);
-  if(tag) e.push(tag);
+  if(re || tag || lead) e.push(re ? 1 : 0);
+  if(tag || lead) e.push(tag);
+  if(lead) e.push(1);
   s.q.push(e);
   if(!s.shownIds) s.shownIds = [];
   if(!s.shownIds.includes(id)) s.shownIds.push(id);
@@ -7350,14 +7363,14 @@ function studyLogRows(){
 }
 const RESULT_NAMES = {o: "〇", x: "✕", skip: "スキップ", timeup: "時間切れ", see: "見ただけ"};
 function studyLogDetailRows(){
-  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し","分けて・まとめて","何回目"]];   // ★何回目: その回の中で、その問題に答えた何回目か（2026-10-06）
+  const rows = [["回のID","開始日時","一人・対戦","教科","形式","何問目","ID","単元","問題","結果","考えた秒","出し直し","分けて・まとめて","何回目","本文を開いた"]];   // ★本文を開いた: ロング編（2026-10-07）   // ★何回目: その回の中で、その問題に答えた何回目か（2026-10-06）
   studyLog.sessions.slice().sort((a, b) => a.st - b.st).forEach(s => {
     (s.q || []).forEach((e, i) => {
       const d = getQById(e[0]);
       const dm = DAIMON_ITEM.get(e[0]);
       const q = d ? ((dm && dm.it.label ? dm.it.label + " " : "") + d.q) : "";
       rows.push([s.id, fmtDateTime(s.st), s.k === "battle" ? "対戦" : "一人", s.subj, s.m, i + 1, e[0], d ? d.u : "", q,
-                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : "", e[4] || "", (s.q || []).slice(0, i + 1).filter(x => x[0] === e[0]).length]);
+                 RESULT_NAMES[e[2]] || e[2], e[1], e[3] ? "はい" : "", e[4] || "", (s.q || []).slice(0, i + 1).filter(x => x[0] === e[0]).length, e[5] ? "はい" : ""]);
     });
   });
   return rows;
@@ -7452,7 +7465,7 @@ function studyLogImportRows(rows){
     });
     by.forEach((list, id) => {
       list.sort((a, b) => (+a[col("何問目")] || 0) - (+b[col("何問目")] || 0));
-      const q = list.map(r => { const e = [r[col("ID")], num(r[col("考えた秒")]), RESULT_CODES[r[col("結果")]] || r[col("結果")]]; const tg = col("分けて・まとめて") >= 0 ? (r[col("分けて・まとめて")] || "") : ""; if(r[col("出し直し")] === "はい" || tg) e.push(r[col("出し直し")] === "はい" ? 1 : 0); if(tg) e.push(tg); return e; });
+      const q = list.map(r => { const e = [r[col("ID")], num(r[col("考えた秒")]), RESULT_CODES[r[col("結果")]] || r[col("結果")]]; const tg = col("分けて・まとめて") >= 0 ? (r[col("分けて・まとめて")] || "") : ""; const ld = col("本文を開いた") >= 0 && r[col("本文を開いた")] === "はい"; if(r[col("出し直し")] === "はい" || tg || ld) e.push(r[col("出し直し")] === "はい" ? 1 : 0); if(tg || ld) e.push(tg); if(ld) e.push(1); return e; });
       const have = studyLog.sessions.find(s => s.id === id);
       if(have){
         if(!Array.isArray(have.q) || have.q.length === 0){ have.q = q; res.filled++; touched.add(id); }
@@ -9959,9 +9972,14 @@ function renderDaimonBlock(prefix, ids, idx){
     add("daimon-item-label", "いまは " + dm.it.label + " だけ答えます", curS);
     return;
   }
-  add("battle-daimon-title", "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
-  if(g.lead) add("daimon-lead-text", g.lead);
-  if(g.file) box.appendChild(daimonImg(g.file));
+  // ★2026-10-07 ロング編: 本文（lead）は上に出さない。問いのあと（daimon-fig）に「本文を見る」で開く（初めは閉じる）
+  if(g.long){
+    add("battle-daimon-title", "ロング編：" + String(g.unit || "").replace(/^ロング編\./, "") + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
+  }else{
+    add("battle-daimon-title", "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
+    if(g.lead) add("daimon-lead-text", g.lead);
+    if(g.file) box.appendChild(daimonImg(g.file));
+  }
   // 前の小問: 大問の中で、いまの小問より前の小問は全部こたえつきで出す
   //   （もう答えた小問と、★前回○で最初から答えを出しておく小問。どちらも答えが出てよいもの）。
   //   ★並びは大問の中の順のまま・続けて並んでいるので、いまより前の小問に「まだ答えていない手」は無い
@@ -9982,6 +10000,42 @@ function renderDaimonBlock(prefix, ids, idx){
     fb.addEventListener("click", () => openLightbox("images/" + figName));
     cur.appendChild(fb);
   }
+  if(g.long && (g.lead || g.file)) addLongLeadToggle(prefix, g);
+}
+// ★★ロング編（2026-10-07 ユーザー「社会のロング編準備をお願いします」・依頼書 司令塔\回答\社会_ロング編_組分け第6回_依頼_2026-10-05.md）
+//   組分けテストの長文で「先に問いを見る → 本文は要るところだけ探す（または読まずに答える）」の練習。
+//   ・問いを先に見せる。本文（lead・大問の図）は問いの下の「本文を見る」で開く（問題ごとに初めは閉じる）
+//   ・答えを見たあとに where（答えの根拠の場所）を出す: 「ここを読めばよかった：『…』」／「本文は読まなくてよかった」
+//   ・本文を開いたかは学習ログの1問ごとに残す（「本文を開いた」）
+//   ・速さ・正解するまでぐるぐる・スキップ・ヒント・二人は、ふつうの大問と同じ
+function addLongLeadToggle(prefix, g){
+  const fig = els[prefix+"-daimon-fig"];
+  const wrap = document.createElement("div");
+  wrap.className = "long-lead";
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.className = "long-lead-btn"; btn.textContent = "📖 本文を見る";
+  const body = document.createElement("div");
+  body.className = "long-lead-body";
+  body.style.display = "none";
+  if(g.lead){ const t = document.createElement("div"); t.className = "daimon-lead-text"; t.textContent = g.lead; body.appendChild(t); }
+  if(g.file) body.appendChild(daimonImg(g.file));
+  btn.addEventListener("click", () => {
+    const open = body.style.display === "none";
+    body.style.display = open ? "" : "none";
+    btn.textContent = open ? "📖 本文をとじる" : "📖 本文を見る";
+    if(open) studyLogMarkLead(prefix === "battle" ? "battle" : "solo");
+  });
+  wrap.appendChild(btn); wrap.appendChild(body);
+  fig.appendChild(wrap);
+}
+// 答えのあと: where
+function addLongWhere(afig, it){
+  if(!it || !it.where) return;
+  const w = document.createElement("div");
+  w.className = "long-where";
+  const wh = String(it.where).trim();
+  w.textContent = /読まなくても/.test(wh) ? "本文は読まなくてよかった" + (wh === "本文を読まなくても答えられる" ? "" : "（" + wh + "）") : "ここを読めばよかった：" + wh;
+  afig.appendChild(w);
 }
 function renderBattleDaimon(idx){ renderDaimonBlock("battle", questionIds, idx); }
 // ★答えの図（aFile）は「こたえを見る」のときに初めて作る。大問の最後の手なら、うしろに
@@ -9990,6 +10044,7 @@ function revealDaimonAnswerFig(prefix, ids, idx){
   const dmR = DAIMON_ITEM.get(ids[idx]);
   const afig = els[prefix+"-daimon-afig"];
   if(dmR && !afig.firstChild){
+    if(dmR.g.long) addLongWhere(afig, dmR.it);   // ★ロング編: 答えのあとに「ここを読めばよかった」（2026-10-07）
     if(dmR.it.aFile) afig.appendChild(daimonImg(dmR.it.aFile));
     const nx = DAIMON_ITEM.get(ids[idx + 1]);
     if(!nx || nx.g !== dmR.g){

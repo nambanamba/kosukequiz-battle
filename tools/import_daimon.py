@@ -64,6 +64,17 @@ IMG_SRC_SHAKAI = os.path.join(SRC_SHAKAI, "画像プレビュー")
 FILES_SHAKAI = {
     ("練習問題", 6): "練習問題_第6回.json",   # 2026-10-04 社会の大問のはじめ（練習1・練習2・発展）
 }
+# ★2026-10-07 社会のロング編（組分けテストの長文で「先に問いを見る・本文は要るところだけ」の練習）。
+#   依頼書: 司令塔\回答\社会_ロング編_組分け第6回_依頼_2026-10-05.md（ユーザー「社会のロング編準備をお願いします」）
+#   元データは 5年下/quiz_csv/ロング編/*.csv（row 列で daimon／item、小問に where＝答えの根拠の場所）、画像は ロング編/img/。
+#   ★ふつうの回とは別の単元「ロング編.<名前>」に入れる（g["unit"]）。大問の key は "long_<回>_<大問>"、"long": true を付ける。
+#   ★ロング編を足しても、ほかの大問の書き出しは1文字も変わらない（いちばん最後に足す）
+SRC_LONG = os.path.join(SRC_SHAKAI, "ロング編")
+IMG_SRC_LONG = os.path.join(SRC_LONG, "img")
+# 回（CSV の kai 列）→ (ファイル名, 単元名)。★名指しされた回だけ足す
+FILES_LONG = {
+    "組分け6": ("組分け第6回.csv", "ロング編.組分け第6回"),
+}
 IMG_DST = os.path.join(BATTLE, "images")
 OUT = os.path.join(BATTLE, "daimon_data.js")
 DATA_JS = os.path.join(BATTLE, "data.js")
@@ -199,6 +210,52 @@ def main():
                     if name:
                         images.setdefault(name, img_src)
                 groups.append({k: v for k, v in g.items() if v != ""})
+
+    # ★ロング編（CSV）。いちばん最後に足す
+    import csv
+    for kai_l, (fn_l, unit_l) in FILES_LONG.items():
+        path = os.path.join(SRC_LONG, fn_l)
+        if not os.path.exists(path):
+            die("元データがありません: " + fn_l)
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+        dms = [r for r in rows if r.get("row") == "daimon"]
+        its_all = [r for r in rows if r.get("row") == "item"]
+        if len(dms) + len(its_all) != len(rows):
+            die(fn_l + ": row 列が daimon／item でない行があります")
+        srcinfo.append((fn_l, sha(path)[:12], len(dms), len(its_all)))
+        known = {str(r["daimon"]) for r in dms}
+        for it in its_all:
+            if not re.fullmatch(r"[a-z0-9_]+", str(it.get("id", ""))):
+                die(fn_l + ": 小問の id が正しくありません（英小文字・数字・_ だけ）: " + str(it.get("id")))
+            if str(it["daimon"]) not in known:
+                die(fn_l + ": 小問 " + it["id"] + " の大問 " + str(it["daimon"]) + " がありません")
+            if it["id"] in seen_ids or it["id"] in qa_ids:
+                die("id が重なっています: " + it["id"])
+            if str(it.get("kai", kai_l)) != kai_l:
+                die(fn_l + ": 小問 " + it["id"] + " の回が " + str(it.get("kai")))
+            if not it.get("q") or not it.get("a"):
+                die(fn_l + ": 小問 " + it["id"] + " の問題か答えが空です")
+            if not it.get("where"):
+                die(fn_l + ": 小問 " + it["id"] + " の where（答えの根拠の場所）が空です")
+            seen_ids.add(it["id"])
+        for dm in dms:
+            its = [r for r in its_all if str(r["daimon"]) == str(dm["daimon"])]
+            if not its:
+                die(fn_l + ": 大問 " + str(dm["daimon"]) + " に小問が1つもありません")
+            g = {"key": "long_%s_%s" % (kai_l, dm["daimon"]), "kai": kai_l, "book": "ロング編", "daimon": str(dm["daimon"]),
+                 "lead": dm.get("lead", ""), "file": dm.get("file", ""), "items": [], "subj": "社会", "long": True, "unit": unit_l}
+            for it in its:
+                x = {"id": it["id"], "label": it.get("label", ""), "q": it["q"], "a": it["a"],
+                     "form": it.get("form", ""), "file": it.get("file", ""), "sol": it.get("sol", ""),
+                     "note": it.get("note", ""), "where": it.get("where", "")}
+                if x["file"] and x["file"] == g["file"]:
+                    x["file"] = ""
+                g["items"].append({k: v for k, v in x.items() if v != ""})
+            for name in [g["file"]] + [i.get("file", "") for i in g["items"]]:
+                if name:
+                    images.setdefault(name, IMG_SRC_LONG)
+            groups.append({k: v for k, v in g.items() if v != ""})
 
     # 画像: 実物から寸法を測る（写さない）。既存と中身がちがえば止める（上書きしない）
     sizes, new_imgs = {}, []

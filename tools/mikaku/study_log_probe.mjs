@@ -281,8 +281,11 @@ const ngB = report("対照 " + BASE_COMMIT, B.out);
 console.log(ngB > 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴った）" : "  → ✘ 自己テスト不合格");
 if (ngB === 0) await done(3);
 const N = await run("now", CURRENT);
+// ★2026-10-07 ロング編（単元「ロング編.…」の大問）を取り込んだので、記録CSVにはその小問の行が増える。
+//   直す前の index.html はロング編を読めない（単元が無い）ので、比べるときはロング編の行を両方から除く（列・形・ほかの行は今までどおり比べる）
+const noLong = t => t == null ? t : t.split("\r\n").filter(l => !/^[^,]*,"?ロング編\./.test(l)).join("\r\n");
 const HEADER = "ID,単元,問題,こたえ,正解した回数,まちがえた回数,状態,最終正答日,最終回答日,連続正解数";
-N.out.unshift({ n: "E1 ★今の記録CSVは直す前とバイトまで同じ（見出し " + HEADER + "）", ok: !!(B.keep.oldCsv && N.keep.oldCsv && B.keep.oldCsv === N.keep.oldCsv && N.keep.oldCsv.replace(/^\uFEFF/, "").split("\r\n")[0] === HEADER),
+N.out.unshift({ n: "E1 ★今の記録CSVは直す前とバイトまで同じ（見出し " + HEADER + "）", ok: !!(B.keep.oldCsv && N.keep.oldCsv && noLong(B.keep.oldCsv) === noLong(N.keep.oldCsv) && N.keep.oldCsv.replace(/^\uFEFF/, "").split("\r\n")[0] === HEADER),
   x: (N.keep.oldCsv || "").split("\r\n").length + "行" });
 const ng = report("いまの index.html", N.out);
 console.log(ng === 0 ? "\n✔ 全部通りました" : "\n✘ " + ng + " 件ひっかかりました");

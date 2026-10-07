@@ -243,6 +243,10 @@ console.log(ngB > 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴�
 if (ngB === 0) await done(3);
 const outNow = await run("now", CURRENT);
 // P7 記録のCSVは、直す前と見出し・行の数・行の中身（ID）が同じ（同じ記録で書き出したもの）
+// ★2026-10-07 ロング編（単元「ロング編.…」の大問）を取り込んだので、記録CSVにはその小問の行が増える。
+//   直す前の index.html はロング編を読めない（単元が無い）ので、比べるときはロング編の行を両方から除く（列・形・ほかの行は今までどおり比べる）
+const noLong = t => t == null ? t : t.split("\r\n").filter(l => !/^[^,]*,"?ロング編\./.test(l)).join("\r\n");
+recCsv.base = noLong(recCsv.base); recCsv.now = noLong(recCsv.now);
 const rb = recCsv.base ? parseCSV(recCsv.base) : null, rn = recCsv.now ? parseCSV(recCsv.now) : null;
 outNow.push({ n: "P7 記録のCSV（正解・不正解）が直す前と同じ（見出し・行の数・ID の並び）", ok: !!(rb && rn && rb[0].join() === rn[0].join() && rb.length === rn.length && rb.map(r => r[0]).join() === rn.map(r => r[0]).join() && recCsv.base === recCsv.now),
   x: rb && rn ? ("直す前 " + rb.length + " 行・いま " + rn.length + " 行・バイトまで同じ: " + (recCsv.base === recCsv.now)) : "書き出せず" });
