@@ -1701,6 +1701,9 @@
   .plan-peek-meta{ font-size:11.5px; color:var(--ink-soft); }
   .plan-peek-count{ font-size:12px; color:var(--ink-soft); font-weight:700; margin-bottom:4px; }
   .plan-peek-a{ font-size:12.5px; color:var(--ok); font-weight:700; }
+  .plan-peek-lock{ display:flex; gap:6px; margin-top:6px; }
+  .plan-peek-lock input{ flex:1; min-width:0; padding:6px 8px; font-size:14px; border:1px solid #c9c2b0; border-radius:8px; }
+  .plan-peek-lock-msg{ font-size:12px; color:var(--ng, #b33); margin-top:4px; }
   .plan-peek-ans-btn{ margin-top:6px; padding:6px 10px; border:1px solid var(--navy-deep); border-radius:10px; background:#fff; color:var(--navy-deep); font-size:12.5px; font-weight:700; cursor:pointer; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
@@ -2025,6 +2028,16 @@
           <button type="button" class="btn-secondary" id="send-test-btn">ためしに送る</button>
         </div>
         <div class="send-status" id="send-status"></div>
+      </div>
+      <!-- ★2026-10-08 親の合言葉。ユーザー「暗記カードの答えを見るですが、親に用意して、本人からは消してください。」
+           合言葉が入っている端末だけ、今日やることの「中身を見る」に「答えを見る（合言葉）」が出る。合言葉はこの端末にだけ保存（コードに書かない） -->
+      <div class="send-box" id="parent-pass-box">
+        <div class="send-title">親の合言葉（中身を見るの答え用）</div>
+        <input type="password" class="send-input" id="parent-pass" placeholder="合言葉を入れて保存。空にして保存すると消す" autocomplete="off">
+        <div class="send-row">
+          <button type="button" class="btn-secondary" id="parent-pass-save-btn">保存</button>
+        </div>
+        <div class="send-status" id="parent-pass-status"></div>
       </div>
       <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
       <input type="file" id="import-file" accept=".csv,text/csv" style="display:none;">
@@ -11094,8 +11107,44 @@ function planRowPick(it, no, idx){
 }
 // 一覧の1行の状態（苦手／まだ／定着）。並べ替え（planWeakRank）と同じ見方（分けては部分・大問は小問）
 function planTierLabel(id){ return ({ 1: "苦手", 2: "まだ", 3: "定着" })[planWeakRank(id, new Set()).r] || ""; }
+// ★2026-10-08 親の合言葉（ユーザー「暗記カードの答えを見るですが、親に用意して、本人からは消してください。」）
+//   ・合言葉はこの端末の localStorage にだけ（そのままは置かず、かんたんな変換をした値）。コードには書かない
+//   ・合言葉が無い端末では「中身を見る」に答えのボタンを出さない。ある端末では「答えを見る（合言葉）」→ 合っていたときだけ答えを作って出す
+//   ・★答えの文字は、開くまで画面（DOM）に作らない。開いたら、その一覧を閉じるまで開いたまま
+//   ・出題中の「こたえを見る」（答え合わせ）は変えない
+const PARENT_PASS_KEY = "kq_battle_parent_pass_v1";
+function parentPassHash(t){
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  const str = "kq-parent:" + String(t);
+  for(let i = 0; i < str.length; i++){ const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = Math.imul(h2 + c, 2654435761) >>> 0; }
+  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
+}
+function parentPassGet(){ try{ return window.localStorage.getItem(PARENT_PASS_KEY) || ""; }catch(e){ return ""; } }
+function parentPassOk(t){ const h = parentPassGet(); return !!h && !!t && parentPassHash(t) === h; }
+function parentPassShowStatus(){
+  const el = document.getElementById("parent-pass-status");
+  if(el) el.textContent = parentPassGet() ? "合言葉：設定ずみ（この端末だけ）" : "合言葉：まだ（答えのボタンは出ません）";
+}
+function setupParentPass(){
+  const btn = document.getElementById("parent-pass-save-btn"), inp = document.getElementById("parent-pass");
+  if(!btn || !inp) return;
+  btn.addEventListener("click", () => {
+    const t = inp.value.trim();
+    try{
+      if(t) window.localStorage.setItem(PARENT_PASS_KEY, parentPassHash(t)); else window.localStorage.removeItem(PARENT_PASS_KEY);
+    }catch(e){ document.getElementById("parent-pass-status").textContent = "この端末に保存できませんでした。"; return; }
+    inp.value = "";
+    parentPassShowStatus();
+    if(typeof renderPlan === "function") renderPlan();   // 開いている一覧のボタンを入れかえる
+  });
+  parentPassShowStatus();
+}
+function planPeekAnswerText(d, id){
+  return "こたえ：" + (isDaimonEntry(d) ? d.daimon.items.map(x => (x.label ? x.label + " " : "") + x.a).join("／") : (getQById(id) || d).a);
+}
 function renderPlanPeek(panel, ids){
   panel.innerHTML = "";
+  const unlocked = panel.dataset.unlocked === "1";
   const cnt = document.createElement("div");
   cnt.className = "plan-peek-count";
   cnt.textContent = "答える問題：" + planSumWeight(ids) + "問（" + ids.length + "枚）";
@@ -11116,23 +11165,40 @@ function renderPlanPeek(panel, ids){
     const tier = planTierLabel(id);
     meta.textContent = (d.u || "") + "　" + tier;
     meta.dataset.tier = tier;
-    const ans = document.createElement("div");
-    ans.className = "plan-peek-a";
-    ans.style.display = "none";
-    ans.textContent = "こたえ：" + (isDaimonEntry(d) ? d.daimon.items.map(x => (x.label ? x.label + " " : "") + x.a).join("／") : (getQById(id) || d).a);
-    li.appendChild(head); li.appendChild(meta); li.appendChild(ans);
+    li.appendChild(head); li.appendChild(meta);
+    if(unlocked){   // ★合言葉で開いたときだけ、答えを作る
+      const ans = document.createElement("div");
+      ans.className = "plan-peek-a";
+      ans.textContent = planPeekAnswerText(d, id);
+      li.appendChild(ans);
+    }
     ol.appendChild(li);
   });
   panel.appendChild(ol);
+  if(unlocked || !parentPassGet()) return;   // 合言葉が無い端末では、答えのボタンを出さない
   const ab = document.createElement("button");
-  ab.type = "button"; ab.className = "plan-peek-ans-btn"; ab.textContent = "答えを見る（親用）";
-  ab.addEventListener("click", () => {
-    const show = ab.dataset.on !== "1";
-    ab.dataset.on = show ? "1" : "";
-    ab.textContent = show ? "答えをかくす" : "答えを見る（親用）";
-    panel.querySelectorAll(".plan-peek-a").forEach(e => { e.style.display = show ? "" : "none"; });
-  });
+  ab.type = "button"; ab.className = "plan-peek-ans-btn"; ab.textContent = "答えを見る（合言葉）";
   panel.appendChild(ab);
+  ab.addEventListener("click", () => {
+    ab.style.display = "none";
+    const box = document.createElement("div");
+    box.className = "plan-peek-lock";
+    const inp = document.createElement("input");
+    inp.type = "password"; inp.className = "plan-peek-pass"; inp.placeholder = "合言葉"; inp.autocomplete = "off";
+    const go = document.createElement("button");
+    go.type = "button"; go.className = "plan-peek-ans-btn plan-peek-pass-go"; go.style.marginTop = "0"; go.textContent = "開く";
+    const msg = document.createElement("div");
+    msg.className = "plan-peek-lock-msg";
+    const tryOpen = () => {
+      if(parentPassOk(inp.value.trim())){ panel.dataset.unlocked = "1"; renderPlanPeek(panel, ids); return; }
+      inp.value = ""; msg.textContent = "合言葉がちがいます";
+    };
+    go.addEventListener("click", tryOpen);
+    inp.addEventListener("keydown", e => { if(e.key === "Enter") tryOpen(); });
+    box.appendChild(inp); box.appendChild(go);
+    panel.appendChild(box); panel.appendChild(msg);
+    inp.focus();
+  });
 }
 // 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
 let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
@@ -11275,7 +11341,7 @@ function renderPlanSet(container, no, prefix){
     panel.style.display = "none";
     container.appendChild(panel);
     b3.addEventListener("click", () => {
-      if(panel.style.display !== "none"){ panel.style.display = "none"; b3.textContent = "中身を見る"; return; }
+      if(panel.style.display !== "none"){ panel.style.display = "none"; delete panel.dataset.unlocked; panel.innerHTML = ""; b3.textContent = "中身を見る"; return; }
       // ★押した時点で出す問題と順番を決めて保存（すでに保存してあればそれ）
       let p = planSavedPick(no, key);
       if(!p){ p = planItemPick(it, no, i); planSavePick(no, key, p); }
@@ -11358,6 +11424,7 @@ applySettingsUI();
 showMigrationNoteOnce();
 setupTodayLink();
 setupTodayPlan();   // ★今日やること（kosuke-records の plan。2026-10-07）
+setupParentPass();   // ★親の合言葉（2026-10-08）
 setupAutoSend();   // ★記録の自動送信（送り先が入っているときだけ送る。2026-10-06）   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
