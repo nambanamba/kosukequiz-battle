@@ -3,7 +3,8 @@
 // スクショは tools/mikaku/shots_choice/（コミットしない）
 // 見ること:
 //   S1 一人: g6r44 の問いが「本文 → 1行あけ → ア　… / イ　… / ウ　… / エ　…」（「」は外す）
-//   S2 一人: 答えが「ア（問注所では…）が正しい文です。」
+//      ★2026-10-08 choice-shuffle から、選択肢の並びは出すたびに入れかわる。ここでは「4つが1つずつ・記号ア〜エ」を見る
+//   S2 一人: 答えが「（出た並びでの記号）（問注所では…）が正しい文です。」
 //   S3 一人: ほかの問題（g6r1）は問い・答えとも data.js のまま
 //   L1 問題一覧: g6r44・g6r45 は改行・記号つき、g6r45 の答えは「ア（…）と エ（…）」
 //   L2 問題一覧: 対象（「…」「…」で終わる選ぶ問題）以外の行は、問い・答えとも data.js のまま
@@ -73,6 +74,16 @@ const CHOICE_RE = /^([\s\S]*?[^」\s　])[\s　]*((?:「[^「」]+」[、・\s�
 const KEY_RE = /正し|まちが|誤|選|どれ|どの/;
 const L = ["ア", "イ", "ウ", "エ", "オ", "カ", "キ", "ク", "ケ", "コ"];
 const isTarget = q => { const m = CHOICE_RE.exec(String(q || "")); return !!(m && KEY_RE.test(m[1])); };
+// ★出た問いの選択肢が、元の選択肢の並べかえになっているか（記号はア・イ…の順）。なっていれば 文→記号 を返す
+const shownLabels = (shown, stem, choices) => {
+  const s = String(shown || "");
+  if (!s.startsWith(stem + "\n\n")) return null;
+  const lines = s.slice(stem.length + 2).split("\n");
+  if (lines.length !== choices.length) return null;
+  const map = {};
+  for (let i = 0; i < lines.length; i++) { if (!lines[i].startsWith(L[i] + "　")) return null; map[lines[i].slice(L[i].length + 1)] = L[i]; }
+  return choices.every(c => map[c]) ? map : null;
+};
 async function run(label, src) {
   SERVED = src; const out = [];
   const check = (n, ok, x) => out.push({ n, ok: !!ok, x: x == null ? "" : String(x) });
@@ -88,8 +99,10 @@ async function run(label, src) {
     const D = await pg.evaluate(() => Object.fromEntries(QA_DATA.filter(d => d.kind !== "daimon").map(d => [d.id, { q: d.q, a: d.a, subj: d.subj }])));
     const g44 = D.g6r44, g45 = D.g6r45, g1 = D.g6r1;
     const c44 = g44.q.match(/「[^「」]+」/g).map(s => s.slice(1, -1)), c45 = g45.q.match(/「[^「」]+」/g).map(s => s.slice(1, -1));
-    const wantQ44 = g44.q.slice(0, g44.q.indexOf("「")) + "\n\n" + c44.map((t, i) => L[i] + "　" + t).join("\n");
+    const stem44 = g44.q.slice(0, g44.q.indexOf("「"));
+    const wantQ44 = stem44 + "\n\n" + c44.map((t, i) => L[i] + "　" + t).join("\n");   // 一覧（元の並び）
     const wantA44 = "ア（" + c44[0] + "）が正しい文です。";
+    const wantA44of = shown => { const m = shownLabels(shown, stem44, c44); return m ? m[c44[0]] + "（" + c44[0] + "）が正しい文です。" : "(並びが読めない)"; };
     const wantA45 = "ア（" + c45[0] + "）と" + "エ（" + c45[3] + "）の2つです。";
     // ===== 一人 =====
     await pg.evaluate(SEED, [MIG, ["g6r44", "g6r1"], { unit: U }]); await pg.reload(); await pg.waitForTimeout(800);
@@ -105,8 +118,8 @@ async function run(label, src) {
       seen[id] = { q, a };
       await tap(pg, "#solo-judge-ok"); await pg.waitForTimeout(250);
     }
-    check("S1 一人: g6r44 の問いが改行・記号つき（本文と選択肢の間は1行あける）", seen.g6r44 && seen.g6r44.q === wantQ44, JSON.stringify(seen.g6r44 && seen.g6r44.q));
-    check("S2 一人: g6r44 の答えが「ア（…）が正しい文です。」", seen.g6r44 && seen.g6r44.a === wantA44, seen.g6r44 && seen.g6r44.a);
+    check("S1 一人: g6r44 の問いが改行・記号つき（本文と選択肢の間は1行あける・4つが1つずつ ア〜エ）", seen.g6r44 && shownLabels(seen.g6r44.q, stem44, c44), JSON.stringify(seen.g6r44 && seen.g6r44.q));
+    check("S2 一人: g6r44 の答えが「（出た並びの記号）（…）が正しい文です。」", seen.g6r44 && seen.g6r44.a === wantA44of(seen.g6r44.q), seen.g6r44 && seen.g6r44.a);
     check("S3 一人: g6r1 は問い・答えとも data.js のまま", seen.g6r1 && seen.g6r1.q === g1.q && seen.g6r1.a === g1.a, JSON.stringify(seen.g6r1));
     // ===== 問題一覧 =====
     await pg.evaluate(() => { const h = document.getElementById("solo-result-home-btn"); if (h) h.click(); }); await pg.waitForTimeout(400);
@@ -135,8 +148,9 @@ async function run(label, src) {
     const pk = await pg.evaluate(() => { const li = document.querySelector('#plan-cur .plan-peek li[data-qid="g6r44"]'); return li ? { q: li.querySelector(".plan-peek-q").textContent, a: (li.querySelector(".plan-peek-a") || {}).textContent || "" } : null; });
     await pg.evaluate(() => { const p = document.querySelector("#plan-cur .plan-peek"); if (p) p.scrollIntoView(); }); await pg.waitForTimeout(200);
     await pg.screenshot({ path: path.join(SHOTS, label + "_P1_peek.png") }).catch(() => {});
-    check("P1 中身を見る: g6r44 は選択肢を1つずつ記号つき（切らない）・合言葉で開いた答えも「ア（…）」",
-      pk && c44.every((t, i) => pk.q.includes("\n" + L[i] + "　" + t)) && pk.a === "こたえ：" + wantA44, JSON.stringify(pk));
+    const pkMap = pk ? (() => { const lines = pk.q.split("\n").slice(1), m = {}; lines.forEach((t, i) => { if (t.startsWith(L[i] + "　")) m[t.slice(L[i].length + 1)] = L[i]; }); return lines.length === c44.length && c44.every(c => m[c]) ? m : null; })() : null;
+    check("P1 中身を見る: g6r44 は選択肢を1つずつ記号つき（切らない）・開いた答えも「（並びの記号）（…）」",
+      pkMap && pk.a === "こたえ：" + pkMap[c44[0]] + "（" + c44[0] + "）が正しい文です。", JSON.stringify(pk));
     // ===== 二人 =====
     for (const p of [host.page, guest.page]) { await p.evaluate(SEED, [MIG, ["g6r44", "g6r1"], { unit: U }]); await p.reload(); await p.waitForTimeout(800); }
     await tap(host.page, "#create-btn");
@@ -162,7 +176,7 @@ async function run(label, src) {
       if (k === 0) { await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }); await tap(host.page, "#next-btn"); }
     }
     const b = bs.g6r44;
-    check("B1 二人: ホスト・ゲストとも g6r44 が改行・記号つき、答えも「ア（…）」", b && b.h.q === wantQ44 && b.g.q === wantQ44 && b.h.a === wantA44 && b.g.a === wantA44, JSON.stringify(b));
+    check("B1 二人: ホスト・ゲストとも g6r44 が改行・記号つき（同じ並び）、答えも「（並びの記号）（…）」", b && shownLabels(b.h.q, stem44, c44) && b.g.q === b.h.q && b.h.a === wantA44of(b.h.q) && b.g.a === b.h.a, JSON.stringify(b));
     check("T1 二人・ふつう: g6r44 の考える時間＝35秒（15秒＋4×5秒）・g6r1 は10秒のまま", b && b.sec === 35 && bs.g6r1 && bs.g6r1.sec === 10 && bs.g6r1.h.q === g1.q, JSON.stringify({ g6r44: b && b.sec, g6r1: bs.g6r1 && bs.g6r1.sec }));
     check("E 画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
