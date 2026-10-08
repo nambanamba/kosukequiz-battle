@@ -256,9 +256,10 @@ async function run(label, src) {
       await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       await host.page.waitForTimeout(1000);
-      await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
-      await waitVis(host.page, "#judge-row", 15000); await waitVis(guest.page, "#judge-row", 15000);
-      await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+      // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+      await tap(guest.page, "#answer-reveal-btn");
+      await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
+      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn");
     }

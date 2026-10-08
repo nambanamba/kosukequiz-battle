@@ -84,9 +84,10 @@ async function run(label, src) {
         check("K2 次は " + S.ids[1] + "・前の小問の欄で(1)は「あとでもう一度出ます」だけ（ホスト・ゲスト）", id === S.ids[1] && lh.later && lg.later && !lh.leak && !lg.leak, JSON.stringify({ lh, lg }));
         await shot(host.page, "K2_host"); await shot(guest.page, "K2_guest");
       }
-      await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
-      await waitVis(host.page, "#judge-row", 15000); await waitVis(guest.page, "#judge-row", 15000);
-      await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+      // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+      await tap(guest.page, "#answer-reveal-btn");
+      await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
+      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn"); await host.page.waitForTimeout(400);
       if (await host.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"))) break;

@@ -166,7 +166,8 @@ for (const [w, h] of (process.env.ONLY_A ? [] : process.env.B_SMALL ? [[800, 128
     try {
       // ★画像の無い問題（理科の文章だけの問題など）もあるので、画像を待つのは画像の枠が出ているときだけ
       //   （2026-09-13 に r3m81 で「対戦の画面が出なかった」と誤って出た）
-      await host.page.waitForFunction(() => { const b = document.getElementById("answer-reveal-btn"); const i = document.getElementById("battle-img");
+      // ★2026-10-08 二人のときのホストには「こたえを見る」が出ないので、答える時間の時計（answer-countdown）で見る
+      await host.page.waitForFunction(() => { const b = document.getElementById("answer-countdown"); const i = document.getElementById("battle-img");
         const hasImg = getComputedStyle(document.getElementById("battle-img-wrap")).display !== "none";
         return b && getComputedStyle(b).display !== "none" && (!hasImg || (i.complete && i.naturalWidth > 0)); }, null, { timeout: 8000 });
     } catch { console.log(`  ${w}x${h} ${id}: ★対戦の画面が出なかった`); await host.ctx.close(); await guest.ctx.close(); continue; }
@@ -174,7 +175,7 @@ for (const [w, h] of (process.env.ONLY_A ? [] : process.env.B_SMALL ? [[800, 128
     await host.page.waitForTimeout(500);
     const m = await host.page.evaluate(() => {
       const r = id => document.getElementById(id).getBoundingClientRect();
-      const img = r("battle-img"), q = r("battle-q"), b = r("answer-reveal-btn"), vh = innerHeight;
+      const img = r("battle-img"), q = r("battle-q"), b = r("answer-countdown"), vh = innerHeight;
       const hide = Math.max(b.bottom, q.bottom) - vh;          // 下に隠れている量（正なら隠れている）
       const fitH = img.height - Math.max(0, hide + 8);           // 8px の余裕を見て、入るための画像の高さ
       return { vh, img: [Math.round(img.width), Math.round(img.height)], imgTop: Math.round(img.top),

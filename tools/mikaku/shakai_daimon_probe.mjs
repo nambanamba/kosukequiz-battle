@@ -134,9 +134,10 @@ async function run(label, src) {
     await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", b1, { timeout: 20000 });
     const gb = await guest.page.evaluate(() => { const b = document.getElementById("battle-daimon"); return !!b && getComputedStyle(b).display !== "none" && /大問/.test(b.textContent); });
     await shot(guest.page, "S4_guest"); await shot(host.page, "S4_host");
-    await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
-    await waitVis(host.page, "#judge-row", 30000); await waitVis(guest.page, "#judge-row", 30000);
-    await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+    // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+    await tap(guest.page, "#answer-reveal-btn");
+    await waitVis(guest.page, "#judge-row", 30000); await tap(guest.page, "#judge-ok");
+    await waitVis(host.page, "#judge-row", 30000); await tap(host.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     const hs = await statOf(host.page, b1);
     check("S4 二人: 社会の大問の小問 " + b1 + " がホスト・ゲストに大問の形で出て、ホストの記録が付く", b1 === ITEM_IDS[0] && gb && hs && hs.correct === 1, b1 + " guest=" + gb + " " + JSON.stringify(hs));

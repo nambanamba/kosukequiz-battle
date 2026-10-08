@@ -123,7 +123,7 @@ async function run(label, src) {
     await tap(host.page, "#advance-btn");
     await guest.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.kumi6_01" && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
     const gb = { body: await vis(guest.page, ".long-lead-body"), btn: await vis(guest.page, ".long-lead-btn"), where: !!(await guest.page.$(".long-where")), aSeen: (await seen(guest.page, "battle")).includes(D.a1) };
-    await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
+    await tap(guest.page, "#answer-reveal-btn");   // ★2026-10-08 ホストの「こたえを見る」は無い（ゲストの〇✕で開く）
     await waitVis(guest.page, "#judge-row", 15000);
     gb.w = await txt(guest.page, ".long-where");
     check("B1 二人: ホスト・ゲストとも本文は閉じている・答える前は答えも where も無い → 答えのあとに where", hb.btn && !hb.body && gb.btn && !gb.body && !gb.where && !gb.aSeen && /^ここを読めばよかった/.test(gb.w), JSON.stringify({ hb, gb }));

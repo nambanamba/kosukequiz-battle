@@ -148,10 +148,12 @@ await shot(host.page,"4_host_skip");
 async function answerOnce(hostCorrect){
   await visible(host.page,"#advance-btn");
   await tap(host.page,"#advance-btn");
-  await visible(host.page,"#answer-reveal-btn"); await visible(guest.page,"#answer-reveal-btn");
-  await tap(host.page,"#answer-reveal-btn"); await tap(guest.page,"#answer-reveal-btn");
-  await visible(host.page,"#judge-row"); await visible(guest.page,"#judge-row");
+  // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+  await visible(guest.page,"#answer-reveal-btn");
+  await tap(guest.page,"#answer-reveal-btn");
+  await visible(guest.page,"#judge-row");
   await tap(guest.page, hostCorrect ? "#judge-ok" : "#judge-ng");   // ホストの結果
+  await visible(host.page,"#judge-row");
   await tap(host.page,"#judge-ok");                                  // ゲストの結果
   await visible(host.page,"#next-btn");
   await tap(host.page,"#next-btn");

@@ -166,9 +166,10 @@ async function run(label, src) {
         const id = await pg.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, "")); bseq.push(id);
         await pg.$eval("#advance-btn", e => e.click());
         await gp.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
-        await pg.$eval("#answer-reveal-btn", e => e.click()); await gp.$eval("#answer-reveal-btn", e => e.click());
-        await wv(pg, "#judge-row", 15000); await wv(gp, "#judge-row", 15000);
-        await gp.$eval("#judge-ok", e => e.click()); await pg.$eval("#judge-ok", e => e.click());
+        // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+        await gp.$eval("#answer-reveal-btn", e => e.click());
+        await wv(gp, "#judge-row", 15000); await gp.$eval("#judge-ok", e => e.click());
+        await wv(pg, "#judge-row", 15000); await pg.$eval("#judge-ok", e => e.click());
         await pg.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
         await pg.$eval("#next-btn", e => e.click()); await pg.waitForTimeout(500);
       }

@@ -220,10 +220,12 @@ async function run(label, src) {
     await guest.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.r6m36~2" && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
     const b1 = { gtitle: await txt(guest.page, "#battle-daimon .battle-daimon-title"), gq: await txt(guest.page, "#battle-q") };
     await shot(guest.page, "B_guest_part2");
-    await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn");
-    await waitVis(host.page, "#judge-row", 15000); await waitVis(guest.page, "#judge-row", 15000);
+    // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
+    await tap(guest.page, "#answer-reveal-btn");
+    await waitVis(guest.page, "#judge-row", 15000);
     b1.ga = await txt(guest.page, "#battle-a");
-    await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+    await tap(guest.page, "#judge-ok");
+    await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     await host.page.waitForTimeout(400);
     b1.h = await partOf(host.page, "r6m36~2"); b1.g = await partOf(guest.page, "r6m36~2");
