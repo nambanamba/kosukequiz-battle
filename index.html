@@ -1675,6 +1675,9 @@
   .send-row{ display:flex; gap:8px; margin-top:6px; }
   .send-row .btn-secondary{ flex:1; margin-top:0; }
   .send-auth-warn{ margin:10px 0 0; padding:6px 10px; font-size:12.5px; color:#c0392b; border:1px solid #e6b0a8; border-radius:8px; background:#fdf1ef; text-align:center; }
+  .send-viewonly{ display:flex; align-items:center; gap:6px; margin-top:8px; font-size:13px; color:var(--ink); }
+  .send-viewonly input{ width:18px; height:18px; margin:0; }
+  .stat-viewonly-note{ font-size:11.5px; color:var(--ink-soft); text-align:center; margin:2px 0 0; }
   .send-status{ margin-top:6px; font-size:12px; color:var(--ink-soft); line-height:1.5; }
   .today-box{ margin:10px 0 14px; padding:14px 14px 12px; border:2px solid var(--gold); border-radius:14px; background:#fffaf0; }
   .today-title{ font-size:16px; font-weight:700; color:var(--navy-deep); line-height:1.5; text-align:center; }
@@ -1833,6 +1836,8 @@
       <div class="stat-card"><div class="num" id="stat-stage2">-</div><div class="lbl">苦手な<br>問題</div></div>
       <div class="stat-card"><div class="num" id="stat-stage3">-</div><div class="lbl">定着した</div></div>
     </div>
+    <!-- ★2026-10-09 見るだけの端末（親のスマホ）では、下の数は子どもの記録ではない -->
+    <div class="stat-viewonly-note" id="stat-viewonly-note" style="display:none;">この端末の記録です（見るだけ：子どもの記録ではありません）</div>
     <div class="stat-note">★右の4つを足すと、必ず「全問題数」になります（どれも、いまの絞りこみをかけた数です）。定着は、ちがう日に3回正解したとき。</div>
     <!-- ★設定を移したときに一度だけ出す知らせ（2026-09-26）。
          ★黙って出る問題が変わってはいけない、が依頼書の失敗条件（4・13） -->
@@ -2045,6 +2050,8 @@
           <button type="button" class="btn-secondary" id="send-save-btn">保存</button>
           <button type="button" class="btn-secondary" id="send-test-btn">ためしに送る</button>
         </div>
+        <!-- ★2026-10-09 ユーザー「親のスマホでも子どもと同じ今日やることを見たい。でも親の正誤が子どもの記録にまざるのは困る」 -->
+        <label class="send-viewonly"><input type="checkbox" id="send-viewonly"> 見るだけ（この端末の記録は送らない）</label>
         <div class="send-status" id="send-status"></div>
       </div>
       <div class="back-link" id="export-edits-link">直した問題をエクスポート（Claudeに渡す用）</div>
@@ -11255,6 +11262,14 @@ const SEND_AUTH_KEY = "kq_battle_send_autherr_v1";     // 401/403 が出たら "
 const SEND_DB = "kq_battle_outbox";
 const SEND_API = "https://api.github.com";
 const SEND_REPO = "nambanamba/kosuke-records";
+// ★2026-10-09 見るだけ（親のスマホ）。ユーザー「親のスマホでも子どもと同じ今日やることを見たい。
+//   でも親のスマホの正誤の記録が kosuke-records に送られて子どもの記録とまざるのは困る」。
+//   ・オンのとき: 鍵で plan（index・セット）と battle/plan_done（子どもの端末の「できた／やらなかった」）を【読む】だけ。
+//     session・snapshot・plan_done・test など【何も書かない】。ためる入れ物（kq_battle_outbox）にも入れない。
+//     前からためてあった分も送らない（オフに戻したら送る）。この端末の記録（stats・学習ログ）はふつうどおり端末に残る
+//   ・端末に保存（kq_battle_view_only_v1 = "1"）。鍵とは別に持つ（鍵を消しても入れ直しても変わらない）
+const SEND_VIEWONLY_KEY = "kq_battle_view_only_v1";
+function sendViewOnly(){ try{ return window.localStorage.getItem(SEND_VIEWONLY_KEY) === "1"; }catch(e){ return false; } }
 function sendCfg(){
   try{ const c = JSON.parse(window.localStorage.getItem(SEND_CFG_KEY) || "null"); return (c && typeof c.token === "string" && c.token.trim()) ? c : null; }catch(e){ return null; }
 }
@@ -11337,7 +11352,7 @@ async function sendOne(cfg, it){
 }
 // ためる（鍵が無いときは何もしない）→ すぐ送ってみる
 async function sendEnqueue(id, kind, path, data, overwrite){
-  if(!sendCfg()) return false;
+  if(!sendCfg() || sendViewOnly()) return false;   // ★見るだけ: ためもしない
   await outboxPut({ id: id, kind: kind, path: path, overwrite: !!overwrite, at: Date.now(), data: data });
   sendFlush();
   return true;
@@ -11346,6 +11361,7 @@ let sendBusy = false, sendAgain = false;
 async function sendFlush(){
   const cfg = sendCfg();
   if(!cfg) return { sent: 0, left: 0, stop: "" };
+  if(sendViewOnly()){ sendShowStatus(""); return { sent: 0, left: 0, stop: "viewonly" }; }   // ★見るだけ: 何も書かない
   if(sendBusy){ sendAgain = true; return null; }
   sendBusy = true;
   let sent = 0, stop = "";
@@ -11369,7 +11385,7 @@ async function sendFlush(){
 function sendDay(t){ const d = new Date(t || Date.now()), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
 // 1回の練習が終わった（studyLogFinish・紙）。学習ログの1回分の行と、1問ごとの記録
 function sendSession(s){
-  if(!s || !sendCfg()) return;
+  if(!s || !sendCfg() || sendViewOnly()) return;
   try{
     const rows = studyLogRows();
     const row = rows.find(r => r[0] === s.id);
@@ -11384,7 +11400,7 @@ function sendSession(s){
 }
 // 1日1回: 今の記録CSVと同じ中身
 function sendSnapshotIfDue(){
-  if(!sendCfg()) return;
+  if(!sendCfg() || sendViewOnly()) return;   // ★見るだけ: 送った日の印もつけない（オフに戻した日に送る）
   const day = sendDay();
   try{ if(window.localStorage.getItem(SEND_SNAP_KEY) === day) return; }catch(e){ return; }
   try{
@@ -11402,6 +11418,7 @@ async function sendShowStatus(msg){
   const el = document.getElementById("send-status");
   if(!el) return;
   if(msg) sendStatusMsg = msg;
+  if(sendViewOnly()){ el.textContent = (sendStatusMsg ? sendStatusMsg + " " : "") + "（見るだけ：今日やることを読むだけで、この端末の記録は送りません）"; return; }
   const left = sendCfg() ? (await outboxAll()).length : 0;
   el.textContent = (sendStatusMsg ? sendStatusMsg + " " : "") + (sendCfg() ?"（まだ送れていない記録: " + left + "件）" : "（鍵が入っていないので、送りません）");
 }
@@ -11445,8 +11462,21 @@ function setupAutoSend(){
     sendSnapshotIfDue();
     await sendFlush();
     sendShowStatus("保存しました。");
+    if(sendViewOnly()) fetchPlan();   // ★見るだけの端末は、鍵を入れたら今日やることを読む
   });
+  // ★見るだけ（2026-10-09）。チェックはすぐ端末に保存
+  const vo = document.getElementById("send-viewonly");
+  vo.checked = sendViewOnly();
+  vo.addEventListener("change", ()=>{
+    try{ if(vo.checked) window.localStorage.setItem(SEND_VIEWONLY_KEY, "1"); else window.localStorage.removeItem(SEND_VIEWONLY_KEY); }catch(e){}
+    applyViewOnlyUI();
+    if(vo.checked) sendShowStatus("見るだけにしました。この端末の記録は送りません。");
+    else { sendShowStatus("見るだけをやめました。この端末の記録も送ります。"); sendSnapshotIfDue(); sendFlush(); }
+    planShownNo = null; renderPlan(); fetchPlan();   // 行の印（子どもの端末の印／この端末の印）を出し直す
+  });
+  applyViewOnlyUI();
   document.getElementById("send-test-btn").addEventListener("click", async ()=>{
+    if(sendViewOnly()){ sendShowStatus("見るだけなので送りません。"); return; }
     const r = sendSaveFromInput();
     if(r === "badtoken"){ sendShowStatus("鍵の形がちがいます（github_pat_ で始まる英数字だけ）。保存していません。"); return; }
     if(r !== "ok"){ sendShowStatus("先に鍵を貼ってください。"); return; }
@@ -11462,6 +11492,11 @@ function setupAutoSend(){
   sendShowStatus("");
   // 起動したら: 1日1回の snapshot と、ためていた分を送る（画面が出たあと、うしろで）
   setTimeout(() => { sendSnapshotIfDue(); sendFlush().then(() => sendShowStatus("")); }, 1500);
+}
+
+function applyViewOnlyUI(){
+  const n = document.getElementById("stat-viewonly-note");
+  if(n) n.style.display = sendViewOnly() ? "" : "none";
 }
 
 // ============================================================
@@ -11513,11 +11548,31 @@ function planDoneOf(no){ const d = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || 
 //   ・「もどす」で取り消せる（押したその日のうち）。plan_done には skipped:true で送る。記録（stats・学習ログ）は何も変えない
 const PLAN_SKIP_KEY = "kq_battle_plan_skip_v2";      // {番号: {行の鍵: やらなかったにした時刻}}
 function planSkipOf(no){ const d = planLoad(planStoreKey(PLAN_SKIP_KEY, no)) || {}; return d[no] || {}; }
+// ★2026-10-09 見るだけの端末: 子どもの端末の battle/plan_done/<番号>.json を読んだ写し {番号: {行の鍵: {done, skipped}}}。
+//   読めたセット（無い＝404 は「まだ何もしていない」＝{}）だけ入る。読めていないセットは、この端末の印で出す
+const PLAN_REMOTE_KEY = "kq_battle_plan_remote_done_v1";
+function planRemoteOf(no){ const r = planLoad(PLAN_REMOTE_KEY) || {}; return (r[no] && typeof r[no] === "object") ? r[no] : null; }
+function planRemoteSave(no, j){
+  const m = {};
+  if(j && Array.isArray(j.items)) j.items.forEach(o => {
+    if(!o || typeof o !== "object") return;
+    m[planItemKey({ title: o.title }, o.i)] = { done: !!o.done, skipped: !o.done && !!o.skipped };
+  });
+  const all = planLoad(PLAN_REMOTE_KEY) || {};
+  all[no] = m;
+  planSave(PLAN_REMOTE_KEY, all);
+}
+// 行の状態 {ok, sk, remote}。見るだけで子どもの端末の印が読めていれば、そちらを優先（この端末の印は使わない）
+function planRowState(no, key){
+  const rm = sendViewOnly() ? planRemoteOf(no) : null;
+  if(rm){ const r = rm[key] || {}; return { ok: !!r.done, sk: !r.done && !!r.skipped, remote: true }; }
+  const ok = !!planDoneOf(no)[key];
+  return { ok: ok, sk: !ok && !!planSkipOf(no)[key], remote: false };
+}
 function planAllDone(no){
   const s = planSetOf(no);
   if(!s || s.items.length === 0) return false;
-  const d = planDoneOf(no), sk = planSkipOf(no);
-  return s.items.every((it, i) => { const k = planItemKey(it, i); return !!d[k] || !!sk[k]; });
+  return s.items.every((it, i) => { const st = planRowState(no, planItemKey(it, i)); return st.ok || st.sk; });
 }
 function planMarkSkip(no, key){
   const all = planLoad(planStoreKey(PLAN_SKIP_KEY, no)) || {};
@@ -11911,9 +11966,9 @@ function renderPlanSet(container, no, prefix){
   if(typeof s.message === "string" && s.message){
     const m = document.createElement("div"); m.className = "plan-msg"; m.textContent = s.message; container.appendChild(m);
   }
-  const done = planDoneOf(no), skips = planSkipOf(no);
+  const skips = planSkipOf(no), vonly = sendViewOnly();
   s.items.forEach((it, i) => {
-    const key = planItemKey(it, i), ok = !!done[key], sk = !ok && !!skips[key], pick = planRowPick(it, no, i), ids = pick.ids;
+    const key = planItemKey(it, i), st = planRowState(no, key), ok = st.ok, sk = st.sk, pick = planRowPick(it, no, i), ids = pick.ids;
     const row = document.createElement("div");
     row.className = "plan-row" + (ok ? " done" : "") + (sk ? " skipped" : "");
     row.dataset.planKey = key; row.dataset.planNo = String(no);
@@ -11928,10 +11983,12 @@ function renderPlanSet(container, no, prefix){
     left.appendChild(t);
     const mk = document.createElement("span");
     mk.className = "plan-mark";
-    mk.textContent = ok ? "✔ できた" : (sk ? "— やらなかった" : "");
-    if(sk) mk.classList.add("skip");
+    mk.textContent = ok ? "✔ できた" : (sk ? "— やらなかった" : (st.remote ? "まだ" : ""));
+    if(sk || (st.remote && !ok)) mk.classList.add("skip");
+    if(st.remote) mk.dataset.remote = "1";   // ★見るだけ: 子どもの端末の印
     // ★やらなかった／もどす（2026-10-09）。行の名前の下・左がわ（右の「一人で」「二人で」から離す）
-    if(!ok && (!sk || dateToYMD(skips[key]) === dateToYMD(Date.now()))){
+    // ★見るだけの端末には出さない（ここで押しても子どもの端末には届かない）
+    if(!vonly && !ok && (!sk || dateToYMD(skips[key]) === dateToYMD(Date.now()))){
       const bs = document.createElement("button");
       bs.type = "button"; bs.className = "plan-skip-btn";
       bs.textContent = sk ? "もどす" : "やらなかった";
@@ -12022,7 +12079,14 @@ async function fetchPlan(){
     planSave(PLAN_INDEX_KEY, list);
     const sets = planSets();
     let found = 0;
+    const vonly = sendViewOnly();
     for(const no of list){
+      // ★見るだけ: 子どもの端末の「できた／やらなかった」を先に読む（無ければ＝まだ何もしていない）
+      //   読めた写しで全部済んでいるセットは読み直さない（開くたびに古いセットを全部読みに行かない）
+      if(vonly && !(sets[no] && planRemoteOf(no) && planAllDone(no))){
+        try{ planRemoteSave(no, await planGet(cfg, "battle/plan_done/" + String(no).padStart(4, "0") + ".json")); }
+        catch(e){ console.error("read plan_done failed", e); }
+      }
       // できた印が全部ついているセットは、写しがあれば読み直さない
       if(sets[no] && planAllDone(no)) continue;
       const s = await planGet(cfg, planPath(no));
