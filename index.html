@@ -1876,6 +1876,10 @@
       <div class="toggle-row">
         <div class="toggle check-toggle" id="merge-all-toggle">分けずにまとめて出す（答えが2つ以上のカード）</div>
       </div>
+      <!-- ★2026-10-09 今日やることのセットが無いとき、前のセットと同じ形で「つぎ（自動）」を作る。オンにすると作らない（端末に保存） -->
+      <div class="toggle-row">
+        <div class="toggle check-toggle" id="plan-auto-off-toggle">今日やること：自動のセットを使わない</div>
+      </div>
       <!-- ★理科の「大問」（テキスト通りの形）。2026-09-27。理科のときだけ出る。一問一答とは別の出し方 -->
       <button class="btn-secondary" id="daimon-open-btn" style="margin-top:10px; display:none;">テスト形式（大問）で解く</button>
       <!-- ★「紙で出す」（2026-09-28）。印の付いた大問（paper:true）は出題に出さないので、
@@ -11484,6 +11488,14 @@ const PLAN_SETS_KEY = "kq_battle_plan_sets_v2";      // {番号: セット}（�
 const PLAN_DONE_KEY = "kq_battle_plan_done_v2";      // {番号: {行の鍵: 終えた時刻}}
 const PLAN_ACTIVE_KEY = "kq_battle_plan_active_v2";  // {no, key} いま「今日やること」から始めた行（とちゅうでやめて再開しても続く）
 function planLoad(key){ try{ return JSON.parse(window.localStorage.getItem(key) || "null"); }catch(e){ return null; } }
+// ★★2026-10-09 ユーザー「アプリでルールベースで自動化できるところはお願いします。でも自動化がおかしくなることもあると想定されるので、現行は維持してください」
+//   → 今の動き（kosuke-records のセットをそのまま出す）は変えない。足したのは、セットに書いたときだけ効く行の欄（fill_ids・merge_on）と、セットが無いときの備え（自動のセット）だけ。
+//   自動のセット … いまのセット（まだ全部済んでいない最小の番号）が無い（全部済んだ・index が空・読めない）ときだけ、
+//     最後に読めたセット（端末の写しで番号がいちばん大きいもの）の行と同じ形で「つぎ（自動）」を作る。番号は "A1","A2"…（端末の中だけ）。
+//     できた印・やらなかった・朝まちがえた・中身を見るの保存は、自動用の別の入れ物（*_auto_v1）。plan_done には送らない。
+//     kosuke-records に新しいセットが来たら、そちらを出す（自動のセットは引っこむ）。ホームのスイッチ「自動のセットを使わない」で止められる
+function planIsAuto(no){ return typeof no === "string" && /^A\d+$/.test(no); }
+function planStoreKey(key, no){ return planIsAuto(no) ? key.replace(/_v2$/, "_auto_v1") : key; }
 function planSave(key, v){ try{ window.localStorage.setItem(key, JSON.stringify(v)); }catch(e){} }
 function planItemKey(it, i){ return i + ":" + String(it && it.title || ""); }
 function planPath(no){ return "plan/" + String(no).padStart(4, "0") + ".json"; }
@@ -11493,14 +11505,14 @@ function planNormIndex(j){
 }
 function planIndex(){ const a = planLoad(PLAN_INDEX_KEY); return Array.isArray(a) ? a : []; }
 function planSets(){ return planLoad(PLAN_SETS_KEY) || {}; }
-function planSetOf(no){ const s = planSets()[no]; return (s && Array.isArray(s.items)) ? s : null; }
-function planDoneOf(no){ const d = planLoad(PLAN_DONE_KEY) || {}; return d[no] || {}; }
+function planSetOf(no){ if(planIsAuto(no)) return planAutoSet(no); const s = planSets()[no]; return (s && Array.isArray(s.items)) ? s : null; }
+function planDoneOf(no){ const d = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || {}; return d[no] || {}; }
 // ★2026-10-09 ユーザー「今日やることの行にスキップボタン。今晩は飛ばした、今朝は飛ばした、みたいなかんじで」
 //   →（司令塔が確認）「暗記カードの『今朝の分、今晩の分』を丸ごとやらなかったことにする」。
 //   ・行の「やらなかった」→ 確認 →「— やらなかった」（「できた」とは別の見た目）。セットが全部済んだかの判定では済みと数える
 //   ・「もどす」で取り消せる（押したその日のうち）。plan_done には skipped:true で送る。記録（stats・学習ログ）は何も変えない
 const PLAN_SKIP_KEY = "kq_battle_plan_skip_v2";      // {番号: {行の鍵: やらなかったにした時刻}}
-function planSkipOf(no){ const d = planLoad(PLAN_SKIP_KEY) || {}; return d[no] || {}; }
+function planSkipOf(no){ const d = planLoad(planStoreKey(PLAN_SKIP_KEY, no)) || {}; return d[no] || {}; }
 function planAllDone(no){
   const s = planSetOf(no);
   if(!s || s.items.length === 0) return false;
@@ -11508,18 +11520,18 @@ function planAllDone(no){
   return s.items.every((it, i) => { const k = planItemKey(it, i); return !!d[k] || !!sk[k]; });
 }
 function planMarkSkip(no, key){
-  const all = planLoad(PLAN_SKIP_KEY) || {};
+  const all = planLoad(planStoreKey(PLAN_SKIP_KEY, no)) || {};
   const d = all[no] || {};
   d[key] = Date.now();
   all[no] = d;
-  planSave(PLAN_SKIP_KEY, all);
+  planSave(planStoreKey(PLAN_SKIP_KEY, no), all);
   planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は消す
   planSendDone(no);
 }
 function planUnskip(no, key){
-  const all = planLoad(PLAN_SKIP_KEY) || {};
+  const all = planLoad(planStoreKey(PLAN_SKIP_KEY, no)) || {};
   if(all[no]){ delete all[no][key]; if(Object.keys(all[no]).length === 0) delete all[no]; }
-  planSave(PLAN_SKIP_KEY, all);
+  planSave(planStoreKey(PLAN_SKIP_KEY, no), all);
   planSendDone(no);
 }
 // まだ全部できていない、いちばん小さい番号（中身が読めているセットだけ）
@@ -11527,6 +11539,33 @@ function planFirstOpen(after){
   return planIndex().find(no => (after === undefined || no > after) && planSetOf(no) && !planAllDone(no));
 }
 let planShownNo = null;   // 開いたときに決めた「いま進めているセット」
+// ★自動のセット（2026-10-09。上の planIsAuto の説明）
+const PLAN_AUTO_OFF_KEY = "kq_battle_plan_auto_off_v1";   // "1" … 自動のセットを使わない（ホームのスイッチ）
+const PLAN_AUTO_SEQ_KEY = "kq_battle_plan_auto_seq_v1";   // いまの自動のセットの番号（1, 2, …）
+function planAutoOff(){ try{ return window.localStorage.getItem(PLAN_AUTO_OFF_KEY) === "1"; }catch(e){ return false; } }
+// 最後に読めたセット＝端末の写しで、番号がいちばん大きく、行が1つ以上あるもの
+function planAutoBase(){
+  const sets = planSets();
+  const nos = Object.keys(sets).map(Number).filter(n => Number.isInteger(n) && n > 0 && sets[n] && Array.isArray(sets[n].items) && sets[n].items.length > 0);
+  return nos.length ? Math.max.apply(null, nos) : null;
+}
+function planAutoSet(no){
+  if(planAutoOff()) return null;
+  const b = planAutoBase();
+  if(b === null) return null;
+  let items;
+  try{ items = JSON.parse(JSON.stringify(planSets()[b].items)); }catch(e){ return null; }
+  return { no: no, auto: true, base: b, label: "つぎ（自動）", message: "新しいセットがまだ届いていないので、前のセットと同じ形で自動で作りました。", items: items };
+}
+// いまの自動のセット（全部済んだものは飛ばして次の番号へ）。使えないときは null
+function planAutoCurrent(){
+  if(planAutoOff() || planAutoBase() === null) return null;
+  let seq = 1;
+  try{ seq = Math.max(1, parseInt(window.localStorage.getItem(PLAN_AUTO_SEQ_KEY) || "1", 10) || 1); }catch(e){}
+  while(planAllDone("A" + seq)) seq++;
+  try{ window.localStorage.setItem(PLAN_AUTO_SEQ_KEY, String(seq)); }catch(e){}
+  return "A" + seq;
+}
 // 行の問題（QA_DATA の id）。unit で count があれば、その数だけランダムに選ぶ
 // ★2026-10-07 ユーザー「今日の朝どれができたかで、今日の夜やるのかわりませんか？」→ 行に "order":"weak" と "count"。
 //   ids（または unit）を「候補」として、出す直前にこの端末の記録で並べ替え、count 問だけ出す:
@@ -11535,7 +11574,7 @@ let planShownNo = null;   // 開いたときに決めた「いま進めている
 //   ・分けて出すカード（分けての間）は部分の記録で判断。大問は小問の記録で判断（tierOf と同じ）
 //   ・並べ替えは端末の中だけ（司令塔の手は要らない）
 const PLAN_MISS_KEY = "kq_battle_plan_miss_v2";     // {番号: {行の鍵: [1回目にまちがえた問題（カード／大問の id）]}}
-function planMissOf(no){ const m = planLoad(PLAN_MISS_KEY) || {}; return m[no] || {}; }
+function planMissOf(no){ const m = planLoad(planStoreKey(PLAN_MISS_KEY, no)) || {}; return m[no] || {}; }
 // 小問・部分の id → カード／大問の id（候補と同じ形）
 function planCardIdOf(id){ const dm = DAIMON_ITEM.get(id); return dm ? dm.g.key : id; }
 function planWeakRank(id, missSet){
@@ -11586,8 +11625,36 @@ function planTakeCount(ids, n){
 function planSumWeight(ids){ return ids.reduce((a, id) => a + planIdWeight(id), 0); }
 // 行の問題を決める。戻り値 {ids, miss}（miss … ①から選んだ数。答える回数で数える）
 // ★2026-10-09 行の印 "merge":true … その行のカードは分けずにまとめて（数え方も1枚＝1問）
-function planRowMerge(it){ return !!(it && typeof it === "object" && it.merge === true); }
+// ★2026-10-09 行の欄 "merge_on":["fri"] など … その曜日（端末の日付）だけ "merge":true と同じ。欄が無い行は今のまま
+const PLAN_DOW = [["sun", "sunday", "日"], ["mon", "monday", "月"], ["tue", "tuesday", "火"], ["wed", "wednesday", "水"], ["thu", "thursday", "木"], ["fri", "friday", "金"], ["sat", "saturday", "土"]];
+function planMergeOnToday(it){
+  if(!it || typeof it !== "object" || !Array.isArray(it.merge_on)) return false;
+  const w = PLAN_DOW[new Date().getDay()];
+  return it.merge_on.some(x => { const v = String(x).trim().toLowerCase().replace(/曜日?$/, ""); return w.indexOf(v) >= 0; });
+}
+function planRowMerge(it){ return !!(it && typeof it === "object" && (it.merge === true || planMergeOnToday(it))); }
 function planItemPick(it, no, idx){ return withMerge(planRowMerge(it), () => planItemPick0(it, no, idx)); }
+// 同じセットの前の行で、1回目が✕・スキップ・時間切れだった問題
+function planMissSetFor(no, idx){
+  const s = no ? planSetOf(no) : null, missAll = no ? planMissOf(no) : {};
+  const missSet = new Set();
+  if(s) s.items.forEach((x, j) => { if(j < idx) (missAll[planItemKey(x, j)] || []).forEach(id => missSet.add(id)); });
+  return missSet;
+}
+function planRankWeak(ids, missSet){
+  return ids.map((id, k) => Object.assign({ id: id, k: k }, planWeakRank(id, missSet)))
+    .sort((a, b) => (a.o - b.o) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
+}
+// ★2026-10-09 行の欄 "fill_ids":[…]（前の回をまぜる用）。count がある行で、候補の「まだ・苦手・その日✕」（答える回数）が count に足りないときだけ、
+//   足りない分を fill_ids から order:"weak" の順で選ぶ（候補と重なる id はのぞく）。欄が無い・足りている行は [] ＝今のまま
+function planFillPick(it, subj, ids, n, missSet){
+  if(!(n > 0) || !Array.isArray(it.fill_ids) || it.fill_ids.length === 0) return [];
+  const weakW = planSumWeight(ids.filter(id => planWeakRank(id, missSet).r <= 2));
+  if(weakW >= n) return [];
+  const have = new Set(ids);
+  const cand = todayLinkIds({ subj: subj, ids: it.fill_ids.map(String), units: [] }).filter(id => !have.has(id));
+  return planTakeCount(planRankWeak(cand, missSet).map(x => x.id), n - weakW);
+}
 function planItemPick0(it, no, idx){
   const out = { ids: [], miss: 0 };
   if(!it || typeof it !== "object") return out;
@@ -11596,16 +11663,25 @@ function planItemPick0(it, no, idx){
   if(Array.isArray(it.ids) && it.ids.length) ids = todayLinkIds({ subj: subj, ids: it.ids.map(String), units: [] });
   else if(typeof it.unit === "string" && it.unit) ids = todayLinkIds({ subj: subj, ids: [], units: [it.unit] });
   const n = parseInt(it.count, 10);
+  const hasFill = n > 0 && Array.isArray(it.fill_ids) && it.fill_ids.length > 0;
   if(it.order === "weak"){
-    const s = no ? planSetOf(no) : null, missAll = no ? planMissOf(no) : {};
-    const missSet = new Set();
-    if(s) s.items.forEach((x, j) => { if(j < idx) (missAll[planItemKey(x, j)] || []).forEach(id => missSet.add(id)); });
-    const ranked = ids.map((id, k) => Object.assign({ id: id, k: k }, planWeakRank(id, missSet)))
-      .sort((a, b) => (a.o - b.o) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
-    const rankedIds = ranked.map(x => x.id);
+    const missSet = planMissSetFor(no, idx);
+    const ranked = planRankWeak(ids, missSet);
+    let rankedIds = ranked.map(x => x.id);
+    const fill = hasFill ? planFillPick(it, subj, ids, n, missSet) : [];
+    if(fill.length) rankedIds = ranked.filter(x => x.r <= 2).map(x => x.id).concat(fill, ranked.filter(x => x.r > 2).map(x => x.id));   // ★まだ・苦手 → 前の回 → のこり
     out.ids = n > 0 ? planTakeCount(rankedIds, n) : rankedIds;
     const missIds = new Set(ranked.filter(x => x.r === 0).map(x => x.id));
+    fill.forEach(id => { if(missSet.has(id)) missIds.add(id); });
     out.miss = planSumWeight(out.ids.filter(id => missIds.has(id)));
+    return out;
+  }
+  const fill = hasFill ? planFillPick(it, subj, ids, n, planMissSetFor(no, idx)) : [];
+  if(fill.length){
+    // ★前の回をまぜる: 候補からは count − 前の回の分 だけ（unit のときランダム）、そのうしろに前の回
+    const m = n - planSumWeight(fill);
+    if(!(Array.isArray(it.ids) && it.ids.length) && planSumWeight(ids) > m) ids = m > 0 ? planTakeCount(shuffleArray(ids.slice()), m) : [];
+    out.ids = ids.concat(fill);
     return out;
   }
   if(!(Array.isArray(it.ids) && it.ids.length) && n > 0 && planSumWeight(ids) > n) ids = planTakeCount(shuffleArray(ids.slice()), n);
@@ -11619,15 +11695,15 @@ function planItemIds(it, no, idx){ return planItemPick(it, no, idx).ids; }
 //     その日のうちに記録が増えて並びが変わっても、保存した一覧を使う。その行が「できた」になったら保存は消す（次はまた選び直す）
 const PLAN_PICK_KEY = "kq_battle_plan_pick_v2";   // {番号: {行の鍵: {ids, miss}}}
 function planSavedPick(no, key){
-  const a = planLoad(PLAN_PICK_KEY) || {};
+  const a = planLoad(planStoreKey(PLAN_PICK_KEY, no)) || {};
   const p = a[no] && a[no][key];
   return (p && Array.isArray(p.ids)) ? p : null;
 }
 function planSavePick(no, key, pick){
-  const a = planLoad(PLAN_PICK_KEY) || {};
+  const a = planLoad(planStoreKey(PLAN_PICK_KEY, no)) || {};
   a[no] = a[no] || {};
   if(pick) a[no][key] = { ids: pick.ids.slice(), miss: pick.miss || 0 }; else delete a[no][key];
-  planSave(PLAN_PICK_KEY, a);
+  planSave(planStoreKey(PLAN_PICK_KEY, no), a);
 }
 // 出す問題: 保存した一覧があればそれ、無ければ選ぶ（保存はしない＝今までどおり）
 function planRowPick(it, no, idx){
@@ -11764,17 +11840,17 @@ function planNoteFinish(){
 }
 // 行を「できた」にする（一人・二人で共通）。miss … 1回目が✕・スキップ・時間切れだった問題（小問・部分の id でもよい）
 function planMarkDone(no, key, miss){
-  const all = planLoad(PLAN_DONE_KEY) || {};
+  const all = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || {};
   const d = all[no] || {};
   if(!d[key]) d[key] = Date.now();
   all[no] = d;
-  planSave(PLAN_DONE_KEY, all);
+  planSave(planStoreKey(PLAN_DONE_KEY, no), all);
   planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は、やり終えたら消す（次はまた選び直す）
-  const ms = planLoad(PLAN_MISS_KEY) || {};
+  const ms = planLoad(planStoreKey(PLAN_MISS_KEY, no)) || {};
   const m = ms[no] || {};
   m[key] = Array.from(new Set((miss || []).map(planCardIdOf)));
   ms[no] = m;
-  planSave(PLAN_MISS_KEY, ms);
+  planSave(planStoreKey(PLAN_MISS_KEY, no), ms);
   planSendDone(no);
 }
 // ★2026-10-07 ユーザー「今日やることからだと一人でしかできないのですが二人でやりたいときはどうしますか？」→「二人で」。
@@ -11813,6 +11889,7 @@ function planNoteBattleEnd(finished){
 }
 // battle/plan_done/<番号>.json（同じセットは上書き）。送り先の鍵が無ければ何もしない（sendEnqueue の中で見る）
 function planSendDone(no){
+  if(planIsAuto(no)) return;   // ★自動のセットは送らない（kosuke-records の番号とまざらないように）
   try{
     const s = planSetOf(no), d = planDoneOf(no), sk = planSkipOf(no);
     const items = (s ? s.items : []).map((it, i) => { const k = planItemKey(it, i);
@@ -11905,7 +11982,7 @@ function renderPlanSet(container, no, prefix){
 function renderPlan(){
   const box = document.getElementById("plan-box");
   if(!box) return;
-  if(planShownNo === null || !planSetOf(planShownNo)) planShownNo = planFirstOpen() || null;
+  if(planShownNo === null || !planSetOf(planShownNo)) planShownNo = planFirstOpen() || planAutoCurrent() || null;   // ★セットが無いときだけ自動のセット
   const cur = document.getElementById("plan-cur"), nx = document.getElementById("plan-next"), fin = document.getElementById("plan-done");
   if(!planShownNo){ box.style.display = "none"; cur.innerHTML = ""; nx.innerHTML = ""; return; }
   box.style.display = "";
@@ -11913,9 +11990,12 @@ function renderPlan(){
   const allDone = planAllDone(planShownNo);
   fin.style.display = allDone ? "" : "none";
   // 全部できたら、すぐ下に次のセット（押せばそのまま進める）
-  const nextNo = allDone ? planFirstOpen(planShownNo) : null;
+  let nextNo = allDone ? planFirstOpen(planIsAuto(planShownNo) ? undefined : planShownNo) : null;
+  // ★つぎのセットが無いときだけ、自動のセット（いまが自動ならその次の番号）
+  if(allDone && !nextNo) nextNo = planIsAuto(planShownNo) ? (planAutoOff() ? null : "A" + (parseInt(planShownNo.slice(1), 10) + 1)) : planAutoCurrent();
+  if(nextNo && !planSetOf(nextNo)) nextNo = null;
   nx.style.display = nextNo ? "" : "none";
-  if(nextNo) renderPlanSet(nx, nextNo, "つぎ（明日のぶん）："); else nx.innerHTML = "";
+  if(nextNo) renderPlanSet(nx, nextNo, planIsAuto(nextNo) ? "" : "つぎ（明日のぶん）："); else nx.innerHTML = "";
 }
 // GitHub から読む。404 は null、つながらない・鍵がちがうは例外
 async function planGet(cfg, p){
@@ -11957,6 +12037,17 @@ async function fetchPlan(){
   }catch(e){ console.error("read plan failed", e); }
 }
 function setupTodayPlan(){
+  const ao = document.getElementById("plan-auto-off-toggle");
+  if(ao){
+    ao.classList.toggle("on", planAutoOff());
+    ao.addEventListener("click", () => {
+      const off = !planAutoOff();
+      try{ window.localStorage.setItem(PLAN_AUTO_OFF_KEY, off ? "1" : "0"); }catch(e){}
+      ao.classList.toggle("on", off);
+      planShownNo = null;
+      renderPlan();
+    });
+  }
   renderPlan();
   fetchPlan();
 }
