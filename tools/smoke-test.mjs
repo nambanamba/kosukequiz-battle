@@ -475,7 +475,7 @@ await test("未クリア優先（両方ONのとき未クリアが先）", async 
   // ★ 2026-09-26: 旧「未クリア＋よく間違える」＝1段目＋2段目
   await setTiers(t, [0, 1]); await t.page.waitForTimeout(200);
   t.is("1段目と2段目だけ ON になっている", await t.page.evaluate(() =>
-    Array.from(document.querySelectorAll(".mode-filter")).map(e => e.classList.contains("on"))), [true, true, false]);
+    [0, 1, 2, 3].map(k => document.querySelector('.mode-filter[data-tier="' + k + '"]').classList.contains("on"))), [true, true, false, false]);   // ★2026-10-08 から4つ目（3＝おぼえかけ）
   // 10問にする
   await t.page.evaluate(() => {
     // ★2026-09-27 から、段を絞ってもランダム順が効く（ユーザー判断・案A）。

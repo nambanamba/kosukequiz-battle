@@ -318,7 +318,7 @@
   /* ---- home: stats ---- */
   .stat-row{
     display:flex;
-    gap:10px;
+    gap:6px;
     margin-bottom:6px;
   }
   .stat-card{
@@ -326,7 +326,7 @@
     background:#fff;
     border:1px solid var(--paper-line);
     border-radius:10px;
-    padding:12px 10px;
+    padding:12px 4px;
     text-align:center;
     box-shadow:var(--card-shadow);
   }
@@ -1824,10 +1824,11 @@
     <div class="stat-row">
       <div class="stat-card"><div class="num" id="stat-total">-</div><div class="lbl">全問題数</div></div>
       <div class="stat-card"><div class="num" id="stat-stage1">-</div><div class="lbl">まだ正解<br>していない</div></div>
+      <div class="stat-card"><div class="num" id="stat-stage4">-</div><div class="lbl">おぼえ<br>かけ</div></div>
       <div class="stat-card"><div class="num" id="stat-stage2">-</div><div class="lbl">苦手な<br>問題</div></div>
       <div class="stat-card"><div class="num" id="stat-stage3">-</div><div class="lbl">定着した</div></div>
     </div>
-    <div class="stat-note">★右の3つを足すと、必ず「全問題数」になります（どれも、いまの絞りこみをかけた数です）。</div>
+    <div class="stat-note">★右の4つを足すと、必ず「全問題数」になります（どれも、いまの絞りこみをかけた数です）。定着は、ちがう日に3回正解したとき。</div>
     <!-- ★設定を移したときに一度だけ出す知らせ（2026-09-26）。
          ★黙って出る問題が変わってはいけない、が依頼書の失敗条件（4・13） -->
     <div class="migration-note" id="migration-note" style="display:none;">
@@ -1881,6 +1882,7 @@
       <div class="section-title">出題モード（組み合わせOK）</div>
       <div class="toggle-row">
         <div class="toggle mode-filter on" id="mode-stage1" data-tier="0">まだ正解していない</div>
+        <div class="toggle mode-filter on" id="mode-stage4" data-tier="3">おぼえかけ</div>
         <div class="toggle mode-filter on" id="mode-stage2" data-tier="1">苦手な問題</div>
         <div class="toggle mode-filter on" id="mode-stage3" data-tier="2">定着した</div>
       </div>
@@ -2121,6 +2123,7 @@
          ★「未実施のみ」は消しました（記録が1件も無い問だけで、1段目とは別の切り口だった） -->
     <div class="toggle-row" id="list-status-filters">
       <div class="toggle list-filter-toggle" data-tier="0">まだ正解していない</div>
+      <div class="toggle list-filter-toggle" data-tier="3">おぼえかけ</div>
       <div class="toggle list-filter-toggle" data-tier="1">苦手な問題</div>
       <div class="toggle list-filter-toggle" data-tier="2">定着した</div>
     </div>
@@ -3460,7 +3463,7 @@ const els = {};
 ["screen-home","screen-join","screen-list","screen-solo","screen-solo-result","screen-battle","screen-result",
  "screen-daimon-list","screen-daimon","screen-paper-list","screen-paper-print",
  "subject-social","subject-science",
- "stat-total","stat-stage1","stat-stage2","stat-stage3","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-parts-link","import-parts-link","import-parts-file","export-days-link","import-days-link","import-days-file","export-edits-link",
+ "stat-total","stat-stage1","stat-stage2","stat-stage3","stat-stage4","migration-note","migration-note-body","migration-note-ok","stat-clear-link","list-btn","calc-setup-btn","kanji-setup-btn","retry-last-miss-btn","resume-solo-btn","resume-battle-btn","export-link","export-studylog-link","export-studylog-detail-link","export-daimon-link","import-link","import-file","import-studylog-link","import-studylog-file","export-parts-link","import-parts-link","import-parts-file","export-days-link","import-days-link","import-days-file","export-edits-link",
  "paper-open-btn","paper-list-back","paper-list-body","paper-print-back","paper-print-btn","paper-print-body",
  "paper-pick-all","paper-pick-none","paper-pick-go",
  "daimon-open-btn","daimon-list-back","daimon-list-body","daimon-back","daimon-counter","daimon-title","daimon-lead-card","daimon-items",
@@ -4781,7 +4784,7 @@ function refreshResumeBattleButton(){
 // ⚠★ tierOf の1段目は lastCorrectAt と correct の両方を見ている。
 //   「数が合わない」と言われたときは、backfillLastCorrectAt の効き方も見ること。
 function countByTier(indices){
-  const n = [0, 0, 0];
+  const n = [0, 0, 0, 0];   // ★[まだ, 苦手, 定着, おぼえかけ]（2026-10-08 から4つ。番号は tierOf のまま）
   indices.forEach(i => n[tierOf(i)] += weightOf(i));   // ★大問は答える小問の数
   return n;
 }
@@ -4793,7 +4796,7 @@ function countByUnitAndTier(){
   const out = {};
   applyPoolFilters(all, true).forEach(i=>{
     const u = QA_DATA[i].u;
-    (out[u] || (out[u] = [0,0,0]))[tierOf(i)] += weightOf(i);   // ★大問は答える小問の数
+    (out[u] || (out[u] = [0,0,0,0]))[tierOf(i)] += weightOf(i);   // ★大問は答える小問の数
   });
   return out;
 }
@@ -4805,13 +4808,13 @@ function countByUnitAndTier(){
 //   そうしないと足しても合わない（依頼書の失敗 16）。
 function refreshUnitTierCounts(){
   const byUnit = countByUnitAndTier();
-  const all = [0, 0, 0];
-  Object.keys(byUnit).forEach(u => { for(let k=0;k<3;k++) all[k] += byUnit[u][k]; });
+  const all = [0, 0, 0, 0];
+  Object.keys(byUnit).forEach(u => { for(let k=0;k<4;k++) all[k] += byUnit[u][k]; });
   document.querySelectorAll("#unit-choices .choice, #review-unit-choices .choice").forEach(el=>{
-    const n = el.dataset.unit === "ALL" ? all : (byUnit[el.dataset.unit] || [0,0,0]);
+    const n = el.dataset.unit === "ALL" ? all : (byUnit[el.dataset.unit] || [0,0,0,0]);
     const c = el.querySelector(".count"), t = el.querySelector(".unit-tiers");
-    if(c) c.textContent = (n[0]+n[1]+n[2]) + "問";
-    if(t) t.textContent = "まだ " + n[0] + " ／ 苦手 " + n[1] + " ／ 定着 " + n[2];
+    if(c) c.textContent = (n[0]+n[1]+n[2]+n[3]) + "問";
+    if(t) t.textContent = "まだ " + n[0] + " ／ おぼえかけ " + n[3] + " ／ 苦手 " + n[1] + " ／ 定着 " + n[2];
   });
   // 地理／公民／歴史 の見出しの数も、同じ数え方にそろえる
   document.querySelectorAll(".unit-group-header[data-group]").forEach(h=>{
@@ -4819,8 +4822,8 @@ function refreshUnitTierCounts(){
     if(!body) return;
     let sum = 0;
     body.querySelectorAll(".choice").forEach(el=>{
-      const n = byUnit[el.dataset.unit] || [0,0,0];
-      sum += n[0]+n[1]+n[2];
+      const n = byUnit[el.dataset.unit] || [0,0,0,0];
+      sum += n[0]+n[1]+n[2]+n[3];
     });
     const c = h.querySelector(".unit-group-count");
     if(c) c.textContent = sum + "問";
@@ -4828,8 +4831,9 @@ function refreshUnitTierCounts(){
 }
 function refreshStatRow(){
   const n = countByTier(buildPool(true));
-  els["stat-total"].textContent = n[0] + n[1] + n[2];
+  els["stat-total"].textContent = n[0] + n[1] + n[2] + n[3];
   els["stat-stage1"].textContent = n[0];
+  els["stat-stage4"].textContent = n[3];
   els["stat-stage2"].textContent = n[1];
   els["stat-stage3"].textContent = n[2];
   refreshUnitTierCounts();
@@ -4912,8 +4916,15 @@ let currentShuffle = true;
 //   ★旧 filterUnmastered / filterWeak は、loadSettings で**一度だけ**段に移します。
 //   ★**それ以降、本体のどこも旧の名前を読みません**（ユーザー「極力シンプルな思想、実装で」）。
 //   ★段の定義は tierOf だけ。切り口を増やさないこと（確認ポイント 4-6i）。
-let selectedTiers = new Set([0, 1, 2]);
-const TIER_NAMES = ["まだ正解していない", "苦手な問題", "定着した"];
+let selectedTiers = new Set([0, 1, 2, 3]);
+// ★2026-10-08 4つ目「おぼえかけ」（番号 3）を足した。番号 0〜2 の意味と、保存・CSV の値はそのまま。
+//   おぼえかけ＝正解はあるが、ちがう日の正解が3日未満で、苦手の条件に当たらないもの。
+//   ★記録CSVの「状態」には3つの語だけを書く（おぼえかけは「苦手な問題」と書く。csvTierName）
+//   並び（低い順）: まだ(0) → 苦手(1) → おぼえかけ(3) → 定着(2)。小さいほうを比べるときは TIER_RANK を使う
+const TIER_NAMES = ["まだ正解していない", "苦手な問題", "定着した", "おぼえかけ"];
+const TIER_RANK = [0, 1, 3, 2];
+function lowerTier(a, b){ return TIER_RANK[a] <= TIER_RANK[b] ? a : b; }
+function csvTierName(t){ return TIER_NAMES[t === 3 ? 1 : t]; }
 
 // ============================================================
 // ★★ 旧「未クリア／よく間違える」→ 段の選択 への、一度だけの移行（2026-09-26）
@@ -4931,19 +4942,25 @@ const TIER_NAMES = ["まだ正解していない", "苦手な問題", "定着し
 const TIER_MIGRATION_ID = "tiers-from-modes";
 const pendingMigrationNotes = [];   // ★移行が起きたときだけ入る。知らせを1回出したら消す
 function tiersFromSaved(s){
-  if(Array.isArray(s.tiers)) return new Set(s.tiers);
+  // ★2026-10-08 おぼえかけ（3）を足す前の保存: 苦手か定着を選んでいたら、おぼえかけも入れる
+  //   （おぼえかけのカードは、前は「定着」か「苦手」に入っていたので、出なくならないように広いほうへ）
+  if(Array.isArray(s.tiers)){
+    const t = new Set(s.tiers);
+    if(!s.tiers4 && (t.has(1) || t.has(2))) t.add(3);
+    return t;
+  }
   const un = s.filterUnmastered === true, wk = s.filterWeak === true;
   if(un){
     // 旧「未クリア」（単独でも両方でも）→ 1段目+2段目
     pendingMigrationNotes.push(un && wk ? "both" : "unmastered");
-    return new Set([0, 1]);
+    return new Set([0, 1, 3]);
   }
   if(wk){
     // 旧「よく間違える」だけ → 2段目。★B（✕がついて未正解）が落ちるので、知らせで名指しする
     pendingMigrationNotes.push("weak");
-    return new Set([1]);
+    return new Set([1, 3]);
   }
-  return new Set([0, 1, 2]);   // 両方OFF （既定）→ 全部。★意味が変わらないので知らせない
+  return new Set([0, 1, 2, 3]);   // 両方OFF （既定）→ 全部。★意味が変わらないので知らせない
 }
 let currentType = "all"; // all | image | text
 // ★優先度は「普通／低」の2つだけ（2026-09-27 ユーザー「優先度は低（今回外してもらった分）、普通（それ以外）の2択では？」）。
@@ -5017,6 +5034,7 @@ function collectSubjectSettings(){
   return {
     count: questionCount,
     tiers: Array.from(selectedTiers),
+    tiers4: true,   // ★おぼえかけ（3）を知っている保存（2026-10-08）
     type: currentType,
     priority: currentPriority,
     level: currentLevel,
@@ -5137,6 +5155,7 @@ function saveSettings(){
       // 以下の出題設定も、旧バージョン用に「いまの科目のぶん」をフラットにも書いておく。
       // 読むのは settingsBySubject が優先
       tiers: Array.from(selectedTiers),
+      tiers4: true,
       type: currentType,
       priority: currentPriority,
       level: currentLevel,
@@ -5436,7 +5455,7 @@ function tierOf(i){
   const d = QA_DATA[i];
   // ★大問（2026-09-27）: 小問の段のうち一番低いもの。大問そのものには記録を書かない
   //   ★2026-09-27 夕: 数えるのは答える小問だけなので、段も答える小問のうち一番低いもの（全部○なら定着・0問）
-  if(isDaimonEntry(d)) return answerItemIds(d).reduce((m, id) => Math.min(m, tierOfStat(stats[id])), 2);
+  if(isDaimonEntry(d)) return answerItemIds(d).reduce((m, id) => lowerTier(m, tierOfStat(stats[id])), 2);
   return tierOfStat(stats[d.id]);
 }
 // 1つの記録から段を出す（一問一答・小問で同じ）
@@ -5449,7 +5468,8 @@ function tierOfStat(s, oldRule){
   if((s.wrong||0) > 0 && (s.box||0) <= 1) return 1;  // 2段目: 一度は正解したが、まだ2連続正解していない
   // ★2026-10-08 3段目（定着した）は「ちがう日に3回正解」（MASTER_DAYS）か、一覧で手で「定着した」にしたもの。
   //   それまでは2段目（苦手な問題＝まだ定着していない）。oldRule は分けての部分の記録用（今までどおり）
-  if(!oldRule && !s.manualMastered && correctDaysOf(s).length < MASTER_DAYS) return 1;
+  //   ★2026-10-08 B: その「まだ定着していない」は4つ目の「おぼえかけ」（3）。苦手（1）は今の苦手の条件だけ
+  if(!oldRule && !s.manualMastered && correctDaysOf(s).length < MASTER_DAYS) return 3;
   return 2;                                          // 3段目: それ以外
 }
 // 3段に分けて、各段を「最後に正解した日が古い順」に並べ、繋げて返す。
@@ -5458,13 +5478,13 @@ function tierOfStat(s, oldRule){
 //   ★並びの鍵（段・正解日）は1つも変えない。同点のときの決め手を足すだけ。
 //   ★復習ミックス・fillFromRest は starTie なしで呼ぶ（そちらの並びは変えない）
 function orderByTiers(indices, starTie, firstKind){
-  const tiers = [[], [], []];
+  const tiers = [[], [], [], []];
   indices.forEach(i => tiers[tierOf(i)].push(i));
   const star = i => (starTie && isPriority(QA_DATA[i].id)) ? 0 : 1;
   // ★firstKind（2026-10-05）: 同じ段の中で、年表（社会）・表（理科）の問を先に。段はまたがない
   const fk = i => firstKind ? firstKindRank(QA_DATA[i]) : 0;
   tiers.forEach(t => t.sort((a, b) => (fk(a) - fk(b)) || (lastCorrectOf(a) - lastCorrectOf(b)) || (star(a) - star(b))));
-  return tiers[0].concat(tiers[1], tiers[2]);
+  return tiers[0].concat(tiers[1], tiers[3], tiers[2]);   // ★おぼえかけ（3）は苦手と定着のあいだ
 }
 // ============================================================
 // ★年表・表を先に出す（2026-10-05 ユーザー）
@@ -5602,7 +5622,7 @@ function pickRandomWithRecentMisses(ordered, starHead){
 //   復習の候補は「選んでいない単元」なので本来ぶつかりませんが、当てにしません
 function buildPlan(){
   // ★「段を絞っているか」。3つとも選んでいれば「ふだんの出題」（旧の「両方OFF」と同じ意味）
-  const narrowing = selectedTiers.size < 3;
+  const narrowing = selectedTiers.size < 4;
   let main = buildPool();
   lastPickSkippedDaimon = false;
   // ★段を絞っていてもいなくても、ランダム順を選んでいれば、最近まちがえた問題を必ず入れて混ぜる（2026-09-27）。
@@ -5831,7 +5851,7 @@ function refreshCreateButton(){
   //   以前はここで同じ計算をもう一度書いていたので、片方だけ直すとずれた（写し・確認ポイント 4-6d）。
   //   ★いまは「予告の数」と「実際に出る数」が同じ関数から出ます（依頼書の失敗9）。
   const plan = buildPlan();
-  const narrowing2 = selectedTiers.size < 3;
+  const narrowing2 = selectedTiers.size < 4;
   const n = sumWeight(plan.pool);   // ★大問は答える小問の数（2026-09-27）
   let label = n+"問";
   if(plan.reviewCount > 0) label += "（復習"+plan.reviewCount+"問こみ）";
@@ -6450,6 +6470,7 @@ function listStatControlsHtml(id, tier){
         '<label class="list-stat-date"><span class="list-stat-date-label">最後に解いた日<em>上の日付での絞りこみに使います</em></span>'+
           '<input type="date" data-date-field="lastAnswered" value="'+(s.lastAnswered ? dateToYMD(s.lastAnswered) : "")+'"></label>'+
       '</div>'+
+      '<div class="list-stat-tier" style="font-size:12px;color:var(--ink-soft);margin:4px 0;">いまの状態：'+TIER_NAMES[tier]+'（ちがう日の正解 '+correctDaysOf(stats[id]).length+'日）</div>'+
       '<div class="status-toggle">'+
         // ★★ 2026-09-26: ボタンは2つだけ。「苦手な問題」のボタンは置かない。
         //   ★理由: 2段目の定義は「一度は正解した ∧ まちがえたことがある」なので、
@@ -6932,7 +6953,7 @@ function recordCsvRows(){
     const streak = stats[d.id] ? (s.box||0) : "";
     const wrong = s.wrong||0;
     // ★ 2026-09-26: 状態も出題の3段に揃えた（旧「未回答／苦手／正解ずみ」）
-    const status = TIER_NAMES[questionTier(d.id)];
+    const status = csvTierName(questionTier(d.id));   // ★おぼえかけは「苦手な問題」と書く（列の値は3つのまま）
     const lastCorrect = s.lastCorrectAt ? dateToYMD(s.lastCorrectAt) : "";
     const lastAnswered = s.lastAnswered ? dateToYMD(s.lastAnswered) : "";
     rows.push([d.id, d.u, d.q, d.a, correct, wrong, status, lastCorrect, lastAnswered, streak]);
@@ -7434,7 +7455,7 @@ function daimonRecordRows(){
   const rows = [["大問ID","教科","単元","大問","小問の数","大問の状態",
     "定着した小問","苦手な小問","まだ正解していない小問","正解した回数","まちがえた回数","最終正答日","最終回答日","小問ID"]];
   QA_DATA.filter(d => isDaimonEntry(d)).forEach(d => {
-    const g = d.daimon, tiers = [0, 0, 0];
+    const g = d.daimon, tiers = [0, 0, 0, 0];
     let ok = 0, ng = 0, lastC = 0, lastA = 0;
     d.itemIds.forEach(id => {
       const s = stats[id];
@@ -7445,8 +7466,8 @@ function daimonRecordRows(){
       if(s.lastAnswered > lastA) lastA = s.lastAnswered;
     });
     const name = (g.book ? g.book + " " : "") + daimonName(g);
-    rows.push([d.id, d.subj, d.u, name, d.itemIds.length, TIER_NAMES[tierOf(QA_DATA.indexOf(d))],
-      tiers[2], tiers[1], tiers[0], ok, ng, lastC ? dateToYMD(lastC) : "", lastA ? dateToYMD(lastA) : "", d.itemIds.join(" ")]);
+    rows.push([d.id, d.subj, d.u, name, d.itemIds.length, csvTierName(tierOf(QA_DATA.indexOf(d))),
+      tiers[2], tiers[1] + tiers[3], tiers[0], ok, ng, lastC ? dateToYMD(lastC) : "", lastA ? dateToYMD(lastA) : "", d.itemIds.join(" ")]);
   });
   return rows;
 }
@@ -7949,7 +7970,7 @@ function renderDaimonList(){
       body.appendChild(h);
       lastHead = head;
     }
-    const n = [0, 0, 0];
+    const n = [0, 0, 0, 0];
     g.items.forEach(it => n[daimonTierOf(it.id)]++);
     const row = document.createElement("button");
     row.type = "button";
@@ -7958,7 +7979,7 @@ function renderDaimonList(){
     row.innerHTML = '<span class="name"></span><span class="gist"></span><span class="tiers"></span>';
     row.querySelector(".name").textContent = daimonName(g) + "（小問" + g.items.length + "）";
     row.querySelector(".gist").textContent = (g.lead || g.items[0].q || "").replace(/\s+/g, " ");
-    row.querySelector(".tiers").innerHTML = "まだ " + n[0] + "・"
+    row.querySelector(".tiers").innerHTML = "まだ " + n[0] + "・おぼえかけ " + n[3] + "・"
       + (n[1] > 0 ? '<span class="weak">苦手 ' + n[1] + '</span>' : "苦手 0") + "・定着 " + n[2];
     row.addEventListener("click", ()=> startDaimon(gi));
     body.appendChild(row);
@@ -11194,12 +11215,11 @@ function planWeakRank(id, missSet){
     tier = tierOf(i);
     at = (stats[id] && stats[id].lastCorrectAt) || 0;
   }
-  const r = tier === 1 ? 1 : (tier === 0 ? 2 : 3);
-  // ★2026-10-08 定着＝ちがう日に3回正解。まだ定着していない（2段目）でも、まちがえていなくて今日もう正解したカードは、
-  //   今日もう一度やっても定着に近づかない（同じ日は1回）ので、並びだけ「まだ正解していない」のうしろに回す（o）。r（見出しの苦手／まだ／定着）は変えない
+  // ★2026-10-08 並び: その日✕(0) → 苦手(1) → まだ(2) → おぼえかけ(2.5。今日もう正解したものは 2.75＝うしろ) → 定着(3・古い順)
+  //   今日もう正解したおぼえかけは、今日もう一度やっても定着に近づかない（同じ日は1回）ので、おぼえかけの中でうしろ
+  const r = tier === 1 ? 1 : (tier === 0 ? 2 : (tier === 3 ? 2.5 : 3));
   const s0 = stats[id];
-  const o = (r === 1 && !isDaimonEntry(d) && splitModeOf(id) !== "split" && s0 && !((s0.wrong||0) > 0 && (s0.box||0) <= 1)
-    && correctDaysOf(s0).indexOf(dateToYMD(Date.now())) >= 0) ? 2.5 : r;
+  const o = (r === 2.5 && !isDaimonEntry(d) && s0 && correctDaysOf(s0).indexOf(dateToYMD(Date.now())) >= 0) ? 2.75 : r;
   return { r: r, o: o, at: at === Infinity ? 0 : at };
 }
 // ★2026-10-08 ユーザー「理科だけで35問出ました。ちゃんと理科20と社会15出るようにしてください」
@@ -11272,7 +11292,7 @@ function planRowPick(it, no, idx){
   return sv ? { ids: sv.ids.filter(id => QA_DATA.some(d => d.id === id)), miss: sv.miss || 0, saved: true } : planItemPick(it, no, idx);
 }
 // 一覧の1行の状態（苦手／まだ／定着）。並べ替え（planWeakRank）と同じ見方（分けては部分・大問は小問）
-function planTierLabel(id){ return ({ 1: "苦手", 2: "まだ", 3: "定着" })[planWeakRank(id, new Set()).r] || ""; }
+function planTierLabel(id){ return ({ 1: "苦手", 2: "まだ", 2.5: "おぼえかけ", 3: "定着" })[planWeakRank(id, new Set()).r] || ""; }
 // ★2026-10-08 「中身を見る」（ユーザー「中身を見るに、イラストや答えを出してほしい」）。#25 の親の合言葉は取り除いた
 //   （前に保存した kq_battle_parent_pass_v1 が端末に残っていても読まない・消しもしない）。
 //   ・各問題に図を小さく出す（タップで大きく）。大問は大問の図＋小問ごとの図、分けてはカードの図

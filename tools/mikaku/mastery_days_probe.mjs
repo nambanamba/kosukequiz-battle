@@ -7,7 +7,9 @@
 //   M4 今までの記録（正解した日の一覧なし・今は「定着」）: 開いただけでは記録が1字も変わらない・状態は苦手・
 //      ちがう日に〇を2回足すと（最終正答日＋2日＝3日）定着。正解・まちがいの回数は減らない
 //   M5 記録CSV: 見出しは直す前と同じ・今までの記録の行は「状態」列のほかは直す前とバイトまで同じ（定着にならない行は状態も同じ）
-//   M6 ホームの数（まだ／苦手／定着）が新しい状態で数える
+//   M6 ホームの数は4つ（まだ／おぼえかけ／苦手／定着。2026-10-08 ユーザー回答 B）。足すと全問題数。M1〜M3 でも数が動く
+//      ★記録CSVの「状態」は3つの語のまま（おぼえかけは「苦手な問題」と書く）
+//   M10 前の保存（tiers に 3 が無い・tiers4 なし）で苦手を選んでいたら、おぼえかけも選ばれる。tiers4 ありなら保存どおり
 //   M7 一覧の「定着した」ボタン → 定着（印）。✕で印が外れて苦手
 //   M8 正解した日の記録の書き出し → 正解した日を消して取り込み → 戻る・2回取り込んでも重ならない・記録の無いカードは作らない
 //   E  画面のエラー 0
@@ -93,7 +95,10 @@ async function run(label, src) {
     const raw0 = JSON.stringify(legacy), raw1 = await rawStats();
     const csv0 = await exportCsv();
     out.push({ csv0: csv0.text });
-    const home0 = await page.evaluate(() => ["stat-stage1", "stat-stage2", "stat-stage3"].map(id => +document.getElementById(id).textContent));
+    // [まだ, おぼえかけ, 苦手, 定着, 全問題数]
+    const home = () => page.evaluate(() => ["stat-stage1", "stat-stage4", "stat-stage2", "stat-stage3", "stat-total"].map(id => { const e = document.getElementById(id); return e ? +e.textContent : -1; }));
+    const sumOk = h => h[0] + h[1] + h[2] + h[3] === h[4];
+    const home0 = await home();
     // M4（開いただけ）
     check("M4 今までの記録は開いただけでは1字も変わらない", raw1 === raw0, raw1 && raw1.slice(0, 160));
     check("M4 正解した日の一覧が無い今までの「定着」（" + D + "・" + E + "）は苦手な問題・" + F + " は苦手のまま",
@@ -101,10 +106,13 @@ async function run(label, src) {
       [statusOf(csv0, D), statusOf(csv0, E), statusOf(csv0, F)].join(" / "));
     // M6 ホームの数（社会・鎌倉時代を選んでいる。D・E・F が苦手、のこりはまだ）
     const nUnit = await page.evaluate(u => QA_DATA.filter(d => d.u === u).length, UNIT);
-    check("M6 ホームの数: まだ／苦手／定着 = " + home0.join("／") + "（今までの定着2問も苦手に数える）", home0[1] === 3 && home0[2] === 0, home0.join(","));
+    check("M6 ホームの数: まだ／おぼえかけ／苦手／定着 = " + home0.slice(0, 4).join("／") + "（今までの定着2問はおぼえかけ・F は苦手）・足すと全問題数 " + home0[4],
+      home0[1] === 2 && home0[2] === 1 && home0[3] === 0 && sumOk(home0), home0.join(","));
     // M1 同じ日に3回
     for (let k = 0; k < 3; k++) await solo([A], true);
     let st = await stats(), csv = await exportCsv();
+    const home1 = await home();
+    check("M6 同じ日に3回〇のあと: おぼえかけ 3（A・D・E）・定着 0（" + home1.slice(0, 4).join("／") + "）", home1[1] === 3 && home1[3] === 0 && sumOk(home1), home1.join(","));
     check("M1 同じ日に3回〇 → 定着にならない（" + statusOf(csv, A) + "）・正解した日は1日・正解した回数3",
       statusOf(csv, A) === "苦手な問題" && st[A] && st[A].correct === 3 && JSON.stringify(st[A].correctDays) === JSON.stringify([YMD(1)]), JSON.stringify(st[A]));
     // M2
@@ -112,12 +120,16 @@ async function run(label, src) {
     csv = await exportCsv(); const s2 = statusOf(csv, A), d2 = statusOf(csv, D);
     await setDay(3); await solo([A, D], true);
     st = await stats(); csv = await exportCsv();
+    const home2 = await home();
+    check("M6 3日目のあと: おぼえかけ 1（E）・苦手 1（F）・定着 2（A・D）（" + home2.slice(0, 4).join("／") + "）", home2[1] === 1 && home2[2] === 1 && home2[3] === 2 && sumOk(home2), home2.join(","));
     check("M2 2日目はまだ苦手（" + s2 + "）・3日目の〇で定着（" + statusOf(csv, A) + "）", s2 === "苦手な問題" && statusOf(csv, A) === "定着した" && st[A].correctDays.length === 3, JSON.stringify(st[A].correctDays));
     check("M4 今までの記録に〇を2日足すと（9/26＋10/2＋10/3）定着・2日目はまだ苦手（" + d2 + "）・正解5→7・まちがい0のまま",
       d2 === "苦手な問題" && statusOf(csv, D) === "定着した" && st[D].correct === 7 && st[D].wrong === 0 && JSON.stringify(st[D].correctDays) === JSON.stringify(["2026-09-26", YMD(2), YMD(3)]), JSON.stringify(st[D]));
     // M3
     await solo([A], false);
     st = await stats(); csv = await exportCsv();
+    const home3 = await home();
+    check("M6 ✕のあと: 苦手 2（F・A）・定着 1（D）（" + home3.slice(0, 4).join("／") + "）", home3[2] === 2 && home3[3] === 1 && sumOk(home3), home3.join(","));
     check("M3 定着のあと✕ → 苦手・連続0・まちがい+1・正解した日は3日のまま",
       statusOf(csv, A) === "苦手な問題" && st[A].box === 0 && st[A].wrong === 1 && st[A].correct === 5 && st[A].correctDays.length === 3, JSON.stringify(st[A]));
     // M5 CSV の形（今までの記録の行: 状態のほかは直す前と同じ。F は状態も同じ）
@@ -158,6 +170,19 @@ async function run(label, src) {
         canon(after1) === canon(before) && canon(after2) === canon(before) && !after2[C],
         canon(before) + " ≠ " + canon(after1));
     }
+    // M10 前の保存の出題モード
+    const m10 = [];
+    for (const v4 of [false, true]) {
+      await page.evaluate(([mig, unit, v4]) => {
+        localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(mig));
+        const o = { subject: "社会", unitsBySubject: { "社会": [unit] }, units: [unit], count: 5, shuffle: false, tiers: [1] };
+        if (v4) o.tiers4 = true;
+        localStorage.setItem("kq_battle_settings_v1", JSON.stringify(o));
+      }, [MIG, UNIT, v4]);
+      await page.goto(ORIGIN); await page.waitForTimeout(600);
+      m10.push(await page.evaluate(() => { const e = document.getElementById("mode-stage4"); return e ? e.classList.contains("on") : null; }));
+    }
+    check("M10 前の保存で「苦手」だけ → おぼえかけも ON（" + m10[0] + "）・tiers4 ありの保存はそのまま OFF（" + m10[1] + "）", m10[0] === true && m10[1] === false, JSON.stringify(m10));
     check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await ctx.close(); }
