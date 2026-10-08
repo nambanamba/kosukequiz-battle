@@ -85,7 +85,7 @@ const only = process.argv.slice(2);
 async function test(name, fn) {
   if (only.length && !only.some(k => name.includes(k))) return;
   const ctx = await browser.newContext({ acceptDownloads: true });
-  await ctx.route("https://esm.run/trystero", r =>
+  await ctx.route(/^https:\/\/esm\.run\/trystero(@[0-9.]+)?(\?.*)?$/, r =>   // 版つき（trystero@0.25.4）も止める
     r.fulfill({ status: 200, contentType: "application/javascript", body: TRYSTERO_STUB }));
   const page = await ctx.newPage();
   const errors = [];

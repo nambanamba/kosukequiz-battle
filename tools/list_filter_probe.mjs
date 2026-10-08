@@ -56,7 +56,7 @@ async function launchBrowser(bt) {
 }
 const browser = await launchBrowser(chromium);
 const ctx = await browser.newContext();
-await ctx.route("https://esm.run/trystero", r =>
+await ctx.route(/^https:\/\/esm\.run\/trystero(@[0-9.]+)?(\?.*)?$/, r =>   // 版つき（trystero@0.25.4）も止める
   r.fulfill({ status: 200, contentType: "application/javascript", body: TRYSTERO_STUB }));
 const page = await ctx.newPage();
 const errors = [];

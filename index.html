@@ -2795,9 +2795,16 @@ let joinRoomTry = 0;
 // （実測ずみ。同じURLの2回目は通信すら発生しない）。
 // これをしないと、裏の先読みがたまたま失敗しただけで、
 // **電波が戻っても、アプリを開き直すまで対戦が始められなくなる**。
+// ★★版は必ず決めうちにする（2026-10-08「対戦ができなくなりました」）。
+//   版を書かないと「その日いちばん新しい版」が来る。trystero 0.26.0（2026-10-04）は通信の形が変わり、
+//   0.25.4 と 0.26.0 の端末どうしは、道（WebRTC）がつながっても「incompatible action protocol version」で
+//   切られ、アプリは「つながった」にならない。端末ごとに前に読んだ版が最大7日残る（esm.run の cache 604800秒）ので、
+//   公開した日とは関係なく、ある日とつぜん片方だけ新しい版になる。
+//   ★上げるときは、ここの2行を同じ版にそろえ、二人の検査（start_first_q_probe・meet_probe）を通してから
+const TRYSTERO_VERSION = '0.25.4';
 const TRYSTERO_URLS = [
-  'https://esm.run/trystero',
-  'https://cdn.jsdelivr.net/npm/trystero/+esm',
+  'https://esm.run/trystero@' + TRYSTERO_VERSION,
+  'https://cdn.jsdelivr.net/npm/trystero@' + TRYSTERO_VERSION + '/+esm',
 ];
 function importTrystero(){
   const n = joinRoomTry++;
