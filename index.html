@@ -1872,6 +1872,10 @@
       <div class="toggle-row">
         <div class="toggle check-toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
+      <!-- ★2026-10-09 答えが2つ以上のカードを分けずにまとめて出す（端末に保存。一人・二人とも。二人はホストの設定で決まる） -->
+      <div class="toggle-row">
+        <div class="toggle check-toggle" id="merge-all-toggle">分けずにまとめて出す（答えが2つ以上のカード）</div>
+      </div>
       <!-- ★理科の「大問」（テキスト通りの形）。2026-09-27。理科のときだけ出る。一問一答とは別の出し方 -->
       <button class="btn-secondary" id="daimon-open-btn" style="margin-top:10px; display:none;">テスト形式（大問）で解く</button>
       <!-- ★「紙で出す」（2026-09-28）。印の付いた大問（paper:true）は出題に出さないので、
@@ -2693,10 +2697,32 @@ function partDone(pid, since){
   const n = h.length;
   return n >= 2 && h[n - 1][1] === 1 && h[n - 2][1] === 1 && h[n - 2][0] > since;
 }
+// ★★2026-10-09 ユーザー「テストも近いので細かく分けずにまとめて出せるところは出しませんか？」→ 2つの「まとめて出す」
+//   ① 今日やることの行の印 "merge":true … その行で出すカードは、分けての間でも全部まとめて（1枚＝1問で数える）
+//   ② ホームの設定のスイッチ「分けずにまとめて出す」（端末に保存・kq_battle_merge_all_v1）… オンの間は一人・二人とも全部まとめて
+//   ・記録はふつうどおり。まとめてで✕なら部分の記録はそのまま、印もスイッチも無いときは次は分けてに戻る（今までの決まり）
+//   ・二人はホストの端末で決める（ホストが並びを作る）。開始の合図に mg:1 を付けてゲストに伝える
+const MERGE_ALL_KEY = "kq_battle_merge_all_v1";
+let mergeAll = false;
+try{ mergeAll = window.localStorage.getItem(MERGE_ALL_KEY) === "1"; }catch(e){ mergeAll = false; }
+function saveMergeAll(){ try{ window.localStorage.setItem(MERGE_ALL_KEY, mergeAll ? "1" : "0"); }catch(e){} }
+let mergeForce = false;          // 今日やることの merge 行を選ぶ・開く間だけ true（withMerge）
+let sessionMerge = false;        // いまの回が merge 行から始めたか（回の中で開き直すとき＝もう一勝負・公平モードの追加に使う）
+let guestMergeFromHost = false;  // ゲスト: ホストから「まとめて」と伝えられた（開始の合図の mg）
+function withMerge(on, fn){
+  const prev = mergeForce;
+  if(on) mergeForce = true;
+  try{ return fn(); } finally{ mergeForce = prev; }
+}
+function mergeOn(){
+  if(mergeAll || mergeForce) return true;
+  try{ return role === "guest" && guestMergeFromHost; }catch(e){ return false; }   // role は後ろで宣言（読み込みの途中は false）
+}
 // "split"＝分けて / "together"＝まとめて / ""＝分けられないカード
 function splitModeOf(cardId){
   const g = SPLIT_CARD.get(cardId);
   if(!g) return "";
+  if(mergeOn()) return "together";   // ★2026-10-09 まとめて出す（行の印・スイッチ）
   const since = cardBackAt(cardId);
   return g.items.every(it => partDone(it.id, since)) ? "together" : "split";
 }
@@ -3488,7 +3514,7 @@ const els = {};
  "type-all","type-image","type-text",
  "priority-all","priority-normal","priority-low",
 
- "count-row","count-custom-row","count-custom-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","pool-count-label","pool-count-bar","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle",
+ "count-row","count-custom-row","count-custom-input","review-unit-choices","review-unit-all-link","review-unit-clear-link","review-type-row","review-priority-row","pool-count-label","pool-count-bar","shuffle-toggle","order-toggle","review-mode-toggle","fair-mode-toggle","merge-all-toggle",
  "solo-start-btn","create-btn","go-join",
  "home-setup","home-waiting","home-waiting-note","start-together-btn","create-cancel","room-code-display","room-code-change","create-error","join-waiting-note","join-start-together-btn","join-fair-units","join-fair-unit-choices",
  "join-back","join-setup","join-waiting","join-code-input","join-btn","join-error","create-retry-btn","join-retry-btn",
@@ -6087,6 +6113,14 @@ els["review-mode-toggle"].addEventListener("click", ()=>{
   els["review-mode-toggle"].classList.toggle("on", reviewMode);
   saveSettings();
 });
+els["merge-all-toggle"].classList.toggle("on", mergeAll);
+els["merge-all-toggle"].addEventListener("click", ()=>{
+  mergeAll = !mergeAll;
+  saveMergeAll();
+  els["merge-all-toggle"].classList.toggle("on", mergeAll);
+  renderUnitChoices();   // ★数え方が変わる（分けて＝答える部分の数／まとめて＝1枚1問）
+  renderHome();
+});
 els["fair-mode-toggle"].addEventListener("click", ()=>{
   fairMode = !fairMode;
   els["fair-mode-toggle"].classList.toggle("on", fairMode);
@@ -6693,6 +6727,7 @@ els["selection-solo-btn"].addEventListener("click", ()=>{
   const ids = selectedIdsInOrder();
   if(ids.length === 0) return;
   // ★一覧で大問の行を選んだときも、小問に開いてから出す（solo-start-btn と同じ規則）
+  sessionMerge = false;   // ★今日やることの merge 行ではない（2026-10-09）
   quizQueue = expandDaimonIds(ids, reviewMode);   // ★チェックのみでは分けない（2026-10-06）
   quizPos = 0;
   quizResults = [];
@@ -8205,6 +8240,7 @@ els["solo-start-btn"].addEventListener("click", ()=>{
   //   並べかえ（buildFinalPool の中）のあとに開くので、大問はばらけない
   const pool = buildFinalPool();
   if(pool.length === 0) return;
+  sessionMerge = false;   // ★今日やることの merge 行ではない（2026-10-09）
   quizQueue = expandDaimonIds(pool.map(i => QA_DATA[i].id));
   if(reviewMode) quizQueue = expandDaimonIds(pool.map(i => QA_DATA[i].id), true);   // ★チェックのみでは分けない（2026-10-06）
   quizPos = 0;
@@ -8565,7 +8601,7 @@ function finishSoloQuiz(){
   }
   els["solo-retry-miss-btn"].onclick = ()=>{
     // ★小問を1つでもまちがえた大問は、大問ごともう一度（対戦と同じ規則。expandMissIdsKeepingDaimon）
-    quizQueue = expandMissIdsKeepingDaimon(misses.map(m=>m.id));
+    quizQueue = withMerge(sessionMerge, () => expandMissIdsKeepingDaimon(misses.map(m=>m.id)));   // ★merge 行の回はまとめてのまま
     quizPos = 0;
     quizResults = [];
     inSoloRetryRound = true;
@@ -8583,6 +8619,7 @@ els["solo-result-home-btn"].addEventListener("click", ()=>{
 
 els["retry-last-miss-btn"].addEventListener("click", ()=>{
   // ★データから消えた問題を除いてから開き直す（isKnownId。大問の小問の id もここに含む）
+  sessionMerge = false;
   const ids = expandMissIdsKeepingDaimon(lastMissIds.filter(id => isKnownId(id)));
   if(ids.length === 0) return;
   quizQueue = ids;
@@ -9415,6 +9452,7 @@ function leaveRoom(){
   hideBigVerdict();
   room = null;
   role = null;
+  guestMergeFromHost = false;   // ★2026-10-09
   questionIds = [];
   currentIndex = -1;
   scores = {host:0, guest:0};
@@ -9523,7 +9561,7 @@ function setupActions(){
     QA_DATA.forEach((d,i)=>{
       if(d.subj === currentSubject && d.kind !== "calc" && guestUnits.has(d.u) && !selectedUnits.has(d.u)) extra.push(i);
     });
-    const extraIds = expandDaimonIds(applyPoolFilters(extra).map(i => QA_DATA[i].id)).filter(id => !questionIds.includes(id));
+    const extraIds = withMerge(sessionMerge, () => expandDaimonIds(applyPoolFilters(extra).map(i => QA_DATA[i].id))).filter(id => !questionIds.includes(id));
     if(extraIds.length){
       questionIds = questionIds.concat(extraIds);
       // ★大問はかたまりのまま混ぜる（小問を1つだけ離して出さない）
@@ -9592,6 +9630,7 @@ function setupActions(){
     if(role !== "guest") return;
     applyChoiceOrders(data);   // ★ホストが決めた選択肢の並び（2026-10-08）
     questionIds = data.ids;
+    guestMergeFromHost = !!data.mg;   // ★2026-10-09 ホストの「まとめて出す」（スイッチ・行の印）
     inMissRetryRound = !!data.isRetryRound;
     hostBattleTimes = (data.times && typeof data.times === "object") ? data.times : null;
     myMissesThisRound = [];
@@ -9785,6 +9824,7 @@ els["create-btn"].addEventListener("click", ()=>{
   if(pool.length === 0) return;
 
   // ★大問は小問に開いて続けて並べる（並べかえは buildFinalPool の中で済んでいる＝大問はばらけない）
+  sessionMerge = false;   // ★今日やることの merge 行ではない（2026-10-09）
   questionIds = expandDaimonIds(pool.map(i => QA_DATA[i].id));
   planBattlePending = null;   // ★今日やることの行には結びつけない
   hostSkippedIds = new Set();
@@ -10129,7 +10169,7 @@ function hostResyncQuestion(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    if(idx === 0) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()}));
+    if(idx === 0) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), mg: (mergeAll || sessionMerge) ? 1 : 0}));
     else nextAction.send(withChoiceOrders({index: idx, id: questionIds[idx], ids: questionIds}));   // ★ids: ✕でうしろへ回した並び（2026-10-06）
   }
 }
@@ -10144,7 +10184,7 @@ function hostResyncForReconnect(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    startAction.send(withChoiceOrders({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload()}));
+    startAction.send(withChoiceOrders({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload(), mg: (mergeAll || sessionMerge) ? 1 : 0}));
   }
 }
 
@@ -10157,7 +10197,7 @@ function doAdvance(){
   saveBattleSession();
   if(room){
     // ★1問目（大問の小問）をスキップしたときは、ゲストはまだ始まっていないので startAction で始める（index つき）
-    if(currentIndex === 0 || startNotSentYet) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), index: currentIndex}));
+    if(currentIndex === 0 || startNotSentYet) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), mg: (mergeAll || sessionMerge) ? 1 : 0, index: currentIndex}));
     else nextAction.send(withChoiceOrders({index: currentIndex, id: questionIds[currentIndex], ids: questionIds}));   // ★ids: ✕でうしろへ回した並び（2026-10-06）
     startNotSentYet = false;
   }
@@ -10873,7 +10913,7 @@ function startMissRetryRound(){
   let ids = myMissesThisRound.slice();
   if(ids.length === 0) return;
   // ★小問を1つでもまちがえた大問は、大問ごともう一度（小問を1つだけ出さない）。大問の中は元の順
-  ids = expandMissIdsKeepingDaimon(ids);
+  ids = withMerge(sessionMerge, () => expandMissIdsKeepingDaimon(ids));   // ★merge 行の対戦はまとめてのまま
   questionIds = ids;
   hostSkippedIds = new Set();
   battleTimeupCount = 0;
@@ -11545,7 +11585,10 @@ function planTakeCount(ids, n){
 }
 function planSumWeight(ids){ return ids.reduce((a, id) => a + planIdWeight(id), 0); }
 // 行の問題を決める。戻り値 {ids, miss}（miss … ①から選んだ数。答える回数で数える）
-function planItemPick(it, no, idx){
+// ★2026-10-09 行の印 "merge":true … その行のカードは分けずにまとめて（数え方も1枚＝1問）
+function planRowMerge(it){ return !!(it && typeof it === "object" && it.merge === true); }
+function planItemPick(it, no, idx){ return withMerge(planRowMerge(it), () => planItemPick0(it, no, idx)); }
+function planItemPick0(it, no, idx){
   const out = { ids: [], miss: 0 };
   if(!it || typeof it !== "object") return out;
   const subj = typeof it.subj === "string" ? it.subj : "";
@@ -11615,6 +11658,7 @@ function planPeekAns(parent, text){
   parent.appendChild(el);
 }
 function renderPlanPeek(panel, ids){
+  if(panel.dataset.merge === "1" && !mergeForce) return withMerge(true, () => renderPlanPeek(panel, ids));
   panel.innerHTML = "";
   const showAns = panel.dataset.ans === "1";
   const cnt = document.createElement("div");
@@ -11685,7 +11729,9 @@ function renderPlanPeek(panel, ids){
 let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
 function startSoloWithIds(ids, planRef){
   if(!ids || ids.length === 0) return false;
-  const q = expandDaimonIds(ids);
+  const mg = !!(planRef && planRef.merge);   // ★2026-10-09 行の印 merge＝分けずにまとめて
+  const q = withMerge(mg, () => expandDaimonIds(ids));
+  sessionMerge = mg;
   if(q.length === 0) return false;
   reviewMode = false;   // ★答える形で出す（保存はしない）
   els["review-mode-toggle"].classList.toggle("on", false);
@@ -11739,7 +11785,9 @@ let planBattleActive = null;    // いま対戦している行（startBattleNow 
 let battleTimeupIds = new Set();   // ホストだけ: 時間切れになった問題（「朝まちがえた」に入れる）
 function startBattleWithIds(ids, planRef){
   if(!ids || ids.length === 0) return false;
-  const q = expandDaimonIds(ids);
+  const mg = !!(planRef && planRef.merge);   // ★2026-10-09 行の印 merge＝分けずにまとめて
+  const q = withMerge(mg, () => expandDaimonIds(ids));
+  sessionMerge = mg;
   if(q.length === 0) return false;
   questionIds = q;
   hostSkippedIds = new Set();
@@ -11823,12 +11871,12 @@ function renderPlanSet(container, no, prefix){
     b.type = "button"; b.className = "plan-start-btn";
     b.textContent = ok ? "もう一度（一人）" : "一人で";
     b.disabled = ids.length === 0;
-    b.addEventListener("click", () => startSoloWithIds(planRowPick(it, no, i).ids, { no: no, key: key }));
+    b.addEventListener("click", () => startSoloWithIds(planRowPick(it, no, i).ids, { no: no, key: key, merge: planRowMerge(it) }));
     const b2 = document.createElement("button");
     b2.type = "button"; b2.className = "plan-start-btn plan-battle-btn";
     b2.textContent = "二人で";
     b2.disabled = ids.length === 0;
-    b2.addEventListener("click", () => startBattleWithIds(planRowPick(it, no, i).ids, { no: no, key: key }));
+    b2.addEventListener("click", () => startBattleWithIds(planRowPick(it, no, i).ids, { no: no, key: key, merge: planRowMerge(it) }));
     const b3 = document.createElement("button");
     b3.type = "button"; b3.className = "plan-peek-btn";
     b3.textContent = "中身を見る";
@@ -11840,6 +11888,7 @@ function renderPlanSet(container, no, prefix){
     const panel = document.createElement("div");
     panel.className = "plan-peek";
     panel.style.display = "none";
+    if(planRowMerge(it)) panel.dataset.merge = "1";   // ★まとめての行は、一覧の数もまとめての数え方で
     container.appendChild(panel);
     b3.addEventListener("click", () => {
       if(panel.style.display !== "none"){ panel.style.display = "none"; delete panel.dataset.ans; panel.innerHTML = ""; b3.textContent = "中身を見る"; return; }
