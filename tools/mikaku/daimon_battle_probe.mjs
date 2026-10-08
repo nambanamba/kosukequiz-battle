@@ -184,7 +184,18 @@ async function run(label, src) {
     await host.page.reload(); await guest.page.reload(); await host.page.waitForTimeout(800); await guest.page.waitForTimeout(600);
     const statsBefore = await host.page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1")));
     // 小問のうしろにある小問（B2 で「まだ無い」を見る）: [いまの手の id] → 出てはいけない問題文
-    const texts = await host.page.evaluate(() => { const m = {}; DAIMON_DATA.forEach(g => g.items.forEach(it => { m[it.id] = { q: it.q, a: it.a, g: g.key }; })); return m; });
+    const texts = await host.page.evaluate(() => { const m = {}; DAIMON_DATA.forEach(g => g.items.forEach(it => { m[it.id] = { q: it.q, a: it.a, g: g.key, lead: g.lead || "" }; })); return m; });
+    // ★2026-10-08 choice-shuffle: 記号の小問は選択肢を入れかえて出す。問いは本文の1行目で、
+    //   答え（「イ・カ」）は、元の記号が指す中身が「（新しい記号）（中身）」で画面にあるかで見る
+    const choicesOf = s => { const re = /\(([ア-コ])\) ?|（([ア-コ])）|(?:^|[\s　])([ア-コ])[　 ]/g, mk = []; let m;
+      while ((m = re.exec(s))) { if (/[〜~～]/.test(s.slice(m.index + m[0].length, m.index + m[0].length + 1)) || /[〜~～]/.test(s.slice(m.index - 1, m.index))) continue; mk.push({ lab: m[1] || m[2] || m[3], i: m.index + (/^[\s　]/.test(m[0]) ? 1 : 0), e: m.index + m[0].length }); }
+      if (mk.length < 2 || mk.some((x, k) => x.lab !== "アイウエオカキクケコ"[k])) return null;
+      return mk.map((x, k) => s.slice(x.e, k + 1 < mk.length ? mk[k + 1].i : s.length).trim()); };
+    const hasQ = (tx, x) => tx.includes(texts[x].q.split("\n")[0]);
+    const hasA = (tx, x) => { const a = texts[x].a; if (tx.includes(a)) return true;
+      if (!/^[ア-コ](・[ア-コ])*$/.test(a)) return false;
+      const ch = choicesOf(texts[x].q) || choicesOf(texts[x].lead || "");
+      return !!ch && a.split("・").every(l => { const c = ch["アイウエオカキクケコ".indexOf(l)]; return c && new RegExp("[ア-コ]（" + c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "）").test(tx); }); };
     const later = id => { const G = S.g1.includes(id) ? S.g1 : S.g5; return G.slice(G.indexOf(id) + 1); };
     const earlier = id => { const G = S.g1.includes(id) ? S.g1 : S.g5; return G.slice(0, G.indexOf(id)); };
     check("【下じき】ホームの「二人で始める」が、答える小問で数えた " + S.plan.length + "問",
@@ -237,11 +248,11 @@ async function run(label, src) {
         for (const pg of [host.page, guest.page]) {
           const who = pg === host.page ? "ホスト" : "ゲスト";
           const tx = await screenText(pg), html = await screenHtml(pg);
-          const leak = later(id).filter(x => tx.includes(texts[x].q));
+          const leak = later(id).filter(x => hasQ(tx, x));
           check("★B2 " + who + " " + id + ": 答える前に、うしろの小問が画面に無い", leak.length === 0, leak.join(","));
           // ★✕で「あとでもう一度出る」小問は答えを出さない（前からの決まり）ので、ここでは見ない
           const pendingWrong = seqHost.filter(x => x === wrongFirst).length === 1 && id !== wrongFirst ? wrongFirst : null;
-          const prevMissing = earlier(id).filter(x => x !== pendingWrong && !(tx.includes(texts[x].q) && tx.includes(texts[x].a)));
+          const prevMissing = earlier(id).filter(x => x !== pendingWrong && !(hasQ(tx, x) && hasA(tx, x)));
           if (earlier(id).length) check("B3 " + who + " " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
           if (S.aFile && S.g5[S.af] === id) check("★B4 " + who + " 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
         }
@@ -263,7 +274,7 @@ async function run(label, src) {
         if (S.aFile && S.g5[S.af] === id) check("★B4 答えを開いたら、答えの図が出る", html.includes(S.aFile));
         if (S.g1.indexOf(id) === S.g1.length - 2) {
           const tail = S.g1[S.g1.length - 1];
-          check("★B3 大問の最後の手の答えを開くと、うしろの前回○の小問が答えつきで出る", tx.includes(texts[tail].q) && tx.includes(texts[tail].a), tail);
+          check("★B3 大問の最後の手の答えを開くと、うしろの前回○の小問が答えつきで出る", hasQ(tx, tail) && hasA(tx, tail), tail);
           await shot(host.page, "host_after_last_g1");
         }
       }

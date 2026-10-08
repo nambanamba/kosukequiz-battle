@@ -6348,7 +6348,8 @@ function nextHint(prefix){
   const steps = hintStepsOf(st.id);
   if(st.n >= steps.length) return;
   const li = document.createElement("li");
-  li.textContent = steps[st.n];
+  const hd = getQById(st.id);
+  li.textContent = hd ? displayNote(steps[st.n], st.id, hd.q, hd.a) : steps[st.n];   // ★記号はこの回の並び
   els[prefix+"-hint-list"].appendChild(li);
   st.n++;
   const btn = els[prefix+"-hint-btn"];
@@ -6397,7 +6398,7 @@ function buildDaimonListRow(d){
       listStatControlsHtml(it.id, tierOfStat(stats[it.id]));
     sub.querySelector(".daimon-sub-label").textContent = (it.label || "") + (done ? "　（前回○）" : "");
     sub.querySelector(".list-q").textContent = it.q;
-    sub.querySelector(".list-a").textContent = "こたえ：" + it.a;
+    sub.querySelector(".list-a").textContent = "こたえ：" + displayA(it.q, it.a, it.id, true);   // ★記号に中身を添える（並びは元のまま）
     // ★小問に自分の図があれば、その小問の文の下に出す（大問の図と同じなら重ねない＝取り込みで消してある）
     if(it.file) sub.querySelector(".list-q").insertAdjacentHTML("afterend", daimonListImgHtml(it.file));
     item.appendChild(sub);
@@ -6582,9 +6583,9 @@ function buildListRow(i){
       metaTagsHtml(d)+
       (d.note ? '<div class="list-source">出典：'+escapeHtml(d.note)+'</div>' : '')+
       (d.img ? '<div class="list-img-wrap"><img class="'+(isTallImg(d.img)?'tall':'')+'" src="images/'+escapeHtml(d.img)+'" alt="資料"'+(IMG_SIZES[d.img] ? ' width="'+IMG_SIZES[d.img][0]+'" height="'+IMG_SIZES[d.img][1]+'"' : '')+'></div>' : '')+
-      '<div class="list-q">'+escapeHtml(displayQ(d.q))+'</div>'+
-      '<div class="list-a">こたえ：'+escapeHtml(displayA(d.q, d.a))+'</div>'+
-      (d.sol ? '<div class="list-sol">解説：'+escapeHtml(d.sol)+'</div>' : '')+
+      '<div class="list-q">'+escapeHtml(displayQ(d.q, base.id, d.a, true))+'</div>'+
+      '<div class="list-a">こたえ：'+escapeHtml(displayA(d.q, d.a, base.id, true))+'</div>'+
+      (d.sol ? '<div class="list-sol">解説：'+escapeHtml(displayNote(d.sol, base.id, d.q, d.a, true))+'</div>' : '')+
       listStatControlsHtml(base.id, tier)+
       '<div class="list-item-footer">'+
         '<span class="edit-link">✎ 文章を直す</span>'+
@@ -7999,10 +8000,11 @@ function startDaimon(gi){
   els["daimon-title"].textContent = "第" + g.kai + "回 " + g.book + " " + daimonName(g);
   const lead = els["daimon-lead-card"];
   lead.innerHTML = "";
+  g.items.forEach((it, k) => choicePresent(it.id, daimonCur, k));   // ★記号の問題は、出すたびに選択肢を入れかえる（2026-10-08）
   if(g.lead){
     const t = document.createElement("div");
     t.className = "daimon-lead-text";
-    t.textContent = g.lead;
+    t.textContent = displayLead(g);
     lead.appendChild(t);
   }
   if(g.file) lead.appendChild(daimonImg(g.file));
@@ -8028,7 +8030,7 @@ function showDaimonItem(){
   card.appendChild(lab);
   const q = document.createElement("div");
   q.className = "q-text";
-  q.textContent = it.q;
+  q.textContent = displayQ(it.q, it.id, it.a);
   card.appendChild(q);
   if(it.file) card.appendChild(daimonImg(it.file));
   els["daimon-items"].appendChild(card);
@@ -8046,13 +8048,13 @@ function revealDaimon(){
   const ab = document.createElement("div");
   ab.className = "a-block daimon-answer";
   ab.innerHTML = '<div class="a-label">こたえ</div><div class="a-text"></div>';
-  ab.querySelector(".a-text").textContent = it.a;
+  ab.querySelector(".a-text").textContent = displayA(it.q, it.a, it.id);
   if(it.aFile) ab.appendChild(daimonImg(it.aFile));
   if(it.sol){
     const sb = document.createElement("div");
     sb.className = "sol-block";
     sb.innerHTML = '<div class="sol-label">解説</div><div class="sol-text"></div>';
-    sb.querySelector(".sol-text").textContent = it.sol;
+    sb.querySelector(".sol-text").textContent = displayNote(it.sol, it.id, it.q, it.a);
     ab.appendChild(sb);
   }
   card.appendChild(ab);
@@ -8124,7 +8126,7 @@ els["daimon-lead-btn"].addEventListener("click", ()=>{
   if(g.lead){
     const t = document.createElement("div");
     t.className = "daimon-lead-text";
-    t.textContent = g.lead;
+    t.textContent = displayLead(g);
     body.appendChild(t);
   }
   if(g.file) body.appendChild(daimonImg(g.file));
@@ -8213,13 +8215,14 @@ els["solo-start-btn"].addEventListener("click", ()=>{
 function startSoloCard(){
   const id = quizQueue[quizPos];
   const d = getQById(id);
+  choicePresent(id, quizQueue, quizPos);   // ★記号の問題は、出すたびに選択肢を入れかえる（2026-10-08）
   els["solo-retry-note"].style.display = (inSoloRetryRound && !reviewMode) ? "block" : "none";
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q-id"].textContent = "No."+d.id;
   els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
-  els["solo-q"].textContent = displayQ(d.q);
-  els["solo-a"].textContent = displayA(d.q, d.a);
-  els["solo-sol"].textContent = d.sol || "";
+  els["solo-q"].textContent = displayQ(d.q, id, d.a);
+  els["solo-a"].textContent = displayA(d.q, d.a, id);
+  els["solo-sol"].textContent = displayNote(d.sol || "", id, d.q, d.a);
   els["solo-sol-block"].style.display = d.sol ? "block" : "none";
   els["solo-view"].style.display = "block";
   els["solo-edit-form"].style.display = "none";
@@ -8551,7 +8554,7 @@ function finishSoloQuiz(){
       const d = getQById(m.id);
       const div = document.createElement("div");
       div.className = "miss-item";
-      div.innerHTML = '<div class="q">'+escapeHtml(displayQ(d.q))+'</div><div class="a">'+escapeHtml(displayA(d.q, d.a))+'</div>';
+      div.innerHTML = '<div class="q">'+escapeHtml(displayQ(d.q, m.id, d.a))+'</div><div class="a">'+escapeHtml(displayA(d.q, d.a, m.id))+'</div>';
       els["solo-miss-list"].appendChild(div);
     });
   }
@@ -8728,15 +8731,261 @@ function splitChoiceQ(q){
   return res;
 }
 function choiceCountOf(q){ const c = splitChoiceQ(q); return c ? c.choices.length : 0; }
-function displayQ(q){
-  const c = splitChoiceQ(q);
-  if(!c) return String(q == null ? "" : q);
+// ============================================================
+// ★★記号で答える問題の選択肢を、出すたびに入れかえる（2026-10-08 ユーザー
+//   「記号問題で問題を読まずに丸暗記してるので、なんとかしてください」＝「イ」と記号だけ覚えて中身を読んでいない）
+// ============================================================
+//   ★data.js・daimon_data.js は変えない。表示だけ。学習ログ・記録は元の問題 id のまま（形も変えない）
+//   対象（choiceInfoOf が決める。読めないものは今のまま）:
+//     ・「…」型（上の splitChoiceQ。#26 で ア〜 を付けて改行するようにしたもの）
+//     ・記号つき型: 問いの文に「(ア) …」「（ア）…」「ア　…」が ア・イ・ウ… の順に並んでいるもの（parseLabeledChoices）
+//     ・大問のリード文に記号つきで並んでいて、小問の答えが記号のもの（例 r3 要点チェック 問2）。並びは大問ごとに1つ
+//   対象外: 図・写真・地図などの中に記号が印刷されている問い（「図のア〜エ」「（地図）のア〜カ」）／
+//           選択肢が2つの組に分かれている問い（「ア～ウから…エ～カから」）／答えの記号が読めない問い
+//   問い: 本文のあとに、入れかえた順で1つずつ改行して記号を付け直す（記号の書き方「(ア)」「ア　」は元のまま）
+//   答え: 入れかえ後の記号に中身を必ず添える「ウ（刀剣）」。答えが2つ以上なら記号の順に並べる。「（くんで）」などの書きそえは最後に残す
+//   解説・ヒント: 文の中の記号（「(ア)」「アの…」）も入れかえ後の記号に直す
+//   並び: 1回出すごとに決める（choicePresent）。同じ回の中では同じ（描き直し・つなぎ直し・前の小問の欄・結果）。
+//         ぐるぐるで同じ問題をちがう位置で出し直すときは並べ直す。
+//         「中身を見る」で先に見た並びは、そのあと始めた回でそのまま使う。
+//         二人では、ホストが決めた並びを start/next/status の合図に co で付けて送り、ゲストはそれを使う
+//   一覧（問題の一覧・紙）は元の並び（記号に中身を添えるだけ）
+const CS_KANA = "アイウエオカキクケコサシスセソ";
+const CS_NOTE_RE = /くんで|不順|順不同|完答|両方|すべて/;
+function parseLabeledChoices(text){
+  const s = String(text || "");
+  const re = /(\(([ア-ソ])\)|（([ア-ソ])）|(^|[\s　])([ア-ソ])(?=[　 ]))/g;
+  const marks = [];
+  let m;
+  while((m = re.exec(s))){
+    const lab = m[2] || m[3] || m[5];
+    const start = m.index + (m[4] ? m[4].length : 0);
+    const end = m.index + m[0].length;
+    const after = s.slice(end, end + 1), before = s.slice(start - 1, start);
+    if(/[〜~～ー－\-・、]/.test(after) || /[〜~～]/.test(before)) continue;   // 「(ア)〜(エ)」「ア・イ」は選択肢ではない
+    marks.push({ lab: lab, style: m[2] ? "h" : m[3] ? "z" : "n", start: start, end: end });
+  }
+  if(marks.length < 2) return null;
+  // ア・イ・ウ…と1つずつ順に並んでいること（とちゅうから・とびとび・同じ記号が2回は読まない）
+  for(let i = 0; i < marks.length; i++) if(marks[i].lab !== CS_KANA[i]) return null;
+  const style = marks[0].style;
+  if(marks.some(x => x.style !== style)) return null;
+  const choices = marks.map((x, i) => s.slice(x.end, i + 1 < marks.length ? marks[i + 1].start : s.length).replace(/^[\s　]+|[\s　]+$/g, ""));
+  if(choices.some(c => !c || /\n/.test(c))) return null;
+  const stem = s.slice(0, marks[0].start).replace(/[\s　]+$/, "");
+  if(!stem) return null;
+  return { stem: stem, choices: choices, style: style };
+}
+function csLabel(style, k){ return style === "h" ? "(" + k + ")" : style === "z" ? "（" + k + "）" : k; }
+// 図・写真・地図の中に記号が印刷されている問い（入れかえられない）
+function choiceStemPointsToFigure(stem){
+  return /(図|写真|地図|グラフ|資料|表|絵|イラスト|年表|カード)[^。\n]{0,14}(\(ア\)|（ア）|ア)[）)]?[〜~～・、]/.test(stem)
+      || /(図|写真|地図|グラフ|資料|表|絵|イラスト)[^。\n]{0,6}の(\(ア\)|（ア）|ア)/.test(stem);
+}
+// 「エ～カから」のような、アから始まらない・最後の記号で終わらない範囲があれば、選択肢が2つの組に分かれている
+function choiceRangesOk(stem, n){
+  const re = /[（(]?([ア-ソ])[）)]?[〜~～][（(]?([ア-ソ])[）)]?/g;
+  let m;
+  while((m = re.exec(stem))) if(m[1] !== "ア" || m[2] !== CS_KANA[n - 1]) return false;
+  return true;
+}
+// 文の中に、記号らしいカタカナ1文字（前後がカタカナでない）があるか
+function csHasLabel(s, n){ return new RegExp("(^|[^ァ-ヶー])[" + CS_KANA.slice(0, n) + "]([^ァ-ヶー]|$)").test(String(s || "")); }
+// 答えの記号を読む。読めなければ null
+//   形: "イ" "イ・カ" "イ（刀剣）・ウ（硫黄）" "（お）・（か）（くんで不順可）" "記号…ウ（くんで）"
+//       "D…イ（二毛作）　E…オ（問）" "番号…①　名前…ア"
+function parseLabelAnswer(a, n){
+  const s = String(a || "");
+  const allowed = CS_KANA.slice(0, n);
+  const one = "(?:\\(([" + allowed + "])\\)|（([" + allowed + "])）|([" + allowed + "]))((?:（[^（）]*）)*)";
+  const listRe = new RegExp("^" + one + "(?:[・、]" + one + ")*$");
+  const parts = s.split(/(　)/);   // 全角の空白で「D…イ」「E…オ」に分ける（区切りも残す）
+  const segs = [];
+  let any = false;
+  for(const part of parts){
+    if(part === "　" || part === ""){ segs.push({ text: part }); continue; }
+    const km = /^([^…]{1,8}…)?([\s\S]*)$/.exec(part);
+    const key = km[1] || "", val = km[2];
+    if(listRe.test(val)){
+      const tokRe = new RegExp(one, "g");
+      const toks = [];
+      let t;
+      while((t = tokRe.exec(val))){
+        const parens = (t[4].match(/（[^（）]*）/g) || []).map(x => x.slice(1, -1));
+        toks.push({
+          lab: t[1] || t[2] || t[3], style: t[1] ? "h" : t[2] ? "z" : "n",
+          // 中身（記号の入った「ア 定期市は…／エ …」は使わず、選択肢の文を出す）
+          content: parens.filter(x => !CS_NOTE_RE.test(x) && !csHasLabel(x, n)).join("／"),
+          notes: parens.filter(x => CS_NOTE_RE.test(x))
+        });
+      }
+      if(new Set(toks.map(x => x.lab)).size !== toks.length) return null;
+      segs.push({ key: key, toks: toks });
+      any = true;
+    }else{
+      if(csHasLabel(val, n)) return null;   // 記号でない値（「①」「柔毛」）に記号らしい字が混ざっていたら読まない
+      segs.push({ text: part });
+    }
+  }
+  return any ? { segs: segs } : null;
+}
+const choiceInfoCache = new Map();
+const choiceLeadCache = new Map();
+// 大問のリード文に選択肢が並んでいる型。小問ぜんぶの答えが読めるときだけ（1つでも読めなければ入れかえない）
+function choiceLeadInfo(g){
+  if(!g || g.split || !g.lead) return null;
+  if(choiceLeadCache.has(g.key)) return choiceLeadCache.get(g.key);
+  let res = null;
+  const c = parseLabeledChoices(g.lead);
+  if(c && c.choices.length <= CS_KANA.length && !choiceStemPointsToFigure(c.stem) && choiceRangesOk(c.stem, c.choices.length)){
+    const n = c.choices.length;
+    const ok = g.items.every(it => parseLabeledChoices(it.q) || parseLabelAnswer(it.a, n) || !csHasLabel(it.a, n));
+    if(ok) res = { key: "lead:" + g.key, kind: "label", src: "lead", n: n, stem: c.stem, choices: c.choices, style: c.style };
+  }
+  choiceLeadCache.set(g.key, res);
+  return res;
+}
+// この問題（id・問い・答え）は入れかえの対象か。対象なら { key, kind, n, stem, choices, style, ans, src }
+function choiceInfoOf(id, q, a){
+  if(!id) return null;
+  const ck = id + "\u0001" + q + "\u0001" + a;
+  if(choiceInfoCache.has(ck)) return choiceInfoCache.get(ck);
+  let res = null;
+  const dm = DAIMON_ITEM.get(id);
+  if(!(dm && dm.g.split)){   // ★分けての部分は、カードの文で出す（部分ごとには入れかえない）
+    const qc = splitChoiceQ(q);
+    const lc = qc ? null : parseLabeledChoices(q);
+    if(qc){
+      res = { key: "q:" + id, kind: "quote", src: "q", n: qc.choices.length, stem: qc.stem, choices: qc.choices, style: "n", ans: null };
+    }else if(lc){
+      const n = lc.choices.length;
+      const ans = n <= CS_KANA.length ? parseLabelAnswer(a, n) : null;
+      if(ans && !choiceStemPointsToFigure(lc.stem) && choiceRangesOk(lc.stem, n))
+        res = { key: "q:" + id, kind: "label", src: "q", n: n, stem: lc.stem, choices: lc.choices, style: lc.style, ans: ans };
+    }else if(dm){
+      const L = choiceLeadInfo(dm.g);
+      if(L) res = Object.assign({}, L, { ans: parseLabelAnswer(a, L.n) });
+    }
+  }
+  choiceInfoCache.set(ck, res);
+  return res;
+}
+// ---- 並びの入れ物。key → { p: [新しい位置 i に出す元の選択肢の番号], round, shown: {id: 出した位置} } ----
+let choiceOrders = {};
+const choiceRoundOf = new WeakMap();
+let choiceRoundSeq = 0;
+function csRound(arr){
+  if(!arr || typeof arr !== "object") return null;
+  if(!choiceRoundOf.has(arr)) choiceRoundOf.set(arr, ++choiceRoundSeq);
+  return choiceRoundOf.get(arr);
+}
+function csShuffle(n, avoid){
+  let p;
+  for(let tries = 0; tries < 6; tries++){
+    p = Array.from({length: n}, (_, i) => i);
+    for(let i = n - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); const t = p[i]; p[i] = p[j]; p[j] = t; }
+    if(!avoid || n < 2 || p.join() !== avoid.join()) break;
+  }
+  return p;
+}
+function csEntryOk(e, n){ return !!e && Array.isArray(e.p) && e.p.length === n; }
+// いまの並び（無ければ作る。round:null＝まだどの回でも出していない「先に見た」並び）
+function choicePermOf(info){
+  let e = choiceOrders[info.key];
+  if(!csEntryOk(e, info.n)) e = choiceOrders[info.key] = { p: csShuffle(info.n), round: null, shown: {} };
+  return e.p;
+}
+// ★出す（ひとり・ホスト）。arr はその回の並び（quizQueue・questionIds）、idx はその中の位置。
+//   ちがう回なら並べ直す。同じ回で、同じ問題をちがう位置に出し直すとき（ぐるぐる）も並べ直す。
+//   ★ゲストは呼ばない（ホストから来た並びを使う）
+function choicePresent(id, arr, idx){
+  const d = getQById(id);
+  const info = d && choiceInfoOf(id, d.q, d.a);
+  if(!info) return;
+  const r = csRound(arr);
+  let e = choiceOrders[info.key];
+  if(!csEntryOk(e, info.n) || (e.round !== null && e.round !== r)) e = choiceOrders[info.key] = { p: csShuffle(info.n), round: r, shown: {} };
+  else if(e.round === null) e.round = r;
+  if(e.shown[id] !== undefined && e.shown[id] !== idx){ e.p = csShuffle(info.n, e.p); e.shown = {}; }
+  e.shown[id] = idx;
+}
+// ★二人: ホストが送る並び（この回の問題ぜんぶ）。ゲストはこれをそのまま使う
+function choiceOrdersPayload(ids){
+  const co = {};
+  (ids || []).forEach(id => {
+    const d = getQById(id);
+    const info = d && choiceInfoOf(id, d.q, d.a);
+    if(info) co[info.key] = choicePermOf(info).slice();
+  });
+  return co;
+}
+function withChoiceOrders(payload){
+  try{ payload.co = choiceOrdersPayload(questionIds); }catch(e){}
+  return payload;
+}
+function applyChoiceOrders(data){
+  if(!data || !data.co || typeof data.co !== "object") return;
+  Object.keys(data.co).forEach(k => {
+    const p = data.co[k];
+    if(Array.isArray(p) && p.every(x => Number.isInteger(x)) && p.slice().sort((x, y) => x - y).every((x, i) => x === i))
+      choiceOrders[k] = { p: p.slice(), round: "host", shown: {} };
+  });
+}
+function csInfoPerm(id, q, a, fixed){
+  const info = choiceInfoOf(id, q, a);
+  if(!info) return null;
+  const p = fixed ? info.choices.map((_, i) => i) : choicePermOf(info);
+  const inv = [];
+  p.forEach((orig, i) => { inv[orig] = i; });
+  return { info: info, p: p, inv: inv };
+}
+function csChoiceLines(info, p){
+  if(info.kind === "quote") return p.map((orig, i) => CHOICE_LABELS[i] + "　" + info.choices[orig]);
+  return p.map((orig, i) => csLabel(info.style, CS_KANA[i]) + (info.style === "n" ? "　" : " ") + info.choices[orig]);
+}
+// 問いの文（id があれば入れかえ後の並び。fixed: 元の並び＝一覧で使う）
+function displayQ(q, id, a, fixed){
+  const s = String(q == null ? "" : q);
+  const ip = id ? csInfoPerm(id, q, a, fixed) : null;
+  if(ip && ip.info.src === "q") return ip.info.stem + (ip.info.kind === "quote" ? "\n\n" : "\n") + csChoiceLines(ip.info, ip.p).join("\n");
+  if(ip) return s;   // リード文の型は、問いの文はそのまま（選択肢はリード文に出る）
+  const c = splitChoiceQ(s);   // id の無いところ（いままでどおり。元の並びで改行して記号）
+  if(!c) return s;
   return c.stem + "\n\n" + c.choices.map((t, i) => CHOICE_LABELS[i] + "　" + t).join("\n");
 }
-function displayA(q, a){
-  const c = splitChoiceQ(q);
+// 問いの本文と選択肢の行（「中身を見る」で本文だけ短くするため）。対象でなければ null
+function displayQParts(q, id, a, fixed){
+  const ip = id ? csInfoPerm(id, q, a, fixed) : null;
+  if(!ip || ip.info.src !== "q") return null;
+  return { stem: ip.info.stem, lines: csChoiceLines(ip.info, ip.p) };
+}
+// 大問のリード文（選択肢が並んでいれば、その大問の並びで）
+function displayLead(g, fixed){
+  const L = choiceLeadInfo(g);
+  if(!L) return g.lead;
+  const p = fixed ? L.choices.map((_, i) => i) : choicePermOf(L);
+  return L.stem + "\n" + csChoiceLines(L, p).join("\n");
+}
+function displayA(q, a, id, fixed){
   let s = String(a == null ? "" : a);
+  const ip = id ? csInfoPerm(id, q, a, fixed) : null;
+  const info = ip ? ip.info : null;
+  if(info && info.kind === "label"){
+    if(!info.ans) return s;
+    return info.ans.segs.map(sg => {
+      if(!sg.toks) return sg.text;
+      const notes = [];
+      const toks = sg.toks.map(t => {
+        const orig = CS_KANA.indexOf(t.lab);
+        t.notes.forEach(x => notes.push(x));
+        return { nl: ip.inv[orig], style: t.style, content: t.content || info.choices[orig] };
+      }).sort((x, y) => x.nl - y.nl);
+      return sg.key + toks.map(t => csLabel(t.style, CS_KANA[t.nl]) + "（" + t.content + "）").join("・") + notes.map(x => "（" + x + "）").join("");
+    }).join("");
+  }
+  const c = info ? { choices: info.choices } : splitChoiceQ(q);
   if(!c) return s;
+  const lab = i => CHOICE_LABELS[ip ? ip.inv[i] : i];
   // 長い選択肢から置きかえる（短い文が長い文の一部のとき、二重に記号が付かないように）
   const order = c.choices.map((t, i) => i).sort((x, y) => c.choices[y].length - c.choices[x].length);
   order.forEach(i => {
@@ -8744,7 +8993,20 @@ function displayA(q, a){
     if(s.indexOf("（" + t + "）") >= 0) s = s.split("（" + t + "）").join(tok);
     else if(s.indexOf(t) >= 0) s = s.split(t).join(tok);
   });
-  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => CHOICE_LABELS[+i] + "（" + c.choices[+i] + "）");
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => lab(+i) + "（" + c.choices[+i] + "）");
+}
+// 解説・ヒントの文の中の記号を、入れかえ後の記号に直す
+function displayNote(text, id, q, a, fixed){
+  const s = String(text == null ? "" : text);
+  const ip = (s && id) ? csInfoPerm(id, q, a, fixed) : null;
+  if(!ip || ip.info.kind !== "label") return s;
+  const set = CS_KANA.slice(0, ip.info.n);
+  const re = new RegExp("\\(([" + set + "])\\)|（([" + set + "])）|(^|[^ァ-ヶー])([" + set + "])(?=[^ァ-ヶー]|$)", "g");
+  return s.replace(re, (m0, h, z, pre, nb) => {
+    const k = h || z || nb;
+    const nk = CS_KANA[ip.inv[CS_KANA.indexOf(k)]];
+    return h ? "(" + nk + ")" : z ? "（" + nk + "）" : pre + nk;
+  });
 }
 function answerCountOf(a){
   const s = String(a || "");
@@ -9044,7 +9306,7 @@ function showGuestWaitStatus(data){
   hideBigVerdict();
   if(data.type === "skipped"){
     // 問題文だけは、データに入れた改行をそのまま出す（お知らせの文面のほうは今までどおり）
-    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(displayQ(data.q))+"</span>";
+    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(typeof data.qv === "string" ? data.qv : displayQ(data.q))+"</span>";
   }else if(data.type === "timeup"){
     // ★時間切れ。スキップと違って記録は何も変わらないので、そう伝える。
     //   問題文は出さない（この問題はあとでもう一度出てくるため）
@@ -9267,6 +9529,7 @@ function setupActions(){
 
   statusAction.onMessage = (data)=>{
     if(role !== "guest") return;
+    applyChoiceOrders(data);   // ★ホストが決めた選択肢の並び（2026-10-08）
     // ★2026-10-03 小問の時間切れ: ホストの並び（小問を後ろに回したあと）をそのまま持つ
     if(data && (data.type === "timeup" || data.type === "skipped") && Array.isArray(data.ids)) questionIds = data.ids.slice();
     if(data.type === "retryCountdown"){
@@ -9322,6 +9585,7 @@ function setupActions(){
 
   startAction.onMessage = (data)=>{
     if(role !== "guest") return;
+    applyChoiceOrders(data);   // ★ホストが決めた選択肢の並び（2026-10-08）
     questionIds = data.ids;
     inMissRetryRound = !!data.isRetryRound;
     hostBattleTimes = (data.times && typeof data.times === "object") ? data.times : null;
@@ -9426,6 +9690,7 @@ function setupActions(){
 
   nextAction.onMessage = (data)=>{
     if(role === "host") return;
+    applyChoiceOrders(data);   // ★ホストが決めた選択肢の並び（2026-10-08）
     // ★2026-10-06 ホストが✕の問題をうしろへ回した並び（ids）が来たら、それをそのまま持つ
     if(Array.isArray(data.ids)) questionIds = data.ids.slice();
     if(data.index >= questionIds.length) endGame();
@@ -9740,6 +10005,8 @@ function showQuestion(idx, hostPrivate){
   scored = false;
 
   const d = getQById(questionIds[idx]);
+  // ★記号の問題は、出すたびに選択肢を入れかえる（2026-10-08）。ゲストはホストから来た並び（co）を使うので決めない
+  if(role !== "guest") choicePresent(questionIds[idx], questionIds, idx);
   // ★分母は最初の問題数のまま。のこりは、まだ〇になっていない問題の数（ホストの答えの〇で決める・2026-10-07）
   const rc = roundCounter(questionIds, idx);
   els["battle-counter"].textContent = rc.n+" / "+rc.total;
@@ -9753,9 +10020,9 @@ function showQuestion(idx, hostPrivate){
   ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
     els[k].style.display = "";
   });
-  els["battle-q"].textContent = displayQ(d.q);
-  els["battle-a"].textContent = displayA(d.q, d.a);
-  els["battle-sol"].textContent = d.sol || "";
+  els["battle-q"].textContent = displayQ(d.q, d.id, d.a);
+  els["battle-a"].textContent = displayA(d.q, d.a, d.id);
+  els["battle-sol"].textContent = displayNote(d.sol || "", d.id, d.q, d.a);
   els["battle-sol-block"].style.display = d.sol ? "block" : "none";
   els["battle-view"].style.display = "block";
   els["battle-edit-form"].style.display = "none";
@@ -9844,7 +10111,7 @@ function hostAdvanceAndArm(idx){
     // completely in the dark during the think-time countdown
     const q = getQById(questionIds[idx]).q;
     const rcT = roundCounter(questionIds, idx);   // ★分母は最初の問題数のまま（2026-10-07）
-    try{ statusAction.send({type: "thinking", position: rcT.n, total: rcT.total, seconds: thinkSec, q: q}); }catch(e){}
+    try{ statusAction.send(withChoiceOrders({type: "thinking", position: rcT.n, total: rcT.total, seconds: thinkSec, q: q})); }catch(e){}
   }
 }
 
@@ -9857,8 +10124,8 @@ function hostResyncQuestion(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    if(idx === 0) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
-    else nextAction.send({index: idx, id: questionIds[idx], ids: questionIds});   // ★ids: ✕でうしろへ回した並び（2026-10-06）
+    if(idx === 0) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload()}));
+    else nextAction.send(withChoiceOrders({index: idx, id: questionIds[idx], ids: questionIds}));   // ★ids: ✕でうしろへ回した並び（2026-10-06）
   }
 }
 
@@ -9872,7 +10139,7 @@ function hostResyncForReconnect(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    startAction.send({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload()});
+    startAction.send(withChoiceOrders({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload()}));
   }
 }
 
@@ -9885,8 +10152,8 @@ function doAdvance(){
   saveBattleSession();
   if(room){
     // ★1問目（大問の小問）をスキップしたときは、ゲストはまだ始まっていないので startAction で始める（index つき）
-    if(currentIndex === 0 || startNotSentYet) startAction.send({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), index: currentIndex});
-    else nextAction.send({index: currentIndex, id: questionIds[currentIndex], ids: questionIds});   // ★ids: ✕でうしろへ回した並び（2026-10-06）
+    if(currentIndex === 0 || startNotSentYet) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), index: currentIndex}));
+    else nextAction.send(withChoiceOrders({index: currentIndex, id: questionIds[currentIndex], ids: questionIds}));   // ★ids: ✕でうしろへ回した並び（2026-10-06）
     startNotSentYet = false;
   }
   enterAnsweringPhase();
@@ -9963,7 +10230,7 @@ function performDaimonSkip(){
   startSkipContinueCountdown();
   if(room){
     // ★並び（ids）も送る。ゲストの「前の小問」の欄で、出し直す小問の答えを出さないため
-    try{ statusAction.send({type: "skipped", q: getQById(id).q, ids: questionIds}); }catch(e){}
+    try{ const dq = getQById(id); statusAction.send(withChoiceOrders({type: "skipped", q: dq.q, qv: displayQ(dq.q, id, dq.a), ids: questionIds})); }catch(e){}
   }
 }
 // スキップのあと「つぎの問題へ」: 一問一答は同じ添字（末尾に回したので次の問題が来ている）、小問は次の添字
@@ -9992,9 +10259,9 @@ function performSkip(){
   hostSkippedIds.add(skippedId);
 
   const skipped = getQById(skippedId);
-  els["battle-q"].textContent = displayQ(skipped.q);
-  els["battle-a"].textContent = displayA(skipped.q, skipped.a);
-  els["battle-sol"].textContent = skipped.sol || "";
+  els["battle-q"].textContent = displayQ(skipped.q, skippedId, skipped.a);
+  els["battle-a"].textContent = displayA(skipped.q, skipped.a, skippedId);
+  els["battle-sol"].textContent = displayNote(skipped.sol || "", skippedId, skipped.q, skipped.a);
   els["battle-sol-block"].style.display = skipped.sol ? "block" : "none";
   els["battle-a-block"].classList.add("show");
   els["skip-encourage"].textContent = "あとでもう一度出てくるよ。がんばって！";
@@ -10004,7 +10271,7 @@ function performSkip(){
   if(room){
     // let the guest know what's being skipped, but not the answer -- they
     // haven't seen this question yet either
-    try{ statusAction.send({type: "skipped", q: skipped.q}); }catch(e){}
+    try{ statusAction.send(withChoiceOrders({type: "skipped", q: skipped.q, qv: displayQ(skipped.q, skippedId, skipped.a)})); }catch(e){}
   }
 }
 els["skip-btn"].addEventListener("click", performSkip);
@@ -10102,12 +10369,12 @@ function addDaimonAnswered(parent, it, pos){
   wrap.className = "battle-daimon-prev";
   const add = (cls, text) => { const el = document.createElement("div"); el.className = cls; el.textContent = text; wrap.appendChild(el); };
   add("daimon-item-label", it.label || ("(" + (pos + 1) + ")"));
-  if(it.q) add("q-text", it.q);   // ★分けての部分は問題の文を持たない（カードの文が下に出ている）
+  if(it.q) add("q-text", displayQ(it.q, it.id, it.a));   // ★分けての部分は問題の文を持たない（カードの文が下に出ている）
   if(it.file) wrap.appendChild(daimonImg(it.file));
   add("a-label", "こたえ");
-  add("a-text", it.a);
+  add("a-text", displayA(it.q, it.a, it.id));   // ★記号の問題は、その回の並びの記号＋中身（2026-10-08）
   if(it.aFile) wrap.appendChild(daimonImg(it.aFile));
-  if(it.sol) add("sol-text", it.sol);
+  if(it.sol) add("sol-text", displayNote(it.sol, it.id, it.q, it.a));
   parent.appendChild(wrap);
 }
 // 時間切れで後ろに回った小問の1行（答えは出さない）
@@ -10124,7 +10391,7 @@ function addDaimonFolded(parent, it, pos){
   const head = document.createElement("button");
   head.type = "button"; head.className = "daimon-fold-head"; head.setAttribute("aria-expanded", "false");
   const t = document.createElement("span"); t.className = "t";
-  const a = String(it.a || ""); 
+  const a = displayA(it.q, it.a, it.id); 
   t.textContent = (it.label || ("(" + (pos + 1) + ")")) + " " + (a.length > 24 ? a.slice(0, 24) + "…" : a);
   const m = document.createElement("span");
   const mk = daimonMark[it.id];
@@ -10183,7 +10450,7 @@ function renderDaimonBlock(prefix, ids, idx){
     add("battle-daimon-title", "ロング編：" + String(g.unit || "").replace(/^ロング編\./, "") + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
   }else{
     add("battle-daimon-title", "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
-    if(g.lead) add("daimon-lead-text", g.lead);
+    if(g.lead) add("daimon-lead-text", displayLead(g));   // ★リード文に選択肢が並ぶ大問は、その回の並び
     if(g.file) box.appendChild(daimonImg(g.file));
   }
   // 前の小問: 大問の中で、いまの小問より前の小問は全部こたえつきで出す
@@ -10223,7 +10490,7 @@ function addLongLeadToggle(prefix, g){
   const body = document.createElement("div");
   body.className = "long-lead-body";
   body.style.display = "none";
-  if(g.lead){ const t = document.createElement("div"); t.className = "daimon-lead-text"; t.textContent = g.lead; body.appendChild(t); }
+  if(g.lead){ const t = document.createElement("div"); t.className = "daimon-lead-text"; t.textContent = displayLead(g); body.appendChild(t); }
   if(g.file) body.appendChild(daimonImg(g.file));
   btn.addEventListener("click", () => {
     const open = body.style.display === "none";
@@ -11344,10 +11611,12 @@ function renderPlanPeek(panel, ids){
     head.className = "plan-peek-q";
     const qt = isDaimonEntry(d) ? (daimonName(d.daimon) + "（小問" + d.itemIds.length + "）　" + (d.q || "")) : (getQById(id) || d).q;
     head.textContent = String(qt || "").replace(/\s+/g, " ").slice(0, 46) + (String(qt || "").length > 46 ? "…" : "");
-    const pc = isDaimonEntry(d) ? null : splitChoiceQ(qt);   // ★選ぶ問題は、選択肢を1つずつ改行して記号つきで（切らない）
+    // ★選ぶ問題は、選択肢を1つずつ改行して記号つきで（切らない）。★並びは、このあと始める回と同じ（2026-10-08）
+    const pv = isDaimonEntry(d) ? null : (getQById(id) || d);
+    const pc = pv ? displayQParts(pv.q, id, pv.a) : null;
     if(pc){
       const st = pc.stem.replace(/\s+/g, " ");
-      head.textContent = st.slice(0, 46) + (st.length > 46 ? "…" : "") + "\n" + pc.choices.map((t, i) => CHOICE_LABELS[i] + "　" + t).join("\n");
+      head.textContent = st.slice(0, 46) + (st.length > 46 ? "…" : "") + "\n" + pc.lines.join("\n");
       head.style.whiteSpace = "pre-wrap";
     }
     const meta = document.createElement("div");
@@ -11364,11 +11633,13 @@ function renderPlanPeek(panel, ids){
         sub.className = "plan-peek-item";
         const lab = document.createElement("div");
         lab.className = "plan-peek-item-q";
-        const iq = String(it.q || "").replace(/\s+/g, " ");
-        lab.textContent = (it.label || ("(" + (k + 1) + ")")) + " " + iq.slice(0, 40) + (iq.length > 40 ? "…" : "");
+        const ipc = displayQParts(it.q, it.id, it.a);   // ★記号の小問は、選択肢をその回の並びで
+        const iq = String(ipc ? ipc.stem : (it.q || "")).replace(/\s+/g, " ");
+        lab.textContent = (it.label || ("(" + (k + 1) + ")")) + " " + iq.slice(0, 40) + (iq.length > 40 ? "…" : "") + (ipc ? "\n" + ipc.lines.join("\n") : "");
+        if(ipc) lab.style.whiteSpace = "pre-wrap";
         sub.appendChild(lab);
         planPeekFig(sub, it.file);
-        if(showAns){ planPeekAns(sub, "こたえ：" + it.a); planPeekFig(sub, it.aFile); }
+        if(showAns){ planPeekAns(sub, "こたえ：" + displayA(it.q, it.a, it.id)); planPeekFig(sub, it.aFile); }
         li.appendChild(sub);
       });
     }else{
@@ -11377,7 +11648,7 @@ function renderPlanPeek(panel, ids){
       if(showAns){
         const sp = SPLIT_CARD.get(id);
         if(sp) sp.items.forEach(it => planPeekAns(li, "こたえ " + it.label + " " + it.a));
-        else planPeekAns(li, "こたえ：" + displayA(v.q, v.a));   // ★選ぶ問題は「ア（…）」（#26）
+        else planPeekAns(li, "こたえ：" + displayA(v.q, v.a, id));   // ★選ぶ問題は「ア（…）」（#26）。記号はこの回の並び
       }
     }
     ol.appendChild(li);
