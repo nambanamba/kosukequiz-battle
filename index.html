@@ -1705,6 +1705,11 @@
   .plan-peek-item{ margin:3px 0 3px 6px; padding-left:6px; border-left:2px solid var(--paper-line); }
   .plan-peek-item-q{ font-size:12.5px; }
   .plan-peek-a{ font-size:12.5px; color:var(--ok); font-weight:700; }
+  /* ★2026-10-09 「やらなかった」: 行の名前の下・左がわに小さく（右の「一人で」「二人で」と押しまちがえない位置） */
+  .plan-row-left{ flex:1; min-width:0; }
+  .plan-skip-btn{ margin-top:6px; padding:3px 9px; border:1px dashed var(--ink-soft); border-radius:8px; background:transparent; color:var(--ink-soft); font-size:11.5px; font-weight:700; cursor:pointer; }
+  .plan-row.skipped .plan-row-title{ color:var(--ink-soft); text-decoration:line-through; text-decoration-thickness:1px; }
+  .plan-mark.skip{ color:var(--ink-soft); }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
@@ -11183,11 +11188,32 @@ function planIndex(){ const a = planLoad(PLAN_INDEX_KEY); return Array.isArray(a
 function planSets(){ return planLoad(PLAN_SETS_KEY) || {}; }
 function planSetOf(no){ const s = planSets()[no]; return (s && Array.isArray(s.items)) ? s : null; }
 function planDoneOf(no){ const d = planLoad(PLAN_DONE_KEY) || {}; return d[no] || {}; }
+// ★2026-10-09 ユーザー「今日やることの行にスキップボタン。今晩は飛ばした、今朝は飛ばした、みたいなかんじで」
+//   →（司令塔が確認）「暗記カードの『今朝の分、今晩の分』を丸ごとやらなかったことにする」。
+//   ・行の「やらなかった」→ 確認 →「— やらなかった」（「できた」とは別の見た目）。セットが全部済んだかの判定では済みと数える
+//   ・「もどす」で取り消せる（押したその日のうち）。plan_done には skipped:true で送る。記録（stats・学習ログ）は何も変えない
+const PLAN_SKIP_KEY = "kq_battle_plan_skip_v2";      // {番号: {行の鍵: やらなかったにした時刻}}
+function planSkipOf(no){ const d = planLoad(PLAN_SKIP_KEY) || {}; return d[no] || {}; }
 function planAllDone(no){
   const s = planSetOf(no);
   if(!s || s.items.length === 0) return false;
-  const d = planDoneOf(no);
-  return s.items.every((it, i) => !!d[planItemKey(it, i)]);
+  const d = planDoneOf(no), sk = planSkipOf(no);
+  return s.items.every((it, i) => { const k = planItemKey(it, i); return !!d[k] || !!sk[k]; });
+}
+function planMarkSkip(no, key){
+  const all = planLoad(PLAN_SKIP_KEY) || {};
+  const d = all[no] || {};
+  d[key] = Date.now();
+  all[no] = d;
+  planSave(PLAN_SKIP_KEY, all);
+  planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は消す
+  planSendDone(no);
+}
+function planUnskip(no, key){
+  const all = planLoad(PLAN_SKIP_KEY) || {};
+  if(all[no]){ delete all[no][key]; if(Object.keys(all[no]).length === 0) delete all[no]; }
+  planSave(PLAN_SKIP_KEY, all);
+  planSendDone(no);
 }
 // まだ全部できていない、いちばん小さい番号（中身が読めているセットだけ）
 function planFirstOpen(after){
@@ -11469,8 +11495,11 @@ function planNoteBattleEnd(finished){
 // battle/plan_done/<番号>.json（同じセットは上書き）。送り先の鍵が無ければ何もしない（sendEnqueue の中で見る）
 function planSendDone(no){
   try{
-    const s = planSetOf(no), d = planDoneOf(no);
-    const items = (s ? s.items : []).map((it, i) => { const k = planItemKey(it, i); return { i: i, subj: it.subj || "", title: it.title || "", done: !!d[k], doneAt: d[k] ? new Date(d[k]).toISOString() : "", miss: (planMissOf(no)[k] || []) }; });
+    const s = planSetOf(no), d = planDoneOf(no), sk = planSkipOf(no);
+    const items = (s ? s.items : []).map((it, i) => { const k = planItemKey(it, i);
+      const o = { i: i, subj: it.subj || "", title: it.title || "", done: !!d[k], doneAt: d[k] ? new Date(d[k]).toISOString() : "", miss: (planMissOf(no)[k] || []) };
+      if(!d[k] && sk[k]){ o.skipped = true; o.skippedAt = new Date(sk[k]).toISOString(); }   // ★やらなかった（2026-10-09）
+      return o; });
     sendEnqueue("plan_done_" + no, "plan_done", "battle/plan_done/" + String(no).padStart(4, "0") + ".json",
       { app: "battle", no: no, label: s && s.label || "", all: planAllDone(no), at: new Date().toISOString(), items: items }, true);
   }catch(e){ console.error("send plan done failed", e); }
@@ -11486,11 +11515,11 @@ function renderPlanSet(container, no, prefix){
   if(typeof s.message === "string" && s.message){
     const m = document.createElement("div"); m.className = "plan-msg"; m.textContent = s.message; container.appendChild(m);
   }
-  const done = planDoneOf(no);
+  const done = planDoneOf(no), skips = planSkipOf(no);
   s.items.forEach((it, i) => {
-    const key = planItemKey(it, i), ok = !!done[key], pick = planRowPick(it, no, i), ids = pick.ids;
+    const key = planItemKey(it, i), ok = !!done[key], sk = !ok && !!skips[key], pick = planRowPick(it, no, i), ids = pick.ids;
     const row = document.createElement("div");
-    row.className = "plan-row" + (ok ? " done" : "");
+    row.className = "plan-row" + (ok ? " done" : "") + (sk ? " skipped" : "");
     row.dataset.planKey = key; row.dataset.planNo = String(no);
     const t = document.createElement("div");
     t.className = "plan-row-title";
@@ -11498,9 +11527,25 @@ function renderPlanSet(container, no, prefix){
     if(it.order === "weak" && pick.miss > 0){
       const w = document.createElement("div"); w.className = "plan-weak-note"; w.textContent = "朝まちがえた" + pick.miss + "問から出します"; t.appendChild(w);
     }
+    const left = document.createElement("div");   // 行の名前と、その下の「やらなかった」
+    left.className = "plan-row-left";
+    left.appendChild(t);
     const mk = document.createElement("span");
     mk.className = "plan-mark";
-    mk.textContent = ok ? "✔ できた" : "";
+    mk.textContent = ok ? "✔ できた" : (sk ? "— やらなかった" : "");
+    if(sk) mk.classList.add("skip");
+    // ★やらなかった／もどす（2026-10-09）。行の名前の下・左がわ（右の「一人で」「二人で」から離す）
+    if(!ok && (!sk || dateToYMD(skips[key]) === dateToYMD(Date.now()))){
+      const bs = document.createElement("button");
+      bs.type = "button"; bs.className = "plan-skip-btn";
+      bs.textContent = sk ? "もどす" : "やらなかった";
+      bs.addEventListener("click", () => {
+        if(sk){ planUnskip(no, key); renderPlan(); return; }
+        if(!confirm("「" + (it.title || "この行") + "」を、今回はやらなかったことにしますか？\n（あとで「もどす」で取り消せます）")) return;
+        planMarkSkip(no, key); renderPlan();
+      });
+      left.appendChild(bs);
+    }
     const btns = document.createElement("div");
     btns.className = "plan-btns";
     const b = document.createElement("button");
@@ -11518,7 +11563,8 @@ function renderPlanSet(container, no, prefix){
     b3.textContent = "中身を見る";
     b3.disabled = ids.length === 0;
     btns.appendChild(b); btns.appendChild(b2); btns.appendChild(b3);
-    row.appendChild(t); row.appendChild(mk); row.appendChild(btns);
+    if(sk) btns.style.display = "none";   // ★やらなかった行は始めない（もどせばまた出る）
+    row.appendChild(left); row.appendChild(mk); row.appendChild(btns);
     container.appendChild(row);
     const panel = document.createElement("div");
     panel.className = "plan-peek";
