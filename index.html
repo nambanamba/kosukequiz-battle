@@ -11733,13 +11733,16 @@ function planItemPick0(it, no, idx){
   }
   const fill = hasFill ? planFillPick(it, subj, ids, n, planMissSetFor(no, idx)) : [];
   if(fill.length){
-    // ★前の回をまぜる: 候補からは count − 前の回の分 だけ（unit のときランダム）、そのうしろに前の回
+    // ★前の回をまぜる: 候補からは count − 前の回の分 だけ（ランダム。ids の行も unit の行も）、そのうしろに前の回
     const m = n - planSumWeight(fill);
-    if(!(Array.isArray(it.ids) && it.ids.length) && planSumWeight(ids) > m) ids = m > 0 ? planTakeCount(shuffleArray(ids.slice()), m) : [];
+    if(planSumWeight(ids) > m) ids = m > 0 ? planTakeCount(shuffleArray(ids.slice()), m) : [];
     out.ids = ids.concat(fill);
     return out;
   }
-  if(!(Array.isArray(it.ids) && it.ids.length) && n > 0 && planSumWeight(ids) > n) ids = planTakeCount(shuffleArray(ids.slice()), n);
+  // ★2026-10-09 ユーザー「社会の何問中何問の母数が、おかしいです。15問になってないと子供がやらない」
+  //   ids＋count で order が無い行は、ids の全部（39問）を出していた（unit の行だけ count で切っていた）。
+  //   → ids の行も unit の行も、候補からランダムに count ちょうど（答える回数・weightOf の数え方）
+  if(n > 0 && planSumWeight(ids) > n) ids = planTakeCount(shuffleArray(ids.slice()), n);
   out.ids = ids;
   return out;
 }
@@ -11762,7 +11765,10 @@ function planSavePick(no, key, pick){
 }
 // 出す問題: 保存した一覧があればそれ、無ければ選ぶ（保存はしない＝今までどおり）
 function planRowPick(it, no, idx){
-  const sv = planSavedPick(no, planItemKey(it, idx));
+  let sv = planSavedPick(no, planItemKey(it, idx));
+  // ★2026-10-09 直す前に保存した一覧（ids の行で count をこえたもの）は使わずに選び直す（こえてよいのは2問まで＝planTakeCount）
+  const n = parseInt(it && it.count, 10);
+  if(sv && n > 0 && withMerge(planRowMerge(it), () => planSumWeight(sv.ids)) > n + 2) sv = null;
   return sv ? { ids: sv.ids.filter(id => QA_DATA.some(d => d.id === id)), miss: sv.miss || 0, saved: true } : planItemPick(it, no, idx);
 }
 // 一覧の1行の状態（苦手／まだ／定着）。並べ替え（planWeakRank）と同じ見方（分けては部分・大問は小問）
