@@ -1783,6 +1783,10 @@
   /* ★2026-10-10 「✔ できた（やり直しは途中）」は2行（「✔ できた」の下に小さく）。行の名前を細くしない */
   .plan-mark .plan-mark-sub{ display:block; font-size:10.5px; font-weight:600; color:var(--ink-soft); text-align:center; }
   /* ★2026-10-10 セットの下の「今回の分を完了にする」。ふだんは目立たせない（行の「一人で」「二人で」より弱く）が、押しやすい大きさ */
+  /* ★2026-10-10 子どもがスキップしたとき、親の画面に残す図・答え・解説 */
+  .skip-notice-fig{ display:block; max-width:100%; max-height:220px; margin:8px auto 0; border:1px solid var(--paper-line); border-radius:8px; cursor:zoom-in; }
+  .skip-notice-a{ margin-top:8px; font-size:17px; font-weight:700; color:var(--ok); }
+  .skip-notice-sol{ margin-top:4px; font-size:13px; color:var(--ink-soft); white-space:pre-wrap; }
   .plan-close-wrap{ margin-top:12px; text-align:center; }
   .plan-close-btn{ width:100%; padding:12px 14px; border:2px solid var(--navy-deep); border-radius:12px; background:#fff; color:var(--navy-deep); font-size:15px; font-weight:700; cursor:pointer; }
   .plan-close-note{ margin-top:4px; font-size:11.5px; color:var(--ink-soft); }
@@ -9762,11 +9766,18 @@ function showGuestWaitStatus(data){
   const el = els["guest-wait-status"];
   el.classList.remove("win","lose");
   el.classList.add("show","info");
-  els["battle-view"].style.display = "none";
-  els["battle-img-wrap"].style.display = "none";
-  els["host-seen-badge"].style.display = "none";   // ★2026-10-03 次の問題の準備中は出さない
-  els["battle-hint-box"].style.display = "none";    // ★2026-10-04 ヒントも同じ
-  els["hint-guest-note"].style.display = "none";
+  // ★2026-10-10 ユーザー「子供がスキップした時、親の画面から問題を消さないでほしい。説明と化してもいい」
+  //   二人の流れでは、問題と答えは親の画面に最初から出ている。スキップで消さずに、そのまま残して（説明に使える）、
+  //   上に「スキップしました」だけ出す。〇✕の帯は要らない（✕で記録される）ので下の judge-row は消す。
+  //   まだ問題が出ていない（1問目をスキップした）ときだけ、下の「お知らせの中に問題を出す」形
+  const keepCard = data.type === "skipped" && els["battle-view"].style.display !== "none" && !!els["battle-q"].textContent;
+  if(!keepCard){
+    els["battle-view"].style.display = "none";
+    els["battle-img-wrap"].style.display = "none";
+    els["host-seen-badge"].style.display = "none";   // ★2026-10-03 次の問題の準備中は出さない
+    els["battle-hint-box"].style.display = "none";    // ★2026-10-04 ヒントも同じ
+    els["hint-guest-note"].style.display = "none";
+  }
   // ★★ 2026-09-26: 単元名・No.・出典も一緒に引っこめる。
   //   この3つは battle-view の**外**にあるので、battle-view を隠しても残り、
   //   「つぎの問題の準備中…」のあいだ **1つ前の問題のものが見えていた**。
@@ -9775,7 +9786,7 @@ function showGuestWaitStatus(data){
   //   中身が空でも小さな灰色の丸みが残る。display ごと消す。
   // ★戻すときは showQuestion() が display を空文字に戻す（スタイルシートの値に戻る）。
   //   inline-block / block を書き戻さないこと（タグごとに違うため）
-  ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
+  if(!keepCard) ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
     els[k].textContent = "";
     els[k].style.display = "none";
   });
@@ -9786,9 +9797,16 @@ function showGuestWaitStatus(data){
   els["status-banner"].classList.remove("show","win","lose","info");
   els["answer-countdown"].style.display = "none";
   hideBigVerdict();
-  if(data.type === "skipped"){
+  if(data.type === "skipped" && keepCard){
+    el.textContent = "子どもがこの問題をスキップしました（答えを見ています）。あとでもう一度出てきます。";
+  }else if(data.type === "skipped"){
     // 問題文だけは、データに入れた改行をそのまま出す（お知らせの文面のほうは今までどおり）
     el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(typeof data.qv === "string" ? data.qv : displayQ(data.q))+"</span>";
+    // ★2026-10-10 問題の図・答え・解説も残す（子どもはスキップで答えを見ている。親が説明できるように）
+    const okFig = n => typeof n === "string" && /^[A-Za-z0-9_.-]+\.(png|jpe?g|webp|gif)$/i.test(n);
+    [data.fig, data.afig].forEach(n => { if(!okFig(n)) return; const im = document.createElement("img"); im.className = "skip-notice-fig"; im.src = "images/" + n; im.alt = "図"; im.addEventListener("click", () => openLightbox(im.src)); el.appendChild(im); });
+    if(typeof data.av === "string" && data.av){ const a = document.createElement("div"); a.className = "skip-notice-a"; a.textContent = "こたえ：" + data.av; el.appendChild(a); }
+    if(typeof data.sv === "string" && data.sv){ const n = document.createElement("div"); n.className = "skip-notice-sol"; n.textContent = data.sv; el.appendChild(n); }
   }else if(data.type === "timeup"){
     // ★時間切れ。スキップと違って記録は何も変わらないので、そう伝える。
     //   問題文は出さない（この問題はあとでもう一度出てくるため）
@@ -10759,6 +10777,18 @@ function battleUnrequeue(id, afterIdx){
   if(at > afterIdx) questionIds.splice(at, 1);
 }
 let startNotSentYet = false;     // ホストだけ: 1問目をスキップしたので、まだゲストに startAction を送っていない
+// ★2026-10-10 スキップした問題を親の画面に残すための追加の欄（図の名前・答え・解説）。子どもの画面に出ているものと同じ
+function skippedExtra(v, id){
+  const o = {};
+  try{
+    o.av = String(displayA(v.q, v.a, id) || "");
+    const sv = displayNote(v.sol || "", id, v.q, v.a);
+    if(sv) o.sv = String(sv);
+    if(typeof v.img === "string" && v.img) o.fig = v.img;
+    if(typeof v.aFile === "string" && v.aFile) o.afig = v.aFile;
+  }catch(e){ console.error("skipped extra failed", e); }
+  return o;
+}
 function performDaimonSkip(){
   clearTimeout(pendingSendTimer);
   stopCountdown();
@@ -10792,7 +10822,7 @@ function performDaimonSkip(){
   startSkipContinueCountdown();
   if(room){
     // ★並び（ids）も送る。ゲストの「前の小問」の欄で、出し直す小問の答えを出さないため
-    try{ const dq = getQById(id); statusAction.send(withChoiceOrders({type: "skipped", q: dq.q, qv: displayQ(dq.q, id, dq.a), ids: questionIds})); }catch(e){}
+    try{ const dq = getQById(id); statusAction.send(withChoiceOrders(Object.assign({type: "skipped", q: dq.q, qv: displayQ(dq.q, id, dq.a), ids: questionIds}, skippedExtra(dq, id)))); }catch(e){}
   }
 }
 // スキップのあと「つぎの問題へ」: 一問一答は同じ添字（末尾に回したので次の問題が来ている）、小問は次の添字
@@ -10833,9 +10863,9 @@ function performSkip(){
   els["skip-continue-btn"].style.display = "block";
   startSkipContinueCountdown();
   if(room){
-    // let the guest know what's being skipped, but not the answer -- they
-    // haven't seen this question yet either
-    try{ statusAction.send(withChoiceOrders({type: "skipped", q: skipped.q, qv: displayQ(skipped.q, skippedId, skipped.a)})); }catch(e){}
+    // ★2026-10-10 ユーザー「子供がスキップした時、親の画面から問題を消さないでほしい。説明と化してもいい」
+    //   → 子どもはスキップで答えを見るので、親にも問題・図・答え・解説をそのまま残す（skippedExtra）
+    try{ statusAction.send(withChoiceOrders(Object.assign({type: "skipped", q: skipped.q, qv: displayQ(skipped.q, skippedId, skipped.a)}, skippedExtra(skipped, skippedId)))); }catch(e){}
   }
 }
 els["skip-btn"].addEventListener("click", performSkip);
