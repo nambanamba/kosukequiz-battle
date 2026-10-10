@@ -1685,6 +1685,20 @@
   .plan-box{ margin:10px 0 14px; padding:12px 14px; border:2px solid var(--gold); border-radius:14px; background:#fffaf0; }
   .plan-head{ font-size:16px; font-weight:700; color:var(--navy-deep); text-align:center; }
   .plan-msg{ margin:6px 0 2px; font-size:13.5px; color:var(--ink); text-align:center; line-height:1.5; }
+  /* ★2026-10-10 ひとこと（練習を始めるときのカード・二人で親から送るひとこと） */
+  .start-msg-overlay{ position:fixed; inset:0; z-index:9000; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.35); padding:16px; }
+  .start-msg-overlay.show{ display:flex; }
+  .start-msg-card{ background:#fff; color:var(--navy-deep); border-radius:18px; padding:28px 22px 18px; max-width:420px; width:100%; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+  .start-msg-text{ font-size:24px; font-weight:800; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+  .start-msg-hint{ margin-top:14px; font-size:12.5px; color:#888; }
+  .kidmsg-toast{ position:fixed; left:50%; top:12px; transform:translateX(-50%); z-index:9001; display:none; width:max-content; max-width:calc(100% - 32px); background:#fff7d6; color:#5a4300; border:2px solid #f0c040; border-radius:14px; padding:10px 16px; font-size:19px; font-weight:800; text-align:center; box-shadow:0 6px 18px rgba(0,0,0,.2); }
+  .kidmsg-toast.show{ display:block; }
+  .kidmsg-menu{ position:fixed; inset:0; z-index:9002; display:none; align-items:flex-end; justify-content:center; background:rgba(0,0,0,.3); padding:16px; }
+  .kidmsg-menu.show{ display:flex; }
+  .kidmsg-menu-box{ background:#fff; border-radius:16px; padding:14px; width:100%; max-width:420px; }
+  .kidmsg-menu-title{ font-size:13px; color:#666; margin-bottom:8px; text-align:center; }
+  .kidmsg-phrase{ display:block; width:100%; margin:6px 0; padding:12px; font-size:16px; border:1px solid #ccd; border-radius:10px; background:#f6f8ff; color:var(--navy-deep); cursor:pointer; }
+  .kidmsg-cancel{ display:block; width:100%; margin-top:8px; padding:10px; font-size:14px; border:none; background:none; color:#888; cursor:pointer; }
   .plan-row{ display:flex; align-items:center; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--paper-line); }
   .plan-row-title{ flex:1; font-size:14.5px; font-weight:700; color:var(--ink); line-height:1.45; }
   .plan-row.done .plan-row-title{ color:var(--ink-soft); }
@@ -2409,6 +2423,7 @@
       <div>
         <span class="back" id="battle-pause-btn">⏸ 中断</span>
         <span class="back" id="battle-end-btn" style="margin-left:12px;">✕ おわる</span>
+        <span class="back" id="kidmsg-btn" style="margin-left:12px;display:none;">💬 ひとこと</span>
       </div>
       <div class="counter" id="battle-counter">1 / 10</div>
     </div>
@@ -2531,6 +2546,10 @@
 
 </div>
 
+<!-- ★2026-10-10 ひとこと（練習を始めるときのカード・親から送るひとこと） -->
+<div class="start-msg-overlay" id="start-msg-overlay"><div class="start-msg-card"><div class="start-msg-text" id="start-msg-text"></div><div class="start-msg-hint">おすと消えます</div></div></div>
+<div class="kidmsg-toast" id="kidmsg-toast"></div>
+<div class="kidmsg-menu" id="kidmsg-menu"><div class="kidmsg-menu-box"><div class="kidmsg-menu-title">子どもの画面に出すひとこと（記録には残りません）</div><div id="kidmsg-phrases"></div><button type="button" class="kidmsg-cancel" id="kidmsg-cancel">やめる</button></div></div>
 <div class="lightbox-overlay" id="lightbox-overlay">
   <button class="lightbox-close" id="lightbox-close">×</button>
   <div class="lightbox-zoom-controls">
@@ -3780,6 +3799,7 @@ function showScreen(name){
   //   「対戦画面を出したのに、このラウンドの1問目をまだ描いていない」道で
   //   前回の点数が残っていました。★ここに置くと、新しい道が増えても同じ穴が開きません。
   if(name === "screen-battle") updateScoreUI();
+  if(typeof kidMsgSyncBtn === "function") kidMsgSyncBtn(name);   // ★親のひとことボタン（ゲストの対戦画面だけ。2026-10-10）
   window.scrollTo(0,0);
   if(GUARDED_SCREENS.includes(name)) armBackGuard();
   else if(wasGuarded) disarmBackGuard();
@@ -8696,6 +8716,7 @@ let gameStarted = false; // host-only: distinguishes the first peer join (start 
 //   ホスト・ゲストの両方で同じ2つを持ち、両方そろったらホストが startBattleNow() を呼ぶ
 let iAmReadyToStart = false;
 let speedAction = null;
+let kidmsgAction = null;   // ★2026-10-10 親のひとこと
 let battleTimeupCount = 0;   // ★2026-10-05 このラウンドの時間切れの数（ホスト）
 // ★2026-10-03 ゲストが「つながったまま次の対戦を待っている」とき true（結果画面のあと screen-join に出す待ち画面）。
 //   ユーザー「社会が終わってすぐ理科をいつもやってる…ゲスト側が元の画面に戻るを押すと切れちゃう。連続でできれば何でもいい」
@@ -9522,6 +9543,10 @@ function setupActions(){
   revealAction = room.makeAction("reveal");
   readyAction = room.makeAction("ready");
   speedAction = room.makeAction("speed");   // ★2026-10-05 速さの変更（どちらからでも）
+  // ★2026-10-10 親（ゲスト）→子ども（ホスト）のひとこと。古い版の端末は "kidmsg" を作っていないので、
+  //   届いても trystero 0.25.4 は受け取り待ちにためるだけ（エラーにならない・画面は変わらない。action-wire.mjs の handleData）
+  kidmsgAction = room.makeAction("kidmsg");
+  kidmsgAction.onMessage = (data)=>{ if(role === "host" && data && typeof data.text === "string") showKidMsgToast(data.text); };
   speedAction.onMessage = (data)=>{ if(data && typeof data.level === "number") setSpeedLevel(data.level, true); };
 
   // ★対戦の始まりだけは、二人とも「開始」を押すまで始めない
@@ -11007,6 +11032,7 @@ function maybeStartBattleTogether(){
   startBattleNow();
 }
 function startBattleNow(){
+  hideStartMsg();   // ★ひとこと（2026-10-10）が出たままなら消す
   planBattleActive = planBattlePending;   // ★今日やることの「二人で」から作った部屋なら、その行（2026-10-07）
   planBattlePending = null;
   battleTimeupIds = new Set();
@@ -11856,6 +11882,60 @@ function renderPlanPeek(panel, ids){
   });
   panel.appendChild(ol);
 }
+// ★2026-10-10 ユーザー「テストの練習だよ、3秒以内に答えてね、というメッセージをアプリから子どもに送れませんか？」
+//   ① 今日やることから始めたとき、1問目の前にカードで「ひとこと」。行の start_msg → セットの start_msg → なければ出さない
+//   ② 二人対戦で親（ゲスト）が定型文を選んで送る → 子ども（ホスト）の画面の上に数秒。記録には残さない
+const KIDMSG_PHRASES = ["テストの練習だよ！3秒で答えてね", "わからなければスキップでOK", "いいね！", "その調子！"];
+function planStartMsg(it, s){
+  const pick = v => (typeof v === "string" && v.trim()) ? v.trim().slice(0, 200) : "";
+  return pick(it && it.start_msg) || pick(s && s.start_msg) || "";
+}
+let startMsgTimer = null;
+function showStartMsg(text, ms){
+  const ov = document.getElementById("start-msg-overlay");
+  if(!ov || !text) return;
+  document.getElementById("start-msg-text").textContent = text;
+  ov.classList.add("show");
+  clearTimeout(startMsgTimer);
+  startMsgTimer = ms > 0 ? setTimeout(hideStartMsg, ms) : null;
+}
+function hideStartMsg(){
+  clearTimeout(startMsgTimer); startMsgTimer = null;
+  const ov = document.getElementById("start-msg-overlay");
+  if(ov) ov.classList.remove("show");
+}
+document.getElementById("start-msg-overlay").addEventListener("click", hideStartMsg);
+let kidMsgToastTimer = null;
+function showKidMsgToast(text, ms){
+  const t = document.getElementById("kidmsg-toast");
+  if(!t) return;
+  t.textContent = String(text).slice(0, 60);
+  t.classList.add("show");
+  clearTimeout(kidMsgToastTimer);
+  kidMsgToastTimer = setTimeout(() => t.classList.remove("show"), ms || 4000);
+}
+document.getElementById("kidmsg-toast").addEventListener("click", e => e.currentTarget.classList.remove("show"));
+function kidMsgSyncBtn(name){
+  const b = document.getElementById("kidmsg-btn");
+  if(b) b.style.display = (name === "screen-battle" && role === "guest") ? "" : "none";
+  if(name !== "screen-battle") document.getElementById("kidmsg-menu").classList.remove("show");
+}
+(function(){
+  const menu = document.getElementById("kidmsg-menu"), list = document.getElementById("kidmsg-phrases");
+  KIDMSG_PHRASES.forEach(p => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "kidmsg-phrase"; b.textContent = p;
+    b.addEventListener("click", () => {
+      menu.classList.remove("show");
+      if(room && kidmsgAction){ try{ kidmsgAction.send({ text: p }); }catch(e){} }
+      showKidMsgToast("送りました：" + p, 1500);   // 親の画面にも少しだけ
+    });
+    list.appendChild(b);
+  });
+  document.getElementById("kidmsg-btn").addEventListener("click", () => menu.classList.add("show"));
+  document.getElementById("kidmsg-cancel").addEventListener("click", () => menu.classList.remove("show"));
+  menu.addEventListener("click", e => { if(e.target === menu) menu.classList.remove("show"); });
+})();
 // 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
 let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
 function startSoloWithIds(ids, planRef){
@@ -11877,6 +11957,7 @@ function startSoloWithIds(ids, planRef){
   planStarting = null;
   startSoloCard();
   showScreen("screen-solo");
+  if(planRef && planRef.msg) showStartMsg(planRef.msg, 3000);   // ★ひとこと（一人には時計が無いので、カードの下で1問目が待っていてよい）
   return true;
 }
 // studyLogStart("solo") から呼ぶ: 今日やることから始めた回か、ほかの回か
@@ -11933,6 +12014,8 @@ function startBattleWithIds(ids, planRef){
   const code = loadLastCode() || genCode();
   hostCreateRoomWithCode(code);
   window.scrollTo(0, 0);
+  // ★ひとことは部屋を作ったところで出す（1問目が出てからだと考える時間を食うため）。押すまで出しておき、対戦が始まったら消す
+  if(planRef && planRef.msg) showStartMsg(planRef.msg, 0);
   return true;
 }
 // endGame から呼ぶ（ホストだけ）: 最後まで終えた対戦なら、その行を「できた」に
@@ -12005,12 +12088,12 @@ function renderPlanSet(container, no, prefix){
     b.type = "button"; b.className = "plan-start-btn";
     b.textContent = ok ? "もう一度（一人）" : "一人で";
     b.disabled = ids.length === 0;
-    b.addEventListener("click", () => startSoloWithIds(planRowPick(it, no, i).ids, { no: no, key: key, merge: planRowMerge(it) }));
+    b.addEventListener("click", () => startSoloWithIds(planRowPick(it, no, i).ids, { no: no, key: key, merge: planRowMerge(it), msg: planStartMsg(it, s) }));
     const b2 = document.createElement("button");
     b2.type = "button"; b2.className = "plan-start-btn plan-battle-btn";
     b2.textContent = "二人で";
     b2.disabled = ids.length === 0;
-    b2.addEventListener("click", () => startBattleWithIds(planRowPick(it, no, i).ids, { no: no, key: key, merge: planRowMerge(it) }));
+    b2.addEventListener("click", () => startBattleWithIds(planRowPick(it, no, i).ids, { no: no, key: key, merge: planRowMerge(it), msg: planStartMsg(it, s) }));
     const b3 = document.createElement("button");
     b3.type = "button"; b3.className = "plan-peek-btn";
     b3.textContent = "中身を見る";
