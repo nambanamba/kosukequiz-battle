@@ -10,6 +10,8 @@
 //   G3 ホストが「こたえを見る」→ ホストはすぐ開く（ゲストが押しているので）→ ゲストのふだが「見ました（◯秒後）」
 //   G4 判定すると記録はふつうに1回だけ（ホスト・ゲストとも〇1）
 //   G5 だれも押さずに時間切れで開いたときも、ゲストのふだは「見ました」になる
+//      ★2026-10-10 からゲスト（親）の判定の時間切れは自動〇にならない（押すまで待つ）。G5 は
+//      「時間が切れてもホストは開かない・ゲストに〇✕を促す → 親が〇を押すと開いてふだが変わる」を見る
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -127,11 +129,17 @@ async function run(label, src, kind) {
     await tap(host.page, "#advance-btn");
     await waitVis(guest.page, "#answer-reveal-btn", 20000);
     const b2 = await badge(guest.page);
+    // ★2026-10-10 だれも押さないとき: ゲストの答える時間（4秒）と判定の時間（1秒）が切れても、ホストは開かない
+    await guest.page.waitForFunction(() => { const e = document.getElementById("guest-judge-prompt"); return e && getComputedStyle(e).display !== "none"; }, null, { timeout: 20000 });
+    await guest.page.waitForTimeout(1500);
+    const g5w = { hostOpen: await host.page.evaluate(() => document.getElementById("battle-a-block").classList.contains("show")),
+      guestJudge: await guest.page.evaluate(() => getComputedStyle(document.getElementById("judge-row")).display !== "none") };
+    check("G5 判定の時間が切れてもホストは開かない・ゲストに〇✕が残る", !g5w.hostOpen && g5w.guestJudge, JSON.stringify(g5w));
+    await tap(guest.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
     await guest.page.waitForTimeout(800);
     const b3 = await badge(guest.page);
-    // ★2026-10-08 だれも押さないとき: ゲストの時間切れ（判定の自動〇）が届いてホストが開く → ふだは「あなたの判定で…出しました」
-    check("G5 だれも押さずに開いたときも、ふだが変わる（前: " + b2 + "）", /まだ/.test(b2) && /見ました|出しました/.test(b3), b3);
+    check("G5 そのあと親が〇を押すと開き、ふだが変わる（前: " + b2 + "）", /まだ/.test(b2) && /出しました/.test(b3), b3);
     const hb = await badge(host.page);
     check("ホストの画面にはふだを出さない", hb === "", hb);
     check("画面のエラー 0", host.errs.length + guest.errs.length === 0, host.errs.concat(guest.errs).join(" | "));
