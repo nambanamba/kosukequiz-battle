@@ -7,7 +7,7 @@
 //   K4 「二人で」→ ホスト（子ども）にカード → 対戦が始まったら消える
 //   K5 ゲスト（親）の対戦画面にだけ「ひとこと」ボタン（ホストには出ない）・定型文4つ
 //   K6 ゲストが選ぶ → ホストの画面の上に出る・数秒で消える・記録（kq_battle_stats_v1）は変わらない
-//   K7 古い版のホスト（BASE_COMMIT）に新しい版のゲストが送っても、ホストはエラーなし・対戦はそのまま続く
+//   K7 古い版のホスト（BASE_COMMIT＝ひとこと前の master）に新しい版のゲストが送っても、ホストはエラーなし・対戦はそのまま続く
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -15,7 +15,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_kid_message"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "01728b8";   // 直す前
+const BASE_COMMIT = "620b898";   // 直す前（#39「わかった！」なしの流れを入れたあとの master）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -125,7 +125,7 @@ async function run(label, src) {
     await g.pg.$eval("#go-join", e => e.click()); await g.pg.fill("#join-code-input", code); await g.pg.$eval("#join-btn", e => e.click());
     await waitVis(h.pg, "#start-together-btn", 60000);
     await h.pg.$eval("#start-together-btn", e => e.click()); await g.pg.$eval("#join-start-together-btn", e => e.click());
-    await waitVis(h.pg, "#advance-btn", 30000);
+    await waitVis(h.pg, "#skip-btn", 30000);
     k4.cardStarted = await cardText(h.pg);
     check("K4 「二人で」→ ホストにカード（" + k4.cardWaiting + "）→ 対戦が始まったら消える", k4.cardWaiting === SET_MSG && k4.cardStarted === "", JSON.stringify(k4));
     await g.pg.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active"), null, { timeout: 20000 });
@@ -144,7 +144,7 @@ async function run(label, src) {
     await h.pg.waitForTimeout(4500);
     k6.hostAfter = await toastText(h.pg);
     k6.statsSame = (await h.pg.evaluate(() => localStorage.getItem("kq_battle_stats_v1"))) === st0;
-    k6.stillPlaying = await vis(h.pg, "#advance-btn");
+    k6.stillPlaying = await vis(h.pg, "#skip-btn");
     check("K6 ゲストが選ぶ → ホストの上に出る（" + k6.host + "）・数秒で消える・記録は変わらない", k6.host === "テストの練習だよ！3秒で答えてね" && /送りました/.test(k6.guest) && !k6.menuAfter && k6.hostAfter === "" && k6.statsSame && k6.stillPlaying, JSON.stringify(k6));
   } catch (e) { check("二人: 最後まで走った", false, String(e && e.message || e).split("\n")[0]); await shot(h.pg, "ERR_host"); await shot(g.pg, "ERR_guest"); }
   finally { await h.ctx.close(); await g.ctx.close(); }
@@ -164,16 +164,14 @@ async function runCompat() {
     await g.pg.$eval("#go-join", e => e.click()); await g.pg.fill("#join-code-input", code); await g.pg.$eval("#join-btn", e => e.click());
     await waitVis(h.pg, "#start-together-btn", 60000);
     await h.pg.$eval("#start-together-btn", e => e.click()); await g.pg.$eval("#join-start-together-btn", e => e.click());
-    await waitVis(h.pg, "#advance-btn", 30000);
+    await waitVis(h.pg, "#skip-btn", 30000);
     await g.pg.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active"), null, { timeout: 20000 });
     await g.pg.click("#kidmsg-btn"); await g.pg.click("#kidmsg-menu .kidmsg-phrase >> nth=2");
     await h.pg.waitForTimeout(1200);
     const q1 = await h.pg.$eval("#battle-q-id", e => e.textContent);
-    await h.pg.$eval("#advance-btn", e => e.click());
+    // ★2026-10-10 から二人は「わかった！」なし: 問題は両方に同時・親だけが〇✕
     await g.pg.waitForFunction(i => document.getElementById("battle-q-id").textContent === i && getComputedStyle(document.getElementById("battle-view")).display !== "none", q1, { timeout: 20000 });
-    await g.pg.$eval("#answer-reveal-btn", e => e.click());
     await waitVis(g.pg, "#judge-row", 15000); await g.pg.$eval("#judge-ok", e => e.click());
-    await waitVis(h.pg, "#judge-row", 15000); await h.pg.$eval("#judge-ok", e => e.click());
     const nextOk = await h.pg.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }).then(() => true).catch(() => false);
     check("K7 古い版のホストに送っても、エラーなし・対戦はそのまま続く（1問目を判定して「つぎへ」まで）", nextOk && errs.length === 0, errs.join(" | "));
   } catch (e) { check("K7 最後まで走った", false, String(e && e.message || e).split("\n")[0]); }

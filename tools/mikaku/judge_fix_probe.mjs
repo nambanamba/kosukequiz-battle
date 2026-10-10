@@ -50,7 +50,10 @@ const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT
 
 // ---- 偽の実装: ★打ち消しを外す（＝前の判定が残ったまま、もう1回記録される）----
 const UNDO_LINES = "  if(r.statBefore === null) delete stats[r.qid];\n  else stats[r.qid] = JSON.parse(r.statBefore);";
+// ★2026-10-10 分けての部分（2026-10-06）で1行目が「else if」になったので、そちらの形でも作る
 function fakeNoUndo(src) {
+  const L2 = "  else if" + UNDO_LINES.slice(4);
+  if (src.indexOf(L2) >= 0) return src.replace(L2, "  else { /* ★偽の実装: わざと打ち消さない */ }");
   if (src.indexOf(UNDO_LINES) < 0) throw new Error("偽の実装を作れません（打ち消しの2行が見つかりません）");
   return src.replace(UNDO_LINES, "  /* ★偽の実装: わざと打ち消さない */");
 }
@@ -83,7 +86,10 @@ await new Promise(r => server.listen(0, "127.0.0.1", r));
 const PAGE_URL = "http://127.0.0.1:" + server.address().port + "/index.html";
 const browser = await chromium.launch({ channel: "chrome" });
 
-// ---- 1回ぶんの通し（部屋を作る→入る→1問目を時間切れで自動「せいかい」→直す→直し戻す）----
+// ★2026-10-10 追記: 二人の流れが新しくなった（ホストの「わかった！」・ホストが付ける〇✕・ゲストの記録・相手の点の箱は無い）。
+//   1問目は両方の画面に同時に出る → ゲストは最初から答えと〇✕が出ている → ゲストの〇でホストの記録が付く。
+//   点はホストの〇だけ（ゲストの #score-me も scores.host）。ゲスト自身の記録は付かない（＝直しでも動かない）。
+// ---- 1回ぶんの通し（部屋を作る→入る→1問目をゲストが「せいかい」（★2026-10-10 から時間切れの自動〇は無い）→直す→直し戻す）----
 const JUDGE_SEC = 3;
 async function run(label, src) {
   SERVED = src;
@@ -135,15 +141,18 @@ async function run(label, src) {
     await tap(guest.page, "#join-start-together-btn");
 
     // --- 1問目。ホストが「わかった！」を押して、二人の答え合わせに入る ---
-    await host.page.waitForSelector("#advance-btn", { state: "visible", timeout: 20000 });
-    await tap(host.page, "#advance-btn");
     await host.page.waitForFunction(() => /^No\..+/.test(document.getElementById("battle-q-id").textContent), null, { timeout: 20000 });
     const qid0 = await qidOf(host.page);
 
-    // --- ★判定を押さずに待つ。時間切れの自動「せいかい」が出るはず（依頼書の失敗4の見張り）---
+    // --- ★判定を押さずに待つ。2026-10-10 から、ゲスト（親）の判定は時間が切れても自動「せいかい」にならない
+    //     （ユーザー「時間切れになっても、私が正解か不正解を押すまで子供の回答をみせないように変更したい」）。
+    //     ゲストに「〇か✕を押してください」が出るのを見てから、ゲストが〇を押す。ホスト→ゲストの判定は時間切れで〇のまま ---
     await host.page.waitForTimeout((JUDGE_SEC + 4) * 1000);
     const autoPressed = await guest.page.$eval("#judge-ok", e => e.classList.contains("auto-press")).catch(() => false);
-    check("★時間切れの自動「せいかい」が、そのまま残っている", autoPressed);
+    const prompt = await visible(guest.page, "#guest-judge-prompt");
+    check("★ゲストの判定は時間が切れても自動「せいかい」にならず、「〇か✕を押してください」が出る", !autoPressed && prompt, JSON.stringify({ autoPressed, prompt }));
+    await tap(guest.page, "#judge-ok");
+    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: (JUDGE_SEC + 10) * 1000 });
 
     const s1 = await statsOf(host.page);
     check("時間切れのあと、ホストの記録が「正解」で入っている（" + qid0 + "）",
@@ -184,8 +193,8 @@ async function run(label, src) {
       !((a.correct > 0) && (a.wrong > 0)), JSON.stringify(s2[qid0] || null));
     const score2 = await host.page.$eval("#score-me", e => e.textContent);
     check("ホストの得点が 0 に戻った", score2 === "0", "score-me=" + score2);
-    const gScore2 = await guest.page.$eval("#score-opp", e => e.textContent);
-    check("ゲストの画面の「相手の得点」も 0 になった", gScore2 === "0", "score-opp=" + gScore2);
+    const gScore2 = await guest.page.$eval("#score-me", e => e.textContent);
+    check("ゲストの画面の点（子どもの〇の数）も 0 になった", gScore2 === "0", "guest score-me=" + gScore2);
     check("★いま出ている2問目の記録は動いていない", !s2[qid1], JSON.stringify(s2[qid1] || null));
     await shot(guest.page, "3_guest_fixed");
     await shot(host.page, "3_host_fixed");
@@ -202,8 +211,8 @@ async function run(label, src) {
 
     // --- ゲスト自身の記録（＝ホストが下した判定）は動いていないこと（鳴りすぎない側）---
     const gs = await statsOf(guest.page);
-    check("★ゲスト自身の記録は、この直しでは動かない",
-      !!gs[qid0] && gs[qid0].correct === 1 && !(gs[qid0].wrong > 0), JSON.stringify(gs[qid0] || null));
+    check("★ゲスト自身の記録は付かない（新しい流れ。直しでも動かない）",
+      !gs[qid0], JSON.stringify(gs[qid0] || null));
 
     check("画面のエラーが 0（ホスト）", host.errs.length === 0, host.errs.join(" | "));
     check("画面のエラーが 0（ゲスト）", guest.errs.length === 0, guest.errs.join(" | "));

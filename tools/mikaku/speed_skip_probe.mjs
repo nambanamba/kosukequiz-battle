@@ -7,8 +7,15 @@
 //   S2 一人の一問一答のスキップ: 答えを見せて✕で記録・うしろにもう一度・出し直しでは記録しない
 //   S3 一人の結果に「スキップ1問・時間切れ1問」
 //   B1 二人: ゲストが速さを変えるとホストにも反映（ホストの速さの行が変わる）
-//   B2 二人: ゲスト（親）が判定すると、ホスト（子）が「答えを見る」を押していなくてもホストの画面で答えが開く・ゲストのふだ「あなたの判定で…」
-//   B3 二人: ホストの判定は ✕ が大きく〇が小さい・「何もしなければ〇」の一言。何もしなければ〇でゲストの記録が付き、次へ進める
+//   B4（2026-10-10 ユーザー「考える時間って子供の画面でも変えられます？変えられないようにしてください」）
+//      二人のホスト（子ども）の画面には速さのボタンが出ない・押しても変わらない・ホームの設定の行も同じ。
+//      ★同日 ユーザー「『少しゆっくり（相手が決めます）』の文字はいりません」→ 行ごと出さない（文字も無い）
+//      ゲスト（親）は変えられる。一人の画面（S4）は今までどおりボタンが出る
+//   B2 二人: ゲスト（親）が〇✕を押すと、ホスト（子）の画面で答えが開く・ゲストのふだ「あなたの判定で…」
+//      （★2026-10-10 から問題は両方に同時に出る・「わかった！」「こたえを見る」は無い・ゲストには最初から答えと〇✕）
+//   B3 二人（2026-10-10 に作り直し。それまでは「ホストの判定は✕が大きく〇が小さい・何もしなければ〇」）:
+//      ホストに〇✕（親を判定する）は出ない・ゲストの記録は付かない・ホストは親の✕で記録・次へ進める
+//   B5 二人: 考える時間が切れても何も起きない（後ろに回らない・答えも開かない・スキップは残る・ゲストには自動〇でなく「〇か✕を押してください」）
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -90,6 +97,8 @@ async function run(label, src) {
     const info = await pg.evaluate(() => (document.getElementById("solo-result-skipinfo") || {}).textContent || "");
     check("S3 一人の結果に「スキップ 1問」（一人では時間切れが無いので時間切れは出さない）", /スキップ 1問/.test(info) && !/時間切れ/.test(info), info);
     await shot(pg, "S3_solo_result");
+    const s4 = await pg.evaluate(() => [...document.querySelectorAll(".speed-row")].map(r => !r.classList.contains("locked") && [...r.querySelectorAll(".speed-choice")].some(c => getComputedStyle(c).display !== "none")));
+    check("S4 一人の画面では速さのボタンが今までどおり出る（変えられる）", s4.length >= 2 && s4.every(Boolean), JSON.stringify(s4));
     // ===== B 二人 =====
     for (const p of [host.page, guest.page]) { await p.evaluate(SEED, [MIG, ["g6r1", "g6r30", "g6r48"], { unit: U, extra: { judgeTimeSec: 3, answerTimeSec: 60 } }]); await p.reload(); await p.waitForTimeout(800); }
     await tap(host.page, "#create-btn");
@@ -98,7 +107,7 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
+    await waitVis(host.page, "#think-timer", 30000);   // ★2026-10-10 「わかった！」は無い。問題は両方に同時に出る
     const b1 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
     const hostSec = () => host.page.evaluate(() => { const e = document.getElementById("think-timer"); return e && getComputedStyle(e).display !== "none" ? +e.dataset.sec : null; });
     const t1 = await hostSec();
@@ -108,39 +117,57 @@ async function run(label, src) {
     await host.page.waitForTimeout(800);
     const hostSpeed = await host.page.evaluate(() => { const e = document.querySelector('[data-speed-row="battle"] .speed-choice.on'); return e ? e.dataset.speed : null; });
     check("B1 ゲストが速さを「少しゆっくり」に → ホストにも反映", hostSpeed === "1", hostSpeed);
-    await tap(host.page, "#advance-btn");
+    const b4 = await host.page.evaluate(() => {
+      const row = document.querySelector('[data-speed-row="battle"]'), home = document.querySelector('[data-speed-row="home"]');
+      const shown = r => [...r.querySelectorAll(".speed-choice")].filter(c => c.offsetParent !== null).length;
+      const rowVis = r => getComputedStyle(r).display !== "none";
+      const title = document.querySelector(".speed-title");
+      const lv = () => { const e = row.querySelector(".speed-choice.on"); return e ? +e.dataset.speed : null; };
+      const before = lv();
+      row.querySelector('.speed-choice[data-speed="4"]').click(); home.querySelector('.speed-choice[data-speed="0"]').click();
+      return { battleShown: shown(row), homeShown: shown(home), homeLocked: home.classList.contains("locked"),
+        battleRowVis: rowVis(row), homeRowVis: rowVis(home), titleVis: !!title && rowVis(title),
+        text: document.getElementById("screen-battle") ? (document.getElementById("screen-battle").innerText.match(/相手が決めます/g) || []).join(",") : "", before, after: lv() };
+    });
+    const b4g = await guest.page.evaluate(() => { const row = document.querySelector('[data-speed-row="battle"]'); return [...row.querySelectorAll(".speed-choice")].filter(c => getComputedStyle(c).display !== "none").length; });
+    check("B4 ホスト（子ども）には速さの行が出ない（ボタンも「相手が決めます」の文字も無い）・押しても変わらない・ホームの行と見出しも同じ／ゲストには出る",
+      b4.battleShown === 0 && b4.homeShown === 0 && b4.homeLocked && !b4.battleRowVis && !b4.homeRowVis && !b4.titleVis && b4.text === "" && b4.before === 1 && b4.after === 1 && b4g === 5, JSON.stringify({ b4, b4g }));
+    await shot(host.page, "B4_host_speed_locked");
     await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", b1, { timeout: 20000 });
-    await waitVis(guest.page, "#answer-reveal-btn", 15000);
-    await tap(guest.page, "#answer-reveal-btn"); await guest.page.waitForTimeout(400);   // 親が先に見る
+    await waitVis(guest.page, "#judge-row", 15000);   // 親には最初から答えと〇✕が出ている
     const hOpen0 = await host.page.evaluate(() => document.getElementById("battle-a-block").classList.contains("show"));
     await tap(guest.page, "#judge-ng"); await host.page.waitForTimeout(1000);          // 親が子を✕
     const b2 = { hOpen0, hOpen: await host.page.evaluate(() => document.getElementById("battle-a-block").classList.contains("show")),
       badge: await guest.page.evaluate(() => (document.getElementById("host-seen-badge") || {}).textContent || "") };
-    check("B2 親が判定すると、子が押していなくても子の画面で答えが開く・ゲストのふだ「あなたの判定で…」", !b2.hOpen0 && b2.hOpen && /あなたの判定で/.test(b2.badge), JSON.stringify(b2));
-    await waitVis(host.page, "#judge-row", 10000).catch(() => {});
-    const b3v = await host.page.evaluate(() => { const r = document.getElementById("judge-row"); const ng = document.getElementById("judge-ng").getBoundingClientRect(), ok = document.getElementById("judge-ok").getBoundingClientRect();
-      const n = document.getElementById("host-judge-note"); return { cls: r.classList.contains("host-judge"), wide: ng.width > ok.width * 1.8, note: n && getComputedStyle(n).display !== "none" ? n.textContent : "" }; });
-    await shot(host.page, "B3_host_judge"); await shot(guest.page, "B2_guest_badge");
-    const g0 = await statOf(guest.page, b1);
-    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 15000 }).catch(() => {});   // ホストは何もしない（3秒で〇）
+    check("B2 親が〇✕を押すと子の画面で答えが開く（それまでは閉じている）・ゲストのふだ「あなたの判定で…」", !b2.hOpen0 && b2.hOpen && /あなたの判定で/.test(b2.badge), JSON.stringify(b2));
+    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 15000 }).catch(() => {});
+    const b3v = { hostJudge: await vis(host.page, "#judge-row"), hostSkip: await vis(host.page, "#skip-btn"), note: await vis(host.page, "#host-judge-note") };
+    await shot(host.page, "B3_host_after"); await shot(guest.page, "B2_guest_badge");
     const g1 = await statOf(guest.page, b1), h1 = await statOf(host.page, b1);
-    check("B3 ホストの判定: ✕が大きく〇は小さい・「何もしなければ〇」・何もしなければゲストは〇・ホストは親の✕で記録", b3v.cls && b3v.wide && /何もしなければ〇/.test(b3v.note) && g0 === null && g1 && g1.correct === 1 && h1 && h1.wrong === 1, JSON.stringify({ b3v, g1, h1 }));
+    check("B3 ホストに〇✕は出ない（「何もしなければ〇」の一言も無い）・ゲストの記録は付かない・ホストは親の✕で記録・つぎへ進める",
+      !b3v.hostJudge && !b3v.note && g1 === null && h1 && h1.wrong === 1 && (h1.correct || 0) === 0 && await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")), JSON.stringify({ b3v, g1, h1 }));
     // ===== T2 対戦中の速さの変更は次の問題から =====
     await guest.page.$eval('[data-speed-row="battle"] .speed-choice[data-speed="4"]', e => e.click()).catch(() => {});   // 早く
     await host.page.waitForTimeout(600);
+    const nextQ = async prev => { await host.page.waitForFunction(q => { const e = document.getElementById("think-timer"); return document.getElementById("battle-q-id").textContent !== q && !!e && getComputedStyle(e).display !== "none"; }, "No." + prev, { timeout: 30000 }); };
     await tap(host.page, "#next-btn").catch(() => {});
-    await waitVis(host.page, "#advance-btn", 30000);
+    await nextQ(b1);
     const b2id = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, "")), t2 = await hostSec();
-    await host.page.$eval('[data-speed-row="battle"] .speed-choice[data-speed="0"]', e => e.click()).catch(() => {});      // ゆっくり（ホストから）
-    await tap(host.page, "#advance-btn");
+    // ★2026-10-10 からホストは速さを変えられないので、ゆっくりもゲストから
+    await guest.page.$eval('[data-speed-row="battle"] .speed-choice[data-speed="0"]', e => e.click()).catch(() => {});      // ゆっくり（ゲストから）
+    await host.page.waitForTimeout(600);
     await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", b2id, { timeout: 20000 });
-    // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く（ホストに「こたえを見る」は無い）
-    await tap(guest.page, "#answer-reveal-btn");
-    await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
-    await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
+    // B5 考える時間（9秒）が切れても何も起きない
+    await host.page.waitForTimeout(t2 * 1000 + 800);
+    const b5 = { sameHost: (await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""))) === b2id, open: await host.page.evaluate(() => document.getElementById("battle-a-block").classList.contains("show")),
+      skip: await vis(host.page, "#skip-btn"), reveal: await vis(host.page, "#answer-reveal-btn"), guestSame: (await qid(guest.page, "battle")) === b2id,
+      prompt: await vis(guest.page, "#guest-judge-prompt"), guestJudge: await vis(guest.page, "#judge-row"), gStat: await statOf(guest.page, b2id) };
+    check("B5 考える時間が切れても何も起きない（同じ問題・ホストの答えは閉じたまま・スキップは残る・ゲストは自動〇にならず「〇か✕を押してください」）",
+      b5.sameHost && !b5.open && b5.skip && !b5.reveal && b5.guestSame && b5.prompt && b5.guestJudge && b5.gStat === null, JSON.stringify(b5));
+    await tap(guest.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     await tap(host.page, "#next-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
+    await nextQ(b2id);
     const b3id = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, "")), t3 = await hostSec();
     check("T2 速さを変えると次の問題から: 早くで表の問 " + b2id + "＝" + t2 + "秒（9秒）・ゆっくりで短い問 " + b3id + "＝" + t3 + "秒（16秒）", b2id === "g6r48" && t2 === 9 && b3id === "g6r1" && t3 === 16);
     check("画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));

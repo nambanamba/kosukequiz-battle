@@ -121,14 +121,15 @@ async function run(name, hostSeed, guestSeed, how) {
     else { await host.page.$eval("#start-together-btn", e => e.click()); await guest.page.$eval("#join-start-together-btn", e => e.click()); }
     const t0 = Date.now();
     const okq = pg => pg.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active") && document.getElementById("battle-q").textContent.trim().length > 0, null, { timeout: 15000 }).then(() => true).catch(() => false);
-    // ホストは先に問題を見る（考える時間）。ゲストは「わかった」のあとに出る（今までどおり）
+    // ★2026-10-10 「わかった！」はなくした: 問題は両方の画面に同時に出る。ゲスト（親）には最初から答えと〇✕
     const h = await okq(host.page);
     let g = false, j = false;
     if (h) {
-      await waitVis(host.page, "#advance-btn", 15000).then(() => process.env.TAP ? host.page.tap("#advance-btn", { timeout: 5000 }) : host.page.$eval("#advance-btn", e => e.click())).catch(e => console.log("     わかった が押せない: " + String(e.message).slice(0, 160)));
-      g = await okq(guest.page);
-      // ゲストが答えを見て〇 → ホストの答えが開く
-      if (g) j = await waitVis(guest.page, "#answer-reveal-btn", 15000).then(async () => { await guest.page.$eval("#answer-reveal-btn", e => e.click()); await waitVis(guest.page, "#judge-ok", 15000); await guest.page.$eval("#judge-ok", e => e.click());
+      const adv = await host.page.evaluate(() => { const e = document.getElementById("advance-btn"); return !!(e && getComputedStyle(e).display !== "none"); });
+      if (adv) console.log("     ★ホストに「わかった！」が出ている");
+      g = (await okq(guest.page)) && !adv;
+      // ゲストが〇 → ホストの答えが開く
+      if (g) j = await waitVis(guest.page, "#judge-ok", 15000).then(async () => { if (process.env.TAP) await guest.page.tap("#judge-ok", { timeout: 5000 }); else await guest.page.$eval("#judge-ok", e => e.click());
         return host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 15000 }).then(() => true); }).catch(() => false);
     }
     const hs = await state(host.page), gs = await state(guest.page);

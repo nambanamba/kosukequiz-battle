@@ -18,6 +18,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_choice"); fs.mkdirSync(SHOTS, { recursive: true });
+// 2026-10-10 追記: 二人の新しい流れに合わせた（B1/T1: 「わかった！」・「こたえを見る」・ホストの〇✕を外し、親の〇でホストの答えが開いたあとに表示を比べる）
 const BASE_COMMIT = "b3f7f51";   // 直す前
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -162,18 +163,18 @@ async function run(label, src) {
     const hostSec = () => host.page.evaluate(() => { const e = document.getElementById("think-timer"); return e && getComputedStyle(e).display !== "none" ? +e.dataset.sec : null; });
     const bs = {};
     for (let k = 0; k < 2; k++) {
-      await waitVis(host.page, "#advance-btn", 30000);
+      // ★2026-10-10 「わかった！」なし。問題は両方に同時に出る。ホストの答えは親（ゲスト）の〇のあとに開く
+      await waitVis(host.page, "#skip-btn", 30000);
       const id = await qid(host.page, "battle"), sec = await hostSec();
-      await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
-      await tap(host.page, "#answer-reveal-btn"); await tap(guest.page, "#answer-reveal-btn"); await host.page.waitForTimeout(400);
+      await host.page.waitForTimeout(400);
+      if (id === "g6r44") { await shot(host.page, "B1_host"); await shot(guest.page, "B1_guest"); }
+      await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
+      await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+      await host.page.waitForTimeout(300);
       const one = pg2 => pg2.evaluate(() => ({ q: document.getElementById("battle-q").textContent, a: document.getElementById("battle-a").textContent }));
       bs[id] = { sec, h: await one(host.page), g: await one(guest.page) };
-      if (id === "g6r44") { await shot(host.page, "B1_host"); await shot(guest.page, "B1_guest"); }
-      // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-      await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
-      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
-      if (k === 0) { await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }); await tap(host.page, "#next-btn"); }
+      if (k === 0) await tap(host.page, "#next-btn");
     }
     const b = bs.g6r44;
     check("B1 二人: ホスト・ゲストとも g6r44 が改行・記号つき（同じ並び）、答えも「（並びの記号）（…）」", b && shownLabels(b.h.q, stem44, c44) && b.g.q === b.h.q && b.h.a === wantA44of(b.h.q) && b.g.a === b.h.a, JSON.stringify(b));

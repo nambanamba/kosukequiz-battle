@@ -112,9 +112,8 @@ async function run(label, src, base) {
     await G.p.$eval("#go-join", e => e.click()); await G.p.fill("#join-code-input", code); await G.p.$eval("#join-btn", e => e.click());
     await H.p.waitForFunction(() => getComputedStyle(document.getElementById("start-together-btn")).display !== "none", null, { timeout: 60000 });
     await H.p.$eval("#start-together-btn", e => e.click()); await G.p.$eval("#join-start-together-btn", e => e.click());
-    await H.p.waitForFunction(() => getComputedStyle(document.getElementById("advance-btn")).display !== "none", null, { timeout: 30000 });
+    await H.p.waitForFunction(() => getComputedStyle(document.getElementById("skip-btn")).display !== "none" && /^No\./.test(document.getElementById("battle-q-id").textContent), null, { timeout: 30000 }); // 2026-10-10: 新しい流れ（#advance-btn は無い。問題は両画面に同時に出る）
     const hostFirst = await H.p.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-    await H.p.$eval("#advance-btn", e => e.click());
     await G.p.waitForFunction(() => /^No\./.test(document.getElementById("battle-q-id").textContent) && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
     const guestFirst = await G.p.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
     await H.c.close(); await G.c.close();
