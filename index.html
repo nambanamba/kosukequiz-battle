@@ -1776,6 +1776,7 @@
   .plan-peek-a{ font-size:12.5px; color:var(--ok); font-weight:700; }
   /* ★2026-10-09 「やらなかった」: 行の名前の下・左がわに小さく（右の「一人で」「二人で」と押しまちがえない位置） */
   .plan-row-left{ flex:1; min-width:0; }
+  .plan-skip-btn + .plan-skip-btn{ margin-left:6px; }
   .plan-skip-btn{ margin-top:6px; padding:3px 9px; border:1px dashed var(--ink-soft); border-radius:8px; background:transparent; color:var(--ink-soft); font-size:11.5px; font-weight:700; cursor:pointer; }
   .plan-row.skipped .plan-row-title{ color:var(--ink-soft); text-decoration:line-through; text-decoration-thickness:1px; }
   .plan-mark.skip{ color:var(--ink-soft); }
@@ -12094,6 +12095,38 @@ function planPartialOf(no){ const d = planLoad(planStoreKey(PLAN_PARTIAL_KEY, no
 //   ・「もどす」で取り消せる（押したその日のうち）。plan_done には skipped:true で送る。記録（stats・学習ログ）は何も変えない
 const PLAN_SKIP_KEY = "kq_battle_plan_skip_v2";      // {番号: {行の鍵: やらなかったにした時刻}}
 function planSkipOf(no){ const d = planLoad(planStoreKey(PLAN_SKIP_KEY, no)) || {}; return d[no] || {}; }
+// ★2026-10-10 ユーザー「朝の理科を終わったことにすることもできない」→ 行の「できたことにする」（「やらなかった」のとなり）。
+//   ・確認 →「✔ できた」（できた印 kq_battle_plan_done_v2 に入れる）。押したその日のうちは「もどす」で取り消せる
+//   ・plan_done には done:true・manual:true で送る。記録（stats・学習ログ）は何も変えない。見るだけの端末には出さない
+//   ・そのあと本当に最後までやったら、ふつうの「できた」になる（manual の印を消す＝もどすは出なくなる）
+const PLAN_MANUAL_KEY = "kq_battle_plan_manual_v2";  // {番号: {行の鍵: できたことにした時刻}}
+function planManualOf(no){ const d = planLoad(planStoreKey(PLAN_MANUAL_KEY, no)) || {}; return d[no] || {}; }
+function planSetManual(no, key, on){
+  const all = planLoad(planStoreKey(PLAN_MANUAL_KEY, no)) || {};
+  const d = all[no] || {};
+  if(on) d[key] = Date.now(); else delete d[key];
+  if(Object.keys(d).length) all[no] = d; else delete all[no];
+  planSave(planStoreKey(PLAN_MANUAL_KEY, no), all);
+}
+function planMarkManual(no, key){
+  const all = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || {};
+  const d = all[no] || {};
+  if(d[key]) return;
+  d[key] = Date.now();
+  all[no] = d;
+  planSave(planStoreKey(PLAN_DONE_KEY, no), all);
+  planSetManual(no, key, true);
+  planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は消す
+  planSendDone(no);
+}
+function planUnmanual(no, key){
+  if(!planManualOf(no)[key]) return;
+  const all = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || {};
+  if(all[no]){ delete all[no][key]; if(Object.keys(all[no]).length === 0) delete all[no]; }
+  planSave(planStoreKey(PLAN_DONE_KEY, no), all);
+  planSetManual(no, key, false);
+  planSendDone(no);
+}
 // ★2026-10-09 見るだけの端末: 子どもの端末の battle/plan_done/<番号>.json を読んだ写し {番号: {行の鍵: {done, skipped}}}。
 //   読めたセット（無い＝404 は「まだ何もしていない」＝{}）だけ入る。読めていないセットは、この端末の印で出す
 const PLAN_REMOTE_KEY = "kq_battle_plan_remote_done_v1";
@@ -12522,9 +12555,11 @@ function planNoteSoloQuit(){
   return planMarkPartial(planLoad(PLAN_ACTIVE_KEY), quizQueue, new Set(first.map(r => r.id)), first.filter(r => !r.correct).map(r => r.id));
 }
 // 二人（ホスト）: おわる・中断のとき。スキップした問題も1回目に出した（答えを見た）ので数える
+// ★2026-10-10 時間切れになった問題も数える（セット4の理科: 出し直しで時間切れが続いた r6m40 に答えが付かないまま「おわる」→
+//   いつまでも「できた」にならなかった）。時間切れはもともと「朝まちがえた」（miss）に入れている
 function planNoteBattleQuit(){
   if(role !== "host" || !planBattleActive) return false;
-  const answered = new Set(Array.from(battleAnsweredIds).concat(Array.from(hostSkippedIds)));
+  const answered = new Set(Array.from(battleAnsweredIds).concat(Array.from(hostSkippedIds), Array.from(battleTimeupIds)));
   const miss = myMissesThisRound.concat(Array.from(battleTimeupIds), Array.from(hostSkippedIds));
   return planMarkPartial(planBattleActive, questionIds, answered, miss);
 }
@@ -12542,7 +12577,7 @@ function planCheckSavedSessions(){
     const bs = loadBattleSession();
     if(bs && bs.plan && bs.plan.no && Array.isArray(bs.questionIds) && !bs.inMissRetryRound){
       const sk = Array.isArray(bs.hostSkippedIds) ? bs.hostSkippedIds : [];
-      const answered = new Set((Array.isArray(bs.answered) ? bs.answered : []).concat(sk));
+      const answered = new Set((Array.isArray(bs.answered) ? bs.answered : []).concat(sk, Array.isArray(bs.timeupIds) ? bs.timeupIds : []));
       const miss = (Array.isArray(bs.misses) ? bs.misses : []).concat(Array.isArray(bs.timeupIds) ? bs.timeupIds : [], sk);
       planMarkPartial(bs.plan, bs.questionIds, answered, miss);
     }
@@ -12563,6 +12598,7 @@ function planMarkDone(no, key, miss, partial){
   else delete pd[key];
   if(Object.keys(pd).length) pa[no] = pd; else delete pa[no];
   planSave(planStoreKey(PLAN_PARTIAL_KEY, no), pa);
+  if(planManualOf(no)[key]) planSetManual(no, key, false);   // ★本当にやった（「できたことにする」の印は消す・2026-10-10）
   planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は、やり終えたら消す（次はまた選び直す）
   const ms = planLoad(planStoreKey(PLAN_MISS_KEY, no)) || {};
   const m = ms[no] || {};
@@ -12611,11 +12647,12 @@ function planNoteBattleEnd(finished){
 function planSendDone(no){
   if(planIsAuto(no)) return;   // ★自動のセットは送らない（kosuke-records の番号とまざらないように）
   try{
-    const s = planSetOf(no), d = planDoneOf(no), sk = planSkipOf(no), pt = planPartialOf(no);
+    const s = planSetOf(no), d = planDoneOf(no), sk = planSkipOf(no), pt = planPartialOf(no), mn = planManualOf(no);
     const items = (s ? s.items : []).map((it, i) => { const k = planItemKey(it, i);
       const o = { i: i, subj: it.subj || "", title: it.title || "", done: !!d[k], doneAt: d[k] ? new Date(d[k]).toISOString() : "", miss: (planMissOf(no)[k] || []) };
       if(!d[k] && sk[k]){ o.skipped = true; o.skippedAt = new Date(sk[k]).toISOString(); }   // ★やらなかった（2026-10-09）
       if(d[k] && pt[k]) o.partial = true;   // ★やり直し（ぐるぐる）は途中でやめた（2026-10-10）
+      if(d[k] && mn[k]){ o.manual = true; o.manualAt = new Date(mn[k]).toISOString(); }   // ★できたことにした（2026-10-10）
       return o; });
     sendEnqueue("plan_done_" + no, "plan_done", "battle/plan_done/" + String(no).padStart(4, "0") + ".json",
       { app: "battle", no: no, label: s && s.label || "", all: planAllDone(no), at: new Date().toISOString(), items: items }, true);
@@ -12632,7 +12669,7 @@ function renderPlanSet(container, no, prefix){
   if(typeof s.message === "string" && s.message){
     const m = document.createElement("div"); m.className = "plan-msg"; m.textContent = s.message; container.appendChild(m);
   }
-  const skips = planSkipOf(no), vonly = sendViewOnly();
+  const skips = planSkipOf(no), manuals = planManualOf(no), vonly = sendViewOnly();
   s.items.forEach((it, i) => {
     const key = planItemKey(it, i), st = planRowState(no, key), ok = st.ok, sk = st.sk, pick = planRowPick(it, no, i), ids = pick.ids;
     const row = document.createElement("div");
@@ -12668,6 +12705,19 @@ function renderPlanSet(container, no, prefix){
         planMarkSkip(no, key); renderPlan();
       });
       left.appendChild(bs);
+    }
+    // ★できたことにする／もどす（2026-10-10）。「やらなかった」のとなり。見るだけの端末には出さない
+    const mnOn = ok && !st.remote && !!manuals[key];
+    if(!vonly && !sk && (!ok || (mnOn && dateToYMD(manuals[key]) === dateToYMD(Date.now())))){
+      const bm = document.createElement("button");
+      bm.type = "button"; bm.className = "plan-skip-btn plan-manual-btn";
+      bm.textContent = ok ? "もどす" : "できたことにする";
+      bm.addEventListener("click", () => {
+        if(ok){ planUnmanual(no, key); renderPlan(); return; }
+        if(!confirm("「" + (it.title || "この行") + "」を、できたことにしますか？\n（あとで「もどす」で取り消せます）")) return;
+        planMarkManual(no, key); renderPlan();
+      });
+      left.appendChild(bm);
     }
     const btns = document.createElement("div");
     btns.className = "plan-btns";
