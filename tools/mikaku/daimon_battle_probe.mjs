@@ -13,14 +13,18 @@
 //
 // ■ 見ること
 //   B1 ★ホストとゲストの手の並びが同じで、大問の答える小問が続けて・順番どおりに出る。前回○の小問は手にならない。分母は5
-//   B2 ★「こたえを見る」の前に、同じ大問のうしろの小問（答える小問も前回○の小問も）は画面に無い
+//   B2 ★答えが開く前に（ホストは親の〇✕の前、親は問題が出た時点で）、同じ大問のうしろの小問（答える小問も前回○の小問も）は画面に無い
 //   B3 前の小問・前回○の小問は、答えつきで上に出ている。★うしろに残った前回○の小問は、最後の手の答えを開いたときに出る
-//   B4 ★答えの図（aFile）は「こたえを見る」の前は画面に無く、あとに出る
-//   B5 ★時間2倍: 答える時間（2秒）で、一問一答は3秒未満、小問は3.5秒以上たってから答えが開く
-//      考える時間（3秒）は小問だと4.5秒たっても切れない（2倍）。切れたあとの扱いは daimon_fix1003_probe（2026-10-03）
+//   B4 ★答えの図（aFile）はホストの画面では親が〇✕を押す前は無く、あとに出る（親の画面には最初から答えが出ている）
+//   B5 ★時間2倍（2026-10-10 に二人の流れが変わって見方を変えた）: ホストの考える時間の帯（#think-timer の data-sec）が、
+//      基本3秒の小問だと6秒（3秒×2）。★二人では考える時間が切れても何も起きない（後ろに回らない・答えも開かない・ホストの
+//      「わかった！」「こたえを見る」は無い）ので、6.8秒たっても同じ小問・答えは閉じたまま・スキップも残る、を見る
+//      （答える時間でホストの答えが開く、は無くなった。開くのは親の〇✕）
 //   B6 ホストの小問でもスキップが出る（★2026-09-30 bug0930 ⑤ で逆にした。2026-09-27 は「出ない」）
-//   B7 待ち画面（ゲストの「準備中」）に、前の大問のリード文が残っていない
-//   B8 ホストの記録: 小問の記録が stats に入り、★ほかの一問一答の記録は1文字も変わらない
+//   B7 ゲストの画面に、前の大問のリード文が残っていない（2026-10-10 から「準備中」の待ち画面は無く、問題は両方に同時に出る）
+//   B8 ホストの記録: 小問の記録が stats に入り、★ほかの一問一答の記録は1文字も変わらない（ホストの記録は親の〇✕から。ゲストは記録が付かない）
+//   ※2026-10-10 二人の流れ: 子ども（ホスト）に「わかった！」「こたえを見る」は出ず、問題は両方に同時に出る。親（ゲスト）には最初から答えと〇✕が出ていて、
+//      親が〇✕を押すと子どもの答えが開く（子どもに〇✕は出ない）→ 「次へ」
 //   B9 まちがえた小問だけのもう一勝負: G5 の1つめの答える小問を✕にすると、もう一勝負の手はその小問だけ
 //      ★2026-10-07（#18 正解するまでぐるぐる）から: もう一勝負は無く、✕の小問は同じラウンドで G5 の残りのうしろにもう一度出る。
 //        B1 の並びはそのぶん1手ふえ、B3 では「あとでもう一度出る」小問の答えは出さない（前からの決まり）
@@ -77,8 +81,9 @@ const FAKES = {
   c: ["答えの図を先に出す", s => cut(s, "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n",
       "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n  if(dm.it.aFile) els[prefix+\"-daimon-afig\"].appendChild(daimonImg(dm.it.aFile));  /* ★偽の実装 */\n", "小問の図")],
   d: ["時間を2倍にしない", s => cut(s, "const DAIMON_TIME_FACTOR = 2;", "const DAIMON_TIME_FACTOR = 1;  /* ★偽の実装 */", "倍率")],
-  e: ["小問ではスキップを出さない（2026-09-27 の版）", s => cut(s, "    els[\"skip-btn\"].style.display = \"block\";",
-      "    els[\"skip-btn\"].style.display = isDaimonItemId(d.id) ? \"none\" : \"block\";  /* ★偽の実装 */", "スキップ")],
+  // ★2026-10-10: 二人のホストのスキップは enterKidPhase で出す（showQuestion の hostPrivate の枝は通らなくなった）
+  e: ["小問ではスキップを出さない（2026-09-27 の版）", s => cut(s, "    els[\"skip-btn\"].style.display = opened ? \"none\" : \"block\";",
+      "    els[\"skip-btn\"].style.display = (opened || isDaimonItemId(id)) ? \"none\" : \"block\";  /* ★偽の実装 */", "スキップ")],
   f: ["対照 " + BASE_COMMIT + "（大問を対戦に出す前）", () => BASELINE]
 };
 
@@ -214,59 +219,54 @@ async function run(label, src) {
     const wrongFirst = S.plan.filter(x => S.g5.includes(x))[0];
     const expectSeq = (() => { const a = S.plan.slice(); let end = a.indexOf(wrongFirst); while (end + 1 < a.length && S.g5.includes(a[end + 1])) end++; a.splice(end + 1, 0, wrongFirst); return a; })();
     for (let t = 0; t < expectSeq.length; t++) {
-      await waitVisible(host.page, "#advance-btn", 30000);
+      // ★2026-10-10 「わかった！」は無い。問題は両方に同時に出る → ホストの考える時間の帯が出て、答えが閉じているのを待つ
+      await host.page.waitForFunction(() => { const e = document.getElementById("think-timer"); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null)
+        && !document.getElementById("battle-a-block").classList.contains("show") && !document.getElementById("next-btn").classList.contains("show"); }, null, { timeout: 30000 });
       const id = await shown(host.page);
       seqHost.push(id);
       const isItem = !!texts[id];
       const skipVis = await visible(host.page, "#skip-btn");
       if (t === 0) check("B6 一問一答ではスキップが出る（下じき）", skipVis && !isItem, id);
       else if (isItem) check("★B6 小問 " + id + " でもスキップが出る", skipVis);
-      // ★B7 待ち画面: ゲストの前の手の大問が残っていない
-      if (t > 0) {
-        const waitVis = await visible(guest.page, "#guest-wait-status");
-        const dmVis = await visible(guest.page, "#battle-daimon");
-        check("B7 ゲストの待ち画面に大問の欄が残っていない（手 " + (t + 1) + "）", waitVis && !dmVis, "wait=" + waitVis + " daimon=" + dmVis);
+      // ★B7 ゲストの画面に、前の大問のリード文が残っていない（大問が変わった手だけ・リード文がある大問だけ）
+      if (t > 0 && S.g1Lead && !S.g1.includes(id)) {
+        const gt = await screenText(guest.page);
+        check("B7 ゲストの画面に、前の大問（G1）のリード文が残っていない（手 " + (t + 1) + "）", !gt.includes(S.g1Lead.slice(0, 15)), id);
       }
-      // 考える時間: G1 の2つめの答える小問は「進める」を押さずに待つ（★2倍＝6秒・末尾に回らない）
-      const waitThink = isItem && S.g1.includes(id) && S.g1.indexOf(id) === 1;
-      const t0 = Date.now();
-      if (waitThink) {
-        await host.page.waitForTimeout(4500);
-        check("★B5 考える時間: 小問は4.5秒たってもまだ相手に出ていない（2倍・3秒×2）", await visible(host.page, "#advance-btn"));
-        // ★2026-10-03: 考える時間が切れたあとは「✕で記録して次の小問へ」に変わった（ユーザー「時間切れが、わかったと同じ扱いになる」）。
-        //   その確かめは daimon_fix1003_probe.mjs に移し、ここでは切れる前に「わかった！」を押して流れを保つ
-        await tap(host.page, "#advance-btn");
-      } else {
-        await tap(host.page, "#advance-btn");
+      // 考える時間（★2倍）。二人では切れても何も起きない
+      const thinkSec = await host.page.evaluate(() => { const e = document.getElementById("think-timer"); return e && getComputedStyle(e).display !== "none" ? +e.dataset.sec : null; });
+      if (isItem && S.g1.indexOf(id) === 0) check("★B5 考える時間: 小問の帯は6秒（3秒×2）", thinkSec === 6, thinkSec);
+      if (isItem && S.g1.indexOf(id) === 1) {
+        await host.page.waitForTimeout(6800);
+        const idle = { same: (await shown(host.page)) === id, open: await aShown(host.page), skip: await visible(host.page, "#skip-btn"), guestSame: (await shown(guest.page)) === id };
+        check("★B5 考える時間が切れても（6.8秒たっても）同じ小問・ホストの答えは閉じたまま・スキップも残る（後ろに回らない）", idle.same && !idle.open && idle.skip && idle.guestSame, JSON.stringify(idle));
       }
       await guest.page.waitForFunction(i => (document.getElementById("battle-q-id").textContent || "") === "No." + i
         && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       seqGuest.push(await shown(guest.page));
-      const tA = Date.now();
       // ---- 答えが開く前 ----
       if (isItem) {
         for (const pg of [host.page, guest.page]) {
           const who = pg === host.page ? "ホスト" : "ゲスト";
           const tx = await screenText(pg), html = await screenHtml(pg);
-          const leak = later(id).filter(x => hasQ(tx, x));
+          // ★2026-10-10 親（ゲスト）には最初から答えが開いている（guestPeek＝ホストが最後の手の答えを開いたときと同じ見え方）ので、
+          //   うしろの前回○の小問・出し直しで既に答えた小問は見えてよい。見えてはいけないのは「まだ出ていない、答える小問」
+          const leak = later(id).filter(x => hasQ(tx, x) && (pg === host.page || (S.plan.includes(x) && !seqHost.includes(x))));
           check("★B2 " + who + " " + id + ": 答える前に、うしろの小問が画面に無い", leak.length === 0, leak.join(","));
           // ★✕で「あとでもう一度出る」小問は答えを出さない（前からの決まり）ので、ここでは見ない
           const pendingWrong = seqHost.filter(x => x === wrongFirst).length === 1 && id !== wrongFirst ? wrongFirst : null;
           const prevMissing = earlier(id).filter(x => x !== pendingWrong && !(hasQ(tx, x) && hasA(tx, x)));
           if (earlier(id).length) check("B3 " + who + " " + id + ": 前の小問（前回○をふくむ）が答えつきで出ている", prevMissing.length === 0, prevMissing.join(","));
-          if (S.aFile && S.g5[S.af] === id) check("★B4 " + who + " 答えの図は、答える前は画面に無い", !html.includes(S.aFile));
+          // ★2026-10-10 親（ゲスト）には最初から答えが見える（guestPeek）ので、答えの図が「親の判定の前に無い」のはホストだけ
+          if (S.aFile && S.g5[S.af] === id && pg === host.page) check("★B4 " + who + " 答えの図は、親が判定する前は画面に無い", !html.includes(S.aFile));
         }
         if (S.g1.indexOf(id) === S.g1.length - 2) await shot(guest.page, "guest_before_last_g1");
       }
-      // ---- 答えが開くまで待つ（★時間を測る）----
-      // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く。答える時間はゲストの画面で測る
-      await guest.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
-      const took = Date.now() - tA;
-      if (!isItem) check("B5 答える時間: 一問一答は3秒未満で開く（下じき・2秒・ゲストの画面）", took < 3000, took + "ms");
-      else if (S.g1.indexOf(id) === 0) check("★B5 答える時間: 小問は3.5秒たってから開く（2倍・2秒×2・ゲストの画面）", took >= 3500, took + "ms");
+      // ---- 親（ゲスト）が〇✕を押すまで、子ども（ホスト）の答えは開かない ----
+      // ★2026-10-10 から二人のときは、ゲストに最初から答えと〇✕が出ている。ホストに「こたえを見る」「〇✕」は無い
+      await waitVisible(guest.page, "#judge-row", 30000);
       const hostWrong = id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 1;
       check("R ホスト " + id + ": ゲストが判定するまで答えは開かない", !(await aShown(host.page)));
-      await waitVisible(guest.page, "#judge-row", 30000);
       await tap(guest.page, hostWrong ? "#judge-ng" : "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
       if (isItem) {
@@ -278,10 +278,9 @@ async function run(label, src) {
           await shot(host.page, "host_after_last_g1");
         }
       }
-      // ---- 判定: G5 の1つめの答える小問だけ、ゲストがホストを✕にする ----
-      await waitVisible(host.page, "#judge-row", 30000);
-      await tap(host.page, "#judge-ok");
+      // ---- ホストには〇✕（親の判定）が出ない・そのまま「つぎへ」 ----
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+      check("R ホスト " + id + ": 〇✕は出ない（親が判定した）", !(await visible(host.page, "#judge-row")));
       if (t === 0) check("B1 分母は答える小問で数えた " + S.plan.length, (await txt(host.page, "#battle-counter")) === "1 / " + S.plan.length, await txt(host.page, "#battle-counter"));
       if (id === wrongFirst && seqHost.filter(x => x === wrongFirst).length === 2) check("★B9 ✕にした小問は同じラウンドでもう一度出る・分母は最初の数のまま・「もう一度」の印（" + (await txt(host.page, "#battle-counter")) + "）", (await txt(host.page, "#battle-counter")).endsWith(" / " + S.plan.length) && /もう一度/.test(await txt(host.page, "#battle-left")), await txt(host.page, "#battle-left"));
       await tap(host.page, "#next-btn");

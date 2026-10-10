@@ -161,15 +161,13 @@ async function run(label, src) {
       await pg.$eval("#start-together-btn", e => e.click()); await gp.$eval("#join-start-together-btn", e => e.click());
       const bseq = [];
       for (let k = 0; k < 4; k++) {
-        const got = await wv(pg, "#advance-btn", 20000).then(() => true).catch(() => false);
+        // ★2026-10-10 二人は問題が両方に同時に出る（「わかった！」は無い）。ホストは「スキップ」が出たら問題が出ている
+        const got = await wv(pg, "#skip-btn", 20000).then(() => true).catch(() => false);
         if (!got) break;
         const id = await pg.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, "")); bseq.push(id);
-        await pg.$eval("#advance-btn", e => e.click());
         await gp.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
-        // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-        await gp.$eval("#answer-reveal-btn", e => e.click());
+        // ★2026-10-10 判定はゲスト（親）だけ。〇✕は最初から出ている。ホストの答えはゲストの〇✕で開く（ホストの判定は無い）
         await wv(gp, "#judge-row", 15000); await gp.$eval("#judge-ok", e => e.click());
-        await wv(pg, "#judge-row", 15000); await pg.$eval("#judge-ok", e => e.click());
         await pg.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
         await pg.$eval("#next-btn", e => e.click()); await pg.waitForTimeout(500);
       }

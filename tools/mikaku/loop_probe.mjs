@@ -8,10 +8,10 @@
 //   L4 一人: とちゅうでやめて再開しても、回した問題が残っている・記録は1回目のまま
 //   L5 学習ログ: 1問ごとに「何回目」・1回ごとに「何周」
 //   L6 ★2026-10-07 分母は最初の問題数のまま・出し直しは「もう一度」・のこりは〇になっていない数（ユーザー「21/23ってでて、なんで？」）
-//   B1 二人: ホストが✕（ゲストの判定）の問題は、〇になるまでうしろへ回る・ゲストにも同じ並び・記録はどちらも1回目だけ・もう一勝負は出ない
+//   B1 二人（2026-10-10 から問題は両方に同時・判定はゲストだけ）: ゲストが✕をつけた問題は、〇になるまでうしろへ回る・ゲストにも同じ並び・ホストの記録は1回目だけ（ゲストの端末には付かない）・もう一勝負は出ない
 //   B2（2026-10-10 ユーザー「私の正解の数を重複してカウントしないで（20以上にしない）。『つぎの問題の準備中…（19/20問目）』と右上の『19/20』をちゃんと合わせて」）
-//      二人の点は1回目の答えだけ（出し直しで〇でも足さない）＝ホスト1・ゲスト2（2問）。
-//      ゲストの待ち画面「（◯ / ◯問目）」・ゲストの右上・ホストの右上がいつも同じ数・出し直しは「🔁 もう一度」・のこりも同じ
+//      二人の点は1回目の答えだけ（出し直しで〇でも足さない）＝子どもの〇1（2026-10-10 から点は子どもの〇だけ）。
+//      ゲストの右上・ホストの右上がいつも同じ数（2026-10-10 から待ち画面「準備中」は無い）・出し直しは「🔁 もう一度」・のこりも同じ
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -140,41 +140,44 @@ async function run(label, src) {
     const bseq = [], gseq = [], gcnt = [], three = [];
     let firstA = true;
     for (let k = 0; k < 5; k++) {
-      await waitVis(host.page, "#advance-btn", 30000).catch(() => {});
-      if (!(await vis(host.page, "#advance-btn"))) break;
+      // ★2026-10-10 二人は問題が両方の画面に同時に出る（ホストに「わかった！」「つぎの問題の準備中…」は無い）。ホストは「スキップ」が出たら問題が出ている
+      // （直す前の版は「わかった！」を押す流れ。対照の版を最後まで走らせて点の数え方を見るため、出ていれば押す）
+      await host.page.waitForFunction(() => ["#skip-btn", "#advance-btn"].some(s => { const e = document.querySelector(s); return e && getComputedStyle(e).display !== "none" && e.offsetParent !== null; }), null, { timeout: 30000 }).catch(() => {});
+      const legacy = await vis(host.page, "#advance-btn");
+      if (!legacy && !(await vis(host.page, "#skip-btn"))) break;
       const id = await qid(host.page, "battle"); bseq.push(id);
-      // ★B2 考えているあいだ（ゲストは待ち画面）: 3つの表示をくらべる
-      await guest.page.waitForFunction(() => { const e = document.getElementById("guest-wait-status"); return e && e.classList.contains("show") && /準備中/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
-      await guest.page.waitForTimeout(300);
-      three.push({ wait: await txt(guest.page, "#guest-wait-status"), g: await txt(guest.page, "#battle-counter"), h: await txt(host.page, "#battle-counter"),
-        gl: await txt(guest.page, "#battle-left"), hl: await txt(host.page, "#battle-left") });
-      await tap(host.page, "#advance-btn");
+      if (legacy) await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
+      await guest.page.waitForTimeout(300);
       gseq.push(await qid(guest.page, "battle")); gcnt.push(await txt(guest.page, "#battle-counter"));
-      // ★2026-10-08 から二人のときのホストの答えは、ゲストの〇✕で開く（ホストに「こたえを見る」は無い）
-      await tap(guest.page, "#answer-reveal-btn");
+      // ★B2 考えているあいだ: ゲストとホストの右上・のこりをくらべる
+      three.push({ g: await txt(guest.page, "#battle-counter"), h: await txt(host.page, "#battle-counter"),
+        gl: await txt(guest.page, "#battle-left"), hl: await txt(host.page, "#battle-left") });
+      // ★2026-10-10 判定はゲスト（親）だけ。〇✕は最初から出ている。ホストの答えはゲストの〇✕で開く（ホストが判定する場面は無い）
+      if (legacy) await tap(guest.page, "#answer-reveal-btn");
       await waitVis(guest.page, "#judge-row", 15000);
       const hostOk = !(id === A && firstA); if (id === A) firstA = false;
       await tap(guest.page, hostOk ? "#judge-ok" : "#judge-ng");
-      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
+      if (legacy) { await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok"); }
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn"); await host.page.waitForTimeout(500);
     }
     const scoreMe = pg => pg.evaluate(() => { const e = document.getElementById("score-me"); return e ? e.textContent.trim() : ""; });
     const scoreOpp = pg => pg.evaluate(() => { const e = document.getElementById("score-opp"); return e ? e.textContent.trim() : ""; });
-    const sc = { hMe: await scoreMe(host.page), hOpp: await scoreOpp(host.page), gMe: await scoreMe(guest.page), gOpp: await scoreOpp(guest.page) };
-    check("B2 二人の点は1回目の答えだけ（ホスト1・ゲスト2。出し直しの〇は足さない）", sc.hMe === "1" && sc.gOpp === "1" && sc.gMe === "2" && sc.hOpp === "2", JSON.stringify(sc));
-    const sameNum = three.length === 3 && three.every(t => { const m = /（(\d+ \/ \d+)問目/.exec(t.wait); return m && m[1] === t.g && t.g === t.h && t.gl === t.hl; });
-    const againOk = three.length === 3 && !/もう一度/.test(three[0].wait + three[1].wait) && /もう一度/.test(three[2].wait) && /もう一度/.test(three[2].gl) && three[2].h === "2 / 2";
-    check("B2 待ち画面の「（◯ / ◯問目）」・ゲストとホストの右上・のこりがいつも同じ・出し直しは「🔁 もう一度」で数は進めない", sameNum && againOk, JSON.stringify(three));
+    // ★2026-10-10 点は子ども（ホスト）の〇だけ・欄は1つ。ゲストの #score-me もホストの〇の数
+    const sc = { hMe: await scoreMe(host.page), gMe: await scoreMe(guest.page) };
+    check("B2 二人の点は1回目の答えだけ（子どもの〇1。出し直しの〇は足さない）・ゲストの欄も同じ数", sc.hMe === "1" && sc.gMe === "1", JSON.stringify(sc));
+    const sameNum = three.length === 3 && three.every(t => t.g === t.h && t.gl === t.hl);
+    const againOk = three.length === 3 && !/もう一度/.test(three[0].gl + three[1].gl) && /もう一度/.test(three[2].gl) && three[2].h === "2 / 2";
+    check("B2 ゲストとホストの右上・のこりがいつも同じ・出し直しは「🔁 もう一度」で数は進めない", sameNum && againOk, JSON.stringify(three));
     await host.page.waitForTimeout(800);
     const onRes = await host.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"));
     const retryBtn = await vis(host.page, "#result-retry-battle-btn");
     const hA = await statOf(host.page, A), gA = await statOf(guest.page, A);
-    check("B1 二人: ホストが✕の問題は〇になるまで回る（" + bseq.join(" ") + "）・ゲストも同じ並び（" + gcnt.join(" ") + "）",
+    check("B1 二人: ゲストが✕をつけた問題は〇になるまで回る（" + bseq.join(" ") + "）・ゲストも同じ並び（" + gcnt.join(" ") + "）",
       bseq.join(",") === [A, B, A].join(",") && gseq.join(",") === bseq.join(",") && gcnt.join(",") === "1 / 2,2 / 2,2 / 2", JSON.stringify({ bseq, gseq, gcnt }));
-    check("B1 記録はどちらも1回目だけ（ホスト " + A + " ✕1・ゲスト " + A + " 〇1）・もう一勝負は出ない・結果画面へ",
-      hA && hA.wrong === 1 && !(hA.correct > 0) && gA && gA.correct === 1 && !(gA.wrong > 0) && onRes && !retryBtn, JSON.stringify({ hA, gA, onRes, retryBtn }));
+    check("B1 記録は1回目だけ（ホスト " + A + " ✕1。ゲストの端末には付かない）・もう一勝負は出ない・結果画面へ",
+      hA && hA.wrong === 1 && !(hA.correct > 0) && !gA && onRes && !retryBtn, JSON.stringify({ hA, gA, onRes, retryBtn }));
     check("E 画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await solo.ctx.close(); await host.ctx.close(); await guest.ctx.close(); }

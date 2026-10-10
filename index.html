@@ -463,6 +463,18 @@
     font-weight:700;
     color:var(--navy-deep);
   }
+  /* ★2026-10-10 ⚡スピードポイント */
+  .quiz-head .head-right{ display:flex; align-items:center; gap:10px; }
+  .sp-now{ font-size:13px; font-weight:800; color:#b8860b; background:#fff7d6; border:1px solid #f0d57a; border-radius:999px; padding:1px 9px; }
+  .sp-toast{ position:fixed; left:50%; top:64px; transform:translate(-50%, -6px); z-index:60; pointer-events:none;
+    font-size:15px; font-weight:800; color:#8a6400; background:#fff7d6; border:1.5px solid #f0d57a; border-radius:999px;
+    padding:5px 14px; box-shadow:0 2px 8px rgba(0,0,0,.12); opacity:0; transition:opacity .2s, transform .2s; white-space:nowrap; }
+  .sp-toast.show{ opacity:1; transform:translate(-50%, 0); }
+  .sp-summary{ margin:12px auto 0; max-width:320px; background:#fff7d6; border:1.5px solid #f0d57a; border-radius:12px; padding:10px 12px; color:#6b4f00; }
+  .sp-summary .sp-sum-now{ font-size:20px; font-weight:800; }
+  .sp-summary .sp-sum-row{ font-size:13.5px; margin-top:3px; }
+  .sp-summary .sp-rec{ color:#c0392b; }
+  .sp-home{ text-align:right; font-size:12.5px; font-weight:700; color:#8a6400; margin:-4px 0 6px; }
   .score-row{
     display:flex;
     gap:10px;
@@ -1836,6 +1848,8 @@
       <div class="plan-next" id="plan-next" style="display:none;"></div>
     </div>
 
+    <!-- ★2026-10-10 ⚡スピードポイント: 今日の合計を小さく -->
+    <div class="sp-home" id="sp-home" style="display:none;"></div>
     <div class="stat-row">
       <div class="stat-card"><div class="num" id="stat-total">-</div><div class="lbl">全問題数</div></div>
       <div class="stat-card"><div class="num" id="stat-stage1">-</div><div class="lbl">まだ正解<br>していない</div></div>
@@ -1891,6 +1905,10 @@
       <!-- ★2026-10-09 今日やることのセットが無いとき、前のセットと同じ形で「つぎ（自動）」を作る。オンにすると作らない（端末に保存） -->
       <div class="toggle-row">
         <div class="toggle check-toggle" id="plan-auto-off-toggle">今日やること：自動のセットを使わない</div>
+      </div>
+      <!-- ★2026-10-10 ⚡スピードポイントを画面に出さない（端末に保存。数えるのは続ける） -->
+      <div class="toggle-row">
+        <div class="toggle check-toggle" id="sp-off-toggle">スピードポイント（⚡）を出さない</div>
       </div>
       <!-- ★理科の「大問」（テキスト通りの形）。2026-09-27。理科のときだけ出る。一問一答とは別の出し方 -->
       <button class="btn-secondary" id="daimon-open-btn" style="margin-top:10px; display:none;">テスト形式（大問）で解く</button>
@@ -2227,7 +2245,7 @@
   <section id="screen-solo" class="screen">
     <div class="quiz-head">
       <div class="back" id="solo-back">← やめてもどる</div>
-      <div class="counter" id="solo-counter">1 / 10</div>
+      <div class="head-right"><span class="sp-now" id="solo-sp-now" style="display:none;"></span><div class="counter" id="solo-counter">1 / 10</div></div>
     </div>
     <!-- ★2026-10-06 正解するまでぐるぐる。のこりの数 -->
     <div class="loop-left" id="solo-left" style="display:none;"></div>
@@ -2330,6 +2348,8 @@
       <div class="big" id="solo-result-score">0 / 0</div>
       <div class="sub">正解数 / 出題数</div>
       <div class="sub" id="solo-result-skipinfo"></div>
+      <!-- ★2026-10-10 ⚡スピードポイント（今回・今日・今週・自己ベスト） -->
+      <div class="sp-summary" id="solo-sp-summary" style="display:none;"></div>
     </div>
     <div class="section-title" id="solo-miss-title" style="display:none;">1回目にまちがえた問題（正解するまでくり返しました）</div>
     <div class="miss-list" id="solo-miss-list"></div>
@@ -2417,7 +2437,7 @@
         <span class="back" id="battle-pause-btn">⏸ 中断</span>
         <span class="back" id="battle-end-btn" style="margin-left:12px;">✕ おわる</span>
       </div>
-      <div class="counter" id="battle-counter">1 / 10</div>
+      <div class="head-right"><span class="sp-now" id="battle-sp-now" style="display:none;"></span><div class="counter" id="battle-counter">1 / 10</div></div>
     </div>
     <div class="loop-left" id="battle-left" style="display:none;"></div>
     <div class="battle-avatars" id="battle-avatars">
@@ -2530,6 +2550,7 @@
       <div class="big" id="result-score">あなた：0問正解</div>
       <div class="sub" id="result-sub">相手：0問正解</div>
       <div class="sub" id="result-skipinfo"></div>
+      <div class="sp-summary" id="battle-sp-summary" style="display:none;"></div>
     </div>
     <div class="result-actions">
       <button class="btn-secondary fill-btn" id="result-retry-battle-btn" data-label="まちがえた問題だけもう一勝負" style="display:none;"><span class="fill-label">まちがえた問題だけもう一勝負</span></button>
@@ -2540,6 +2561,7 @@
 
 </div>
 
+<div class="sp-toast" id="sp-toast"></div>
 <div class="lightbox-overlay" id="lightbox-overlay">
   <button class="lightbox-close" id="lightbox-close">×</button>
   <div class="lightbox-zoom-controls">
@@ -3561,6 +3583,180 @@ const els = {};
  "solo-hint-box","solo-hint-btn","solo-hint-list","battle-hint-box","battle-hint-btn","battle-hint-list","hint-guest-note",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
+
+// ============================================================
+// ★★ ⚡ スピードポイント（2026-10-10 ユーザー「早く先に進めるモチベーションがわくように」）
+// ============================================================
+//   1問ごとに「決めるまでの時間」でポイント。基準＝その問題の「ふつうの時間」
+//   （考える時間の自動計算 thinkSecAt を、速さの段階「ふつう」で。基本の秒は設定の考える時間）
+//     3割以内 ⚡⚡⚡ 3点・6割以内 ⚡⚡ 2点・ふつうの時間以内 ⚡ 1点・それより遅い 0点
+//   〇・✕・スキップのどれでも速さでつく（素早く✕のほうが、遅くて0点より上）。〇なら +1。✕でも減らない
+//   決めた時点: 一人＝「こたえを見る」または「スキップ」を押したとき。
+//               二人＝親が〇✕を押したとき（親の反応ぶん SP_JUDGE_LAG_SEC 秒を引く）／子どもがスキップを押したとき
+//   ぐるぐるの出し直し・スキップのあとの出し直し・ひとつ前のやり直しで出し直した問題は、ポイントなし（その回で1回目だけ）
+//   ⚡⚡⚡が5問続いたら +5（「⚡5連続！」）。連続はポイントのつく問題だけで数える
+//   ★別の入れ物（SP_KEY・SP_ROUND_KEY）。〇✕の記録（stats）・今日やることの選び方・記録CSV には一切使わない
+//   ★「ポイントを出さない」（SP_OFF_KEY）は見せないだけ。数えるのは続ける（戻したときに今日の分が出る）
+const SP_KEY = "kq_battle_speed_points_v1";          // {days: {"YYYY-MM-DD": その日の点}}
+const SP_ROUND_KEY = "kq_battle_speed_round_v1";     // {solo|battle: {sid, total, streak, q: {id: [段, 速さの点, 〇の点, 連続の点]}}}
+const SP_OFF_KEY = "kq_battle_speed_points_off_v1";  // "1" … 出さない（ホームのスイッチ）
+const SP_JUDGE_LAG_SEC = 2;
+const SP_STREAK_N = 5, SP_STREAK_BONUS = 5;
+function spLoad(key){ try{ return JSON.parse(window.localStorage.getItem(key) || "null"); }catch(e){ return null; } }
+function spSave(key, v){ try{ window.localStorage.setItem(key, JSON.stringify(v)); }catch(e){} }
+function spOff(){ try{ return window.localStorage.getItem(SP_OFF_KEY) === "1"; }catch(e){ return false; } }
+function spDayKey(t){ const d = new Date(t), p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
+function spDays(){ const s = spLoad(SP_KEY); return (s && s.days && typeof s.days === "object") ? s.days : {}; }
+function spAddDay(n){
+  if(!n) return;
+  const s = spLoad(SP_KEY) || {};
+  if(!s.days || typeof s.days !== "object") s.days = {};
+  const k = spDayKey(Date.now());
+  s.days[k] = Math.max(0, (+s.days[k] || 0) + n);
+  spSave(SP_KEY, s);
+}
+// 今日・きのう・今週（月曜から）・自己ベスト（1日の合計のいちばん多い日）
+function spStats(){
+  const days = spDays(), now = new Date();
+  const today = spDayKey(now);
+  const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  let week = 0, best = 0, bestPrev = 0;
+  Object.keys(days).forEach(k => {
+    const v = +days[k] || 0;
+    best = Math.max(best, v);
+    if(k !== today) bestPrev = Math.max(bestPrev, v);
+    const m = /^(\d+)-(\d+)-(\d+)$/.exec(k);
+    if(m){ const t = new Date(+m[1], +m[2] - 1, +m[3]); if(t >= mon && t <= now) week += v; }
+  });
+  return { today: +days[today] || 0, yesterday: +days[spDayKey(y)] || 0, week: week, best: best, bestPrev: bestPrev };
+}
+// 1回（一人の1回・対戦の1ラウンド）。学習ログの回（sid）と結びつける。続きから再開したときは同じ回なら戻す
+const spRounds = {};
+function spRoundBegin(k, sid, resume){
+  const all = spLoad(SP_ROUND_KEY) || {};
+  const old = all[k];
+  spRounds[k] = (resume && old && old.sid === sid && old.q) ? old : { sid: sid, total: 0, streak: 0, q: {} };
+  all[k] = spRounds[k];
+  spSave(SP_ROUND_KEY, all);
+  spShowNow(k);
+}
+function spPersist(k){
+  const r = spRounds[k];
+  if(!r) return;
+  const all = spLoad(SP_ROUND_KEY) || {};
+  all[k] = r;
+  spSave(SP_ROUND_KEY, all);
+  // ★学習ログの回にも入れる（列は増やさない。自動送信の session に sp・spq として入る）
+  try{
+    const s = studyLogCur(k);
+    if(s && s.id === r.sid){ s.sp = r.total; s.spq = JSON.parse(JSON.stringify(r.q)); studyLogSave(s); }
+  }catch(e){}
+}
+function spBaseSec(id){ return thinkSecAt(id, 2, headStartSec > 0 ? headStartSec : 10); }
+function spLevel(sec, base){
+  if(!(base > 0)) return 0;
+  if(sec <= base * 0.3) return 3;
+  if(sec <= base * 0.6) return 2;
+  if(sec <= base) return 1;
+  return 0;
+}
+// 問題が出た時刻（同じ問題の描き直し・つなぎ直しでは変えない）
+const spShown = { solo: { key: "", at: 0 }, battle: { key: "", at: 0 } };
+function spMarkShown(k, key, id){
+  // ★その問題の「ふつうの時間」を右上の札に控える（検査で読む。画面には出ない）
+  const el = document.getElementById(k + "-sp-now");
+  if(el && id) el.dataset.base = String(spBaseSec(id));
+  if(spShown[k].key === key) return;
+  spShown[k].key = key; spShown[k].at = Date.now();
+}
+function spElapsed(k){ return spShown[k].at ? (Date.now() - spShown[k].at) / 1000 : Infinity; }
+// 速さを決める。その回でもう決めた問題は何もしない（null）
+function spDecide(k, id, sec){
+  const r = spRounds[k];
+  if(!r || !id || r.q[id]) return null;
+  const lv = spLevel(Math.max(0, sec), spBaseSec(id));
+  const e = r.q[id] = [lv, lv, 0, 0];
+  if(lv === 3){
+    r.streak++;
+    if(r.streak >= SP_STREAK_N){ e[3] = SP_STREAK_BONUS; r.streak = 0; }
+  }else r.streak = 0;
+  r.total += e[1] + e[3];
+  spAddDay(e[1] + e[3]);
+  spPersist(k);
+  spShowNow(k);
+  return e;
+}
+// 〇のおまけ（+1）。直したとき（一人のやり直し・二人の「一個前を直す」）は付け外しする
+function spBonus(k, id, correct){
+  const r = spRounds[k];
+  const e = r && r.q[id];
+  if(!e) return;
+  const b = correct ? 1 : 0, d = b - e[2];
+  if(!d) return;
+  e[2] = b;
+  r.total += d;
+  spAddDay(d);
+  spPersist(k);
+  spShowNow(k);
+}
+function spShowNow(k){
+  const el = document.getElementById(k + "-sp-now");
+  if(!el) return;
+  const r = spRounds[k];
+  const show = !spOff() && !!r && !(k === "battle" && role !== "host") && !(k === "solo" && reviewMode);
+  el.style.display = show ? "" : "none";
+  if(show) el.textContent = "⚡" + r.total;
+}
+let spToastTimer = null;
+function spToast(e){
+  const el = document.getElementById("sp-toast");
+  if(!el || !e || spOff()) return;
+  const parts = [];
+  if(e[1]) parts.push("⚡".repeat(e[0]) + " +" + e[1]);
+  if(e[2]) parts.push("〇 +" + e[2]);
+  if(e[3]) parts.push("⚡" + SP_STREAK_N + "連続！ +" + e[3]);
+  if(!parts.length) return;
+  el.textContent = parts.join("　");
+  el.classList.remove("show"); void el.offsetWidth;
+  el.classList.add("show");
+  clearTimeout(spToastTimer);
+  spToastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+}
+// 終わりの画面: 今回・今日（きのうより）・今週・自己ベスト
+function spRenderResult(k, elId){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const r = spRounds[k];
+  if(spOff() || !r || (k === "battle" && role !== "host") || (k === "solo" && reviewMode)){ el.style.display = "none"; return; }
+  const st = spStats(), diff = st.today - st.yesterday;
+  const rec = st.today > 0 && st.today > st.bestPrev;
+  el.innerHTML = '<div class="sp-sum-now">今回 ⚡' + r.total + '</div>'
+    + '<div class="sp-sum-row">今日の⚡' + st.today + '（きのうより' + (diff >= 0 ? "+" : "−") + Math.abs(diff) + '）</div>'
+    + '<div class="sp-sum-row">今週の合計 ⚡' + st.week + '</div>'
+    + '<div class="sp-sum-row">自己ベスト（1日）⚡' + st.best + (rec ? ' <b class="sp-rec">🎉 新記録！</b>' : '') + '</div>';
+  el.style.display = "block";
+}
+function spRenderHome(){
+  const el = document.getElementById("sp-home");
+  if(!el) return;
+  if(spOff()){ el.style.display = "none"; return; }
+  el.textContent = "今日の⚡" + spStats().today;
+  el.style.display = "block";
+}
+function setupSpeedPointsToggle(){
+  const t = document.getElementById("sp-off-toggle");
+  if(!t) return;
+  t.classList.toggle("on", spOff());
+  t.addEventListener("click", () => {
+    const off = !spOff();
+    try{ window.localStorage.setItem(SP_OFF_KEY, off ? "1" : "0"); }catch(e){}
+    t.classList.toggle("on", off);
+    spRenderHome();
+    spShowNow("solo"); spShowNow("battle");
+  });
+}
+// ==== ここまで スピードポイント ====
 
 // ---- buzzer chime (synthesized, no audio file needed) ----
 // AudioContext を作るのに、実測で約0.7秒かかる。これを最初のタップの中でやると
@@ -4942,6 +5138,7 @@ els["migration-note-ok"].addEventListener("click", ()=>{
 
 function renderHome(){
   refreshStatRow();
+  spRenderHome();   // ★⚡今日の合計（2026-10-10）
   // ★ボタンの「◯問」も数え直す（2026-09-22）。以前はホームにもどっても前の数のままで、
   //   解いたあとは「未クリア」の数と「未クリアの問題」オンの問題数が食いちがって見えた（出題そのものは正しい数だった）
   refreshCreateButton();
@@ -7361,6 +7558,7 @@ function studyLogStart(k, ids, opt){
   studyLog.sessions.push(s);
   studyLog.cur[k] = id;
   studyLogSave(s);
+  spRoundBegin(k, id);   // ★⚡スピードポイントの1回も、学習ログの1回と同じ区切り（2026-10-10）
   return s;
 }
 // 続きから再開したとき: とちゅうの回があればそこへ戻す。無ければ（または終わっていれば）新しく始める
@@ -7370,6 +7568,7 @@ function studyLogResume(k, ids, opt){
   if(!s.seg){ s.seg = Date.now(); s.res = (s.res || 0) + 1; }
   s.quit = false; s.la = Date.now();
   studyLogSave(s);
+  spRoundBegin(k, s.id, true);   // ★⚡同じ回なら、ここまでのポイントと「もう決めた問題」を戻す
   return s;
 }
 // とちゅうでやめた（ホームにもどる・対戦を中断する）。あとで続きから再開できる
@@ -8348,8 +8547,12 @@ function startSoloCard(){
     els["solo-review-jump-total"].textContent = String(quizQueue.length);
   }
   studyLogShow("solo", id);   // ★学習ログ: この問題が出た時刻（2026-10-05）
+  spMarkShown("solo", quizPos + ":" + id + ":" + quizResults.length, id);   // ★⚡ここから「決めるまで」を数える
+  soloSpNew = null;
+  spShowNow("solo");
   saveSoloSession();
 }
+let soloSpNew = null;   // ★⚡この問題で、いま決まった速さ（「こたえを見る」で決まり、〇✕を押したときに小さく出す）
 
 function refreshSoloCountRow(){
   const qid = quizQueue[quizPos];
@@ -8363,6 +8566,8 @@ els["battle-hint-btn"].addEventListener("click", ()=> nextHint("battle"));
 els["solo-reveal-btn"].addEventListener("click", ()=>{
   stopSoloThink();
   studyLogReveal("solo");   // ★学習ログ: 考えた秒はここまで（2026-10-05）
+  // ★⚡一人は「こたえを見る」で速さが決まる（チェックのみはつけない）。出し直し・やり直しは spDecide が何もしない
+  if(!reviewMode) soloSpNew = spDecide("solo", quizQueue[quizPos], spElapsed("solo"));
   hideHintBtn("solo");   // ★答えを見たら、もうヒントは要らない（出したヒントは残す）
   // ★大問の小問の答えの図は、ここで初めて作る（battle と同じ）
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
@@ -8461,6 +8666,9 @@ function judgeSolo(correct){
   // ★学習ログ（2026-10-05）。スキップのあとの出し直し（記録しない回）は「出し直し」の印を付ける（recordSoloAnswer と同じ条件）
   const jid = quizQueue[quizPos];
   studyLogAnswer("solo", jid, correct ? "o" : "x", soloIsRepeat(jid));   // ★2回目からは「出し直し」の印（記録しない回）
+  // ★⚡〇なら +1（速さで点がついた問題だけ）。やり直しで判定し直したときは付け外し（そのときは小さく出さない）
+  if(!soloIsRepeat(jid)) spBonus("solo", jid, correct);
+  if(soloSpNew){ spToast(soloSpNew); soloSpNew = null; }
   recordSoloAnswer(correct);
   advanceSolo();
 }
@@ -8480,6 +8688,7 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
     els["solo-judge-row"].style.display = "none";
     const firstAns = !soloIsRepeat(id);
     studyLogAnswer("solo", id, "skip", !firstAns);   // ★学習ログ
+    spToast(spDecide("solo", id, spElapsed("solo")));   // ★⚡スキップも速さでつく（〇のおまけはなし）
     recordSoloAnswer(false);   // ★うしろにもう一度（正解するまで。recordSoloAnswer の中で回す）・記録は1回目だけ
     if(firstAns) quizResults[quizResults.length - 1].skip = true;
     soloSkippedIds.add(id);
@@ -8497,6 +8706,7 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
   els["solo-undo-row"].style.display = "none";
   const firstSkip = !soloIsRepeat(sid);
   studyLogAnswer("solo", sid, "skip", !firstSkip);   // ★学習ログ
+  spToast(spDecide("solo", sid, spElapsed("solo")));   // ★⚡小問のスキップも同じ
   // ★出し直しでのスキップは記録しない（recordSoloAnswer の norecord）。
   //   あとでもう一度（同じ大問の残りの小問のうしろ・最後の手なら末尾）も recordSoloAnswer の中で回す（正解するまで）
   recordSoloAnswer(false);
@@ -8526,6 +8736,7 @@ els["solo-undo-link"].addEventListener("click", ()=>{
     const last = quizResults.pop();
     studyLogUndo("solo");   // ★学習ログ: 最後の1件を取りのぞく（やり直した判定はあとで入る）
     const qid = last.id;
+    if(!last.norecord) spBonus("solo", qid, false);   // ★⚡〇のおまけは外す（速さの点は残す＝判定し直しても速さはもう決まっている）
     // ★2026-10-06 ✕・スキップでうしろに回した同じ問を1つ取りのぞく（正解するまでぐるぐる）
     if(last.requeued || last.skip){
       const at = quizQueue.lastIndexOf(qid);
@@ -8600,6 +8811,7 @@ function finishSoloQuiz(){
   els["solo-result-skipinfo"].textContent = reviewMode ? "" : ("スキップ " + quizResults.filter(r => r.skip).length + "問" + (soloTimeupCount ? "・時間切れ " + soloTimeupCount + "問" : "")
     + "・正解するまで " + soloLaps() + "周");   // ★2026-10-06 いちばん多く出た問題の回数
 
+  spRenderResult("solo", "solo-sp-summary");   // ★⚡今回・今日・今週・自己ベスト（2026-10-10）
   const misses = counted.filter(r=>!r.correct);
   saveLastMiss(misses.map(m=>m.id));
   els["solo-miss-list"].innerHTML = "";
@@ -9078,8 +9290,10 @@ function answerCountOf(a){
   const dots = (s.match(/…/g) || []).length;
   return Math.max(1, dots);
 }
-function thinkSecFor(id){
-  const b = headStartSec;
+function thinkSecFor(id){ return thinkSecAt(id, speedLevel, headStartSec); }
+// ★2026-10-10 速さの段階と基本をわたせる形（⚡スピードポイントの「ふつうの時間」＝段階2 で同じ式を使う）
+function thinkSecAt(id, level, base){
+  const b = base;
   let sec;
   if(isDaimonItemId(id)){
     sec = b * DAIMON_TIME_FACTOR;
@@ -9091,7 +9305,7 @@ function thinkSecFor(id){
     const mult = 1 + 0.5 * (n - 1) + (d.img ? 0.5 : 0) + 0.1 * longSteps;
     sec = b * Math.min(3, mult) + b * CHOICE_TIME_FACTOR * choiceCountOf(d.q);   // ★選ぶ問題は選択肢1つにつき＋（上のコメント）
   }
-  return Math.max(1, Math.round(sec * SPEED_FACTORS[speedLevel]));
+  return Math.max(1, Math.round(sec * SPEED_FACTORS[level]));
 }
 // ★2026-10-10 ユーザー「考える時間って子供の画面でも変えられます？変えられないようにしてください」。
 //   二人のとき（部屋を作ってから抜けるまで）のホスト（子ども）は、速さのボタンを出さず、押しても変わらない。
@@ -9309,9 +9523,9 @@ function stopFillCountdown(groupKey, buttonKeys){
 //   ・ホスト（子ども）がゲストを判定するとき・相手なしの画面は、これまでどおり時間切れで〇
 //   ・中断・再開・つなぎ直しは変えない（判定ボタンは出たまま。親が戻って押せる）
 function guestMustJudge(){ return role === "guest" && !!room; }
-function startJudgeCountdown(){
+function startJudgeCountdown(sec){
   els["guest-judge-prompt"].style.display = "none";
-  startFillCountdown("judge", ["judge-ok","judge-ng"], battleSecAt("judge", currentIndex), ()=>{
+  startFillCountdown("judge", ["judge-ok","judge-ng"], sec > 0 ? sec : battleSecAt("judge", currentIndex), ()=>{
     if(myVerdictOfOpponent !== null) return;
     if(guestMustJudge()){
       // 押すまで待つ。ボタンは赤い（urgent）まま、下に大きく知らせる
@@ -9384,6 +9598,7 @@ function showGuestWaitStatus(data){
     els[k].style.display = "none";
   });
   els["judge-row"].style.display = "none";
+  stopJudgeCountdown();   // ★2026-10-10 親の〇✕の帯も止める（スキップのあとに「〇か✕を押してください」を出さない）
   els["my-result"].style.display = "none";
   els["my-result"].classList.remove("show");
   els["status-banner"].classList.remove("show","win","lose","info");
@@ -9512,6 +9727,7 @@ function leaveRoom(){
   hostScoredIdx = -1;
   daimonSkipPending = false;
   startNotSentYet = false;
+  roundStartSent = false;
   clearJudgeFix();
   missesUnknown = false;
   gameStarted = false;
@@ -9679,6 +9895,7 @@ function setupActions(){
     if(role !== "guest") return;
     applyChoiceOrders(data);   // ★ホストが決めた選択肢の並び（2026-10-08）
     questionIds = data.ids;
+    guestThinkSec = typeof data.ts === "number" ? data.ts : 0;   // ★2026-10-10 この問題の考える時間（親の〇✕の帯）
     guestMergeFromHost = !!data.mg;   // ★2026-10-09 ホストの「まとめて出す」（スイッチ・行の印）
     inMissRetryRound = !!data.isRetryRound;
     hostBattleTimes = (data.times && typeof data.times === "object") ? data.times : null;
@@ -9710,8 +9927,15 @@ function setupActions(){
 
   judgeAction.onMessage = (data)=>{
     if(data.idx !== currentIndex) return;
+    if(data.qid && data.qid !== questionIds[currentIndex]) return;   // ★2026-10-10 スキップしたあとに届いた、前の問題の判定
     if(opponentVerdictOfMe !== null) return;
     opponentVerdictOfMe = data.correct;
+    // ★⚡2026-10-10 二人のスピードポイント（ホスト＝子どもの端末だけ）。親が〇✕を押したときに決まる。親の反応ぶん2秒を引く
+    let spE = null;
+    if(role === "host" && room && hostRecordedIdx !== currentIndex){
+      spE = spDecide("battle", questionIds[currentIndex], spElapsed("battle") - SP_JUDGE_LAG_SEC);
+      if(spE) spBonus("battle", questionIds[currentIndex], data.correct);
+    }
     // the sender judged MY answer, so this is my own result to record.
     // if I (the host) skipped this question earlier in this round, I already
     // saw the answer, so a correct answer here doesn't reflect real recall --
@@ -9756,6 +9980,7 @@ function setupActions(){
       lastHostRecord = { qid: qid, idx: currentIndex, rawCorrect: data.correct, forcedWrong: false, statBefore: null, norecord: true };
       hostRecordedIdx = currentIndex;
     }
+    if(spE && lastHostRecord && lastHostRecord.idx === currentIndex){ lastHostRecord.sp = true; spToast(spE); }   // ★⚡「一個前を直す」で〇のおまけを付け外しする印
     // ★2026-10-06 ホスト（子ども）が✕なら、〇になるまでラウンドのうしろへ回す（この添字では1回だけ）
     if(role === "host" && hostRequeuedIdx !== currentIndex){
       hostRequeuedIdx = currentIndex;
@@ -9786,6 +10011,7 @@ function setupActions(){
     applyChoiceOrders(data);   // ★ホストが決めた選択肢の並び（2026-10-08）
     // ★2026-10-06 ホストが✕の問題をうしろへ回した並び（ids）が来たら、それをそのまま持つ
     if(Array.isArray(data.ids)) questionIds = data.ids.slice();
+    guestThinkSec = typeof data.ts === "number" ? data.ts : 0;   // ★2026-10-10
     if(data.index >= questionIds.length) endGame();
     else{
       if(data.id) questionIds[data.index] = data.id;
@@ -10172,6 +10398,9 @@ function showQuestion(idx, hostPrivate){
   els["hint-guest-note"].style.display = "none";
 
   updateScoreUI();
+  // ★⚡ホスト（子ども）: 問題が両方に出たときから「決めるまで」を数える（同じ問題の出し直し・つなぎ直しでは変えない）
+  if(role === "host" && !hostPrivate) spMarkShown("battle", idx + ":" + questionIds[idx] + ":" + (spRounds.battle ? spRounds.battle.sid : ""), questionIds[idx]);
+  spShowNow("battle");
 
   // the question is already live for both sides (either it was just sent,
   // or a reconnecting peer is being resynced to it) -- skip straight to the
@@ -10186,6 +10415,7 @@ function showQuestion(idx, hostPrivate){
 //      who spaces out doesn't stall the game ----
 function hostAdvanceAndArm(idx){
   if(idx >= questionIds.length){ endGame(); return; }
+  if(room){ hostShowTogether(idx); return; }   // ★2026-10-10 二人のときは「わかった！」なし。両方に同時に出す
   if(fairMode || headStartSec <= 0){
     // 公平モード: ホストだけが問題を先読みして考える時間のアドバンテージを
     // 得ないよう、先読み・スキップは行わず即座に両者へ同時配信する
@@ -10214,6 +10444,30 @@ function hostAdvanceAndArm(idx){
   }
 }
 
+// ★★2026-10-10 ユーザー「二人対戦の『わかった！』をなくす」（「もう親と早押し対決の意味はほとんどない」）
+//   ・問題は両方の画面に同時に出す（ここ）。子ども（ホスト）は声で答える
+//   ・親（ゲスト）の画面には最初から答えと〇✕を出す（enterKidPhase）。親が〇✕を押した時点で、子どもの画面に答えが開き、
+//     記録が付き、次へ（「つぎの問題へ」の自動）。★#37 のまま、親が押すまで開かない・進まない
+//   ・子どもの画面には「わかった！」を出さない。「スキップ（こたえを見て✕）」は残す
+//   ・考える時間は目安の帯だけ。切れても答えは開かず、後ろにも回さない（親の〇✕を待つ）
+//   ・親が答えて子どもが判定する流れ（ホストの〇✕）はなくした。点は子どもの〇の数だけ
+//   ・合図: 1問目（このラウンドでまだ送っていない）は startAction、2問目からは nextAction。どちらにも考える時間（ts）を載せる
+let roundStartSent = false;   // ホストだけ: このラウンドの startAction をもう送ったか（スキップで同じ添字に次の問題が来ても、送り直さない）
+function hostShowTogether(idx){
+  if(idx >= questionIds.length){ endGame(); return; }
+  clearTimeout(pendingSendTimer);
+  showQuestion(idx, false);   // → enterAnsweringPhase → enterKidPhase
+  saveBattleSession();
+  playAdvanceCue();   // 「次に進むよ」の合図（ゲストは start/next を受けたときに鳴らす）
+  const ts = thinkSecFor(questionIds[idx]);
+  try{
+    if(!roundStartSent) startAction.send(withChoiceOrders({ids: questionIds, isRetryRound: inMissRetryRound, times: battleTimesPayload(), mg: (mergeAll || sessionMerge) ? 1 : 0, index: idx, ts: ts}));
+    else nextAction.send(withChoiceOrders({index: idx, id: questionIds[idx], ids: questionIds, ts: ts}));
+  }catch(e){}
+  roundStartSent = true;
+  startNotSentYet = false;
+}
+
 // ---- host-only: resend the current question immediately when headStartSec
 //      is 0 (no think-time delay) -- the guest's questionIds is already in
 //      sync from earlier in this same round, so a lightweight {index,id}
@@ -10238,7 +10492,8 @@ function hostResyncForReconnect(idx){
   showQuestion(idx, false);
   saveBattleSession();
   if(room){
-    startAction.send(withChoiceOrders({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload(), mg: (mergeAll || sessionMerge) ? 1 : 0}));
+    startAction.send(withChoiceOrders({ids: questionIds, index: idx, resync: true, scores: scores, isRetryRound: inMissRetryRound, times: battleTimesPayload(), mg: (mergeAll || sessionMerge) ? 1 : 0, ts: thinkSecFor(questionIds[idx])}));
+    roundStartSent = true;
   }
 }
 
@@ -10305,6 +10560,7 @@ function performDaimonSkip(){
   els["advance-btn"].style.display = "none";
   const id = questionIds[currentIndex];
   studyLogAnswer("battle", id, "skip", daimonSkipRecorded.has(id));   // ★学習ログ
+  if(room) spToast(spDecide("battle", id, spElapsed("battle")));   // ★⚡小問のスキップも同じ
   // ★2026-10-05 ユーザー「あとで出しましょう」: 小問のスキップも一問一答とそろえて、答えを見せて✕で記録し、あとでもう一度出す。
   //   ✕を付けるのは1回目だけ（出し直しでまたスキップしても、出し直しで答えても、ホストの記録は付けない）
   if(hostRecordedIdx !== currentIndex && !daimonSkipRecorded.has(id)){
@@ -10315,7 +10571,7 @@ function performDaimonSkip(){
     daimonSkipRecorded.add(id);
   }
   hostSkippedIds.add(id);
-  if(currentIndex === 0) startNotSentYet = true;
+  if(currentIndex === 0 && !roundStartSent) startNotSentYet = true;   // ★2026-10-10 二人では1問目はもう送ってある
   // 出し直す位置は時間切れと同じ（同じ大問の残りの小問のうしろ・大問の最後の手ならラウンドの末尾）。
   //   いまの添字には次の小問が来るので、「つぎの問題へ」は同じ添字のまま進める（daimonSkipPending は立てない）
   revealDaimonAnswerFig("battle", questionIds, currentIndex);
@@ -10350,6 +10606,7 @@ function performSkip(){
   stopCountdown();
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
+  if(room) spToast(spDecide("battle", questionIds[currentIndex], spElapsed("battle")));   // ★⚡子どものスキップも速さでつく（2秒は引かない）
   const skippedId = moveCurrentToEndOfRound();
   studyLogAnswer("battle", skippedId, "skip", hostSkippedIds.has(skippedId));   // ★学習ログ
   // ★hostSkippedIds に入るのは「自分で押した」ときだけ。ここに入った問題は、
@@ -10439,7 +10696,31 @@ els["skip-continue-btn"].addEventListener("click", ()=>{
   continueAfterSkip();
 });
 
+let guestThinkSec = 0;   // ゲストだけ: ホストから来た、この問題の考える時間（ts）
+function enterKidPhase(){
+  els["advance-btn"].style.display = "none";
+  els["answer-reveal-btn"].style.display = "none";
+  els["answer-countdown"].style.display = "none";
+  const id = questionIds[currentIndex];
+  const sec = (role === "guest" && guestThinkSec > 0) ? guestThinkSec : thinkSecFor(id);
+  startCountdown(sec);   // 目安の帯だけ（切れても何も起きない）
+  els["status-banner"].classList.remove("win","lose");
+  els["status-banner"].classList.add("show","info");
+  if(role === "host"){
+    // ★答えがもう開いている（つなぎ直しで同じ問題を出し直した）ときはスキップを出さない
+    const opened = els["battle-a-block"].classList.contains("show");
+    els["skip-btn"].style.display = opened ? "none" : "block";
+    els["status-banner"].textContent = "声に出してこたえを言いましょう！ 相手が〇✕をつけると、こたえが出ます。";
+    scrollBattleDaimonTo("skip-btn");
+  }else{
+    els["skip-btn"].style.display = "none";
+    els["status-banner"].textContent = "子どもが声でこたえたら、〇か✕を押してください。";
+    guestPeek();   // 親の画面だけ、最初から答えと〇✕
+    if(myVerdictOfOpponent === null) startJudgeCountdown(sec);   // 帯が切れたら「〇か✕を押してください」（自動の〇にはしない）
+  }
+}
 function enterAnsweringPhase(){
+  if(room){ enterKidPhase(); return; }   // ★2026-10-10 二人のとき
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   els["status-banner"].classList.remove("win","lose");
@@ -10642,6 +10923,8 @@ function revealAnswer(){
   els["battle-a-block"].classList.add("show");
   const idx = currentIndex;
   clearTimeout(judgeShowTimer);
+  // ★2026-10-10 二人のときのホスト（子ども）は親を判定しない（親が答える流れはなくした）。スキップも、もう出さない
+  if(role === "host" && room){ els["skip-btn"].style.display = "none"; stopCountdown(); return; }
   judgeShowTimer = setTimeout(()=>{
     // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
     if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
@@ -10656,7 +10939,7 @@ function judgeOpponent(correct){
   if(myVerdictOfOpponent !== null) return;
   stopJudgeCountdown();
   myVerdictOfOpponent = correct;
-  judgeAction.send({idx: currentIndex, correct: correct});
+  judgeAction.send({idx: currentIndex, correct: correct, qid: questionIds[currentIndex]});   // ★qid: スキップで同じ添字に次の問題が来ても取りちがえない（2026-10-10）
   // ★ゲストだけ、いま下した判定を1件だけ覚える（時間切れの自動「せいかい」もここを通る）。
   //   ★上書きなので、覚えているのは常に最新の1件だけ＝それより前は直せない
   if(role === "guest"){
@@ -10669,7 +10952,8 @@ function judgeOpponent(correct){
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "相手を「"+(correct ? "せいかい" : "まちがい")+"」と判定しました。";
-  updateMyResultUI();
+  if(role === "guest" && room){ stopCountdown(); els["my-result"].style.display = "none"; }   // ★2026-10-10 親は答えないので、自分の結果は出さない
+  else updateMyResultUI();
   updateJudgeFixUI();
   maybeFinishQuestion();
 }
@@ -10780,6 +11064,7 @@ function applyJudgeFixOnHost(data){
   if(data.correct && at >= 0) myMissesThisRound.splice(at, 1);
   }
   studyLogFix("battle", r.qid, data.correct);   // ★学習ログの〇✕も直す
+  if(r.sp) spBonus("battle", r.qid, data.correct);   // ★⚡〇のおまけを付け外し（速さの点はそのまま）
   // ★2026-10-06 正解するまでぐるぐる: 〇に直したら、うしろへ回した同じ問を取りのぞく。✕に直したら、うしろへ回す
   if(data.correct && r.requeued){ battleUnrequeue(r.qid, Math.max(r.idx, currentIndex)); r.requeued = false; }
   else if(!data.correct && !r.requeued){ if(r.idx === currentIndex) battleRequeue(r.qid); else questionIds.push(r.qid); r.requeued = true; }
@@ -10870,11 +11155,14 @@ function hideBigVerdict(){
 }
 
 function maybeFinishQuestion(){
-  if(myVerdictOfOpponent === null || opponentVerdictOfMe === null) return;
+  // ★2026-10-10 二人のとき（room）は、親（ゲスト）の子ども（ホスト）への判定だけで決まる（ホストの〇✕はなくした）
+  const kid = !!room;
+  if(kid){ if((role === "host" ? opponentVerdictOfMe : myVerdictOfOpponent) === null) return; }
+  else if(myVerdictOfOpponent === null || opponentVerdictOfMe === null) return;
   if(scored) return;
   scored = true;
   const hostCorrect = role === "host" ? opponentVerdictOfMe : myVerdictOfOpponent;
-  const guestCorrect = role === "guest" ? opponentVerdictOfMe : myVerdictOfOpponent;
+  const guestCorrect = kid ? false : (role === "guest" ? opponentVerdictOfMe : myVerdictOfOpponent);
   if(hostCorrect) battleDoneIds.add(questionIds[currentIndex]);   // ★「のこり◯問」はホストの〇で数える（2026-10-07）
   // ★2026-10-10 ユーザー「私の正解の数を重複してカウントしないで（20以上にしない）…間違えてもう一回やる問題は数えない」。
   //   点はこのラウンドの1回目の答えだけで数える。ぐるぐるの出し直し（並びで前にも出ている＝🔁 もう一度）は〇でも足さない。
@@ -10890,7 +11178,7 @@ function maybeFinishQuestion(){
   // the attack flourish stays one-directional on top of that (kid-
   // empowerment gimmick, host is the kid): only when the kid got it right
   // and the parent didn't, not just for getting it right in general
-  if(hostCorrect && !guestCorrect) triggerAttackEffect();
+  if(hostCorrect && !guestCorrect && !kid) triggerAttackEffect();
   if(role === "host"){
     els["next-btn"].classList.add("show");
     hostScoredIdx = currentIndex;
@@ -10925,10 +11213,18 @@ function goToNextQuestion(){
 els["next-btn"].addEventListener("click", goToNextQuestion);
 
 function updateScoreUI(){
-  const my = role === "host" ? scores.host : scores.guest;
+  // ★2026-10-10 二人のとき（room）は、点の欄を子どもの〇の数だけにする（親の点・早押しの勝ち負けはもう無い）
+  const kid = !!room;
+  const my = kid ? scores.host : (role === "host" ? scores.host : scores.guest);
   const opp = role === "host" ? scores.guest : scores.host;
   els["score-me"].textContent = my;
   els["score-opp"].textContent = opp;
+  const boxes = els["screen-battle"].querySelectorAll(".score-row .score-box");
+  if(boxes[1]) boxes[1].style.display = kid ? "none" : "";
+  const who = boxes[0] && boxes[0].querySelector(".who");
+  if(who) who.textContent = kid ? (role === "guest" ? "子どもの〇の数" : "〇の数") : "あなた";
+  els["guest-avatar-box"].style.display = kid ? "none" : "";
+  if(kid) els["host-avatar-label"].textContent = role === "guest" ? "子ども" : "あなた";
 }
 
 const RETRY_COUNTDOWN_SEC = 3;
@@ -10945,6 +11241,12 @@ function endGame(){
   els["result-home-btn"].textContent = (role === "guest" && room) ? "つぎの対戦を待つ（つながったまま）" : "はじめの画面にもどる";
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
+  // ★2026-10-10 二人のとき（room）は子どもの〇の数だけ（親の点は出さない）
+  if(room){
+    els["result-score"].textContent = (role === "guest" ? "子ども：" : "あなた：") + scores.host + "問正解";
+    els["result-sub"].textContent = "";
+  }
+  spRenderResult("battle", "battle-sp-summary");   // ★⚡ホスト（子ども）の画面だけ
   // ★2026-10-05 スキップ・時間切れの数（ホストだけが知っている数なので、ホストの画面に出す）
   els["result-skipinfo"].textContent = role === "host" ? ("スキップ " + hostSkippedIds.size + "問・時間切れ " + battleTimeupCount + "問") : "";
   if(!missesUnknown) saveLastMiss(myMissesThisRound);
@@ -10987,6 +11289,7 @@ function startMissRetryRound(){
   hostScoredIdx = -1;
   daimonSkipPending = false;
   startNotSentYet = false;
+  roundStartSent = false;
   clearJudgeFix();   // ★ラウンドが変わったら、前のラウンドの判定は直せない
   resetAvatars();
   setupAvatarLabels();
@@ -11070,6 +11373,7 @@ function startBattleNow(){
   hostScoredIdx = -1;
   daimonSkipPending = false;
   startNotSentYet = false;
+  roundStartSent = false;
   clearJudgeFix();
   resetAvatars();
   setupAvatarLabels();
@@ -11442,7 +11746,10 @@ function sendSession(s){
     const q = (s.q || []).map(e => ({ id: e[0], sec: e[1], r: e[2], re: e[3] ? 1 : 0, mode: e[4] || "" }));
     const parts = {};
     (s.q || []).forEach(e => { if(isPartId(e[0]) && partStats[e[0]]) parts[e[0]] = partStats[e[0]]; });
-    sendEnqueue("session_" + s.id, "session", "battle/session/" + sendDay(s.st) + "/" + s.id + ".json", { app: "battle", id: s.id, summary: summary, q: q, parts: parts }, false);
+    const body = { app: "battle", id: s.id, summary: summary, q: q, parts: parts };
+    // ★2026-10-10 ⚡スピードポイント（今までの欄は変えず、足すだけ）。sp＝この回の合計・spq＝{ID: [段, 速さの点, 〇の点, 連続の点]}
+    if(typeof s.sp === "number"){ body.sp = s.sp; body.spq = s.spq || {}; }
+    sendEnqueue("session_" + s.id, "session", "battle/session/" + sendDay(s.st) + "/" + s.id + ".json", body, false);
     sendSnapshotIfDue();
   }catch(e){ console.error("send session failed", e); }
 }
@@ -12182,6 +12489,7 @@ applySettingsUI();
 // ★設定を移したときの知らせは、画面が揃ってから一度だけ（2026-09-26）
 showMigrationNoteOnce();
 setupTodayLink();
+setupSpeedPointsToggle();   // ★⚡スピードポイントの「出さない」スイッチ（2026-10-10）
 setupTodayPlan();   // ★今日やること（kosuke-records の plan。2026-10-07）
 setupAutoSend();   // ★記録の自動送信（送り先が入っているときだけ送る。2026-10-06）   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
