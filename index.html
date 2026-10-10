@@ -1787,9 +1787,23 @@
   .skip-notice-fig{ display:block; max-width:100%; max-height:220px; margin:8px auto 0; border:1px solid var(--paper-line); border-radius:8px; cursor:zoom-in; }
   .skip-notice-a{ margin-top:8px; font-size:17px; font-weight:700; color:var(--ok); }
   .skip-notice-sol{ margin-top:4px; font-size:13px; color:var(--ink-soft); white-space:pre-wrap; }
-  .plan-close-wrap{ margin-top:12px; text-align:center; }
-  .plan-close-btn{ width:100%; padding:12px 14px; border:2px solid var(--navy-deep); border-radius:12px; background:#fff; color:var(--navy-deep); font-size:15px; font-weight:700; cursor:pointer; }
-  .plan-close-note{ margin-top:4px; font-size:11.5px; color:var(--ink-soft); }
+  /* ★2026-10-11 子ども向け: いまのぶん・教科ごとに1行・大きいボタン。親向けは下にたたむ */
+  .plan-part-head{ margin:10px 0 4px; font-size:20px; font-weight:700; color:var(--navy-deep); text-align:center; }
+  .plan-kid-row{ display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px dashed var(--paper-line); }
+  .plan-kid-subj{ flex:1; font-size:24px; font-weight:700; color:var(--ink); line-height:1.2; }
+  .plan-kid-sub{ display:block; margin-top:2px; font-size:13px; font-weight:700; color:var(--ink-soft); }
+  .plan-kid-row.done .plan-kid-sub{ color:var(--ok); }
+  .plan-kid-btns{ display:flex; gap:8px; flex:0 0 auto; }
+  .plan-kid-btn{ min-width:84px; padding:16px 12px; border:none; border-radius:14px; background:var(--navy-deep); color:#fff; font-size:18px; font-weight:700; cursor:pointer; }
+  .plan-kid-btn.battle{ background:#fff; color:var(--navy-deep); border:2px solid var(--navy-deep); }
+  .plan-kid-row.done .plan-kid-btn{ background:#fff; color:var(--navy-deep); border:2px solid var(--navy-deep); }
+  .plan-kid-btn:disabled{ opacity:.4; cursor:default; }
+  .plan-close-btn{ display:block; width:100%; margin-top:14px; padding:16px 14px; border:none; border-radius:14px; background:var(--ok); color:#fff; font-size:20px; font-weight:700; cursor:pointer; }
+  .plan-parent{ margin-top:16px; font-size:12px; color:var(--ink-soft); }
+  .plan-parent > summary{ cursor:pointer; font-size:12px; color:var(--ink-soft); }
+  .plan-parent .plan-row-title{ font-size:12.5px; font-weight:600; }
+  .plan-parent .plan-start-btn{ padding:6px 10px; font-size:12px; border-radius:8px; }
+  .plan-parent .plan-mark{ font-size:11.5px; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
@@ -12592,11 +12606,13 @@ function planNoteStart(){
 function planNoteFinish(){
   const a = planLoad(PLAN_ACTIVE_KEY);
   try{ window.localStorage.removeItem(PLAN_ACTIVE_KEY); }catch(e){}
-  if(!a || !a.no || !a.key || reviewMode) return;
+  if(!a || !a.no || !a.key || reviewMode) return;   // ★a.keys … 子ども向けの1行（同じ教科の行をまとめた）なら全部の行（2026-10-11）
   // 1回目の答えが✕（スキップもふくむ）だった問題。時間切れは一人では起きない
   const miss = quizResults.filter(r => !r.norecord && !r.correct).map(r => r.id);
-  planMarkDone(a.no, a.key, miss);
+  planRefKeys(a).forEach(k => planMarkDone(a.no, k, miss));
 }
+// ★2026-10-11 子ども向けの1行は、元の行（同じ朝／夜・同じ教科）をまとめたもの。ref.keys にその行の鍵が全部入る（無ければ ref.key だけ）
+function planRefKeys(ref){ return ref && Array.isArray(ref.keys) && ref.keys.length ? ref.keys : (ref && ref.key ? [ref.key] : []); }
 // ★2026-10-10 やめたときの「できた（やり直しは途中）」（上の PLAN_PARTIAL_KEY の説明）。
 //   queue … その回の並び（ぐるぐるで後ろに回した同じ問題も入っている）、answered … 1回目の答えがついた問題。
 //   並びのちがう問題（＝最初に出した count ぶん）が全部 answered に入っていれば「できた（やり直しは途中）」。
@@ -12608,8 +12624,9 @@ function planFirstAllAnswered(queue, answered){
 function planMarkPartial(ref, queue, answered, miss){
   if(!ref || !ref.no || !ref.key || !planSetOf(ref.no)) return false;
   if(!planFirstAllAnswered(queue, answered)) return false;
-  if(planDoneOf(ref.no)[ref.key]) return false;   // ★もう「できた」（最後まで・途中とも）なら何もしない
-  planMarkDone(ref.no, ref.key, miss, true);
+  const ks = planRefKeys(ref).filter(k => !planDoneOf(ref.no)[k]);
+  if(ks.length === 0) return false;   // ★もう「できた」（最後まで・途中とも）なら何もしない
+  ks.forEach(k => planMarkDone(ref.no, k, miss, true));
   return true;
 }
 // 一人: やめた（← もどる・戻るボタン）とき
@@ -12705,7 +12722,8 @@ function planNoteBattleEnd(finished){
   const a = planBattleActive;
   planBattleActive = null;
   if(!a || !finished) return;
-  planMarkDone(a.no, a.key, myMissesThisRound.concat(Array.from(battleTimeupIds)));
+  const miss = myMissesThisRound.concat(Array.from(battleTimeupIds));
+  planRefKeys(a).forEach(k => planMarkDone(a.no, k, miss));
 }
 // battle/plan_done/<番号>.json（同じセットは上書き）。送り先の鍵が無ければ何もしない（sendEnqueue の中で見る）
 // ★2026-10-10 ユーザー「1問残して子供が放棄or学校に行く時間になってしまったら、やったところまで記録してクラウドにあげたい。
@@ -12716,17 +12734,68 @@ function planNoteBattleEnd(finished){
 //     ・次のセットがあれば、その場でそちらを「いま進めているセット」にして出す
 const PLAN_CLOSED_KEY = "kq_battle_plan_closed_v2";   // {番号: 完了にした時刻}
 function planClosedAt(no){ const d = planLoad(planStoreKey(PLAN_CLOSED_KEY, no)) || {}; return d[no] || 0; }
-function planCloseSet(no){
-  if(!planSetOf(no) || sendViewOnly()) return false;
-  try{ planCheckSavedSessions(); }catch(e){ console.error("close set: check failed", e); }
-  const all = planLoad(planStoreKey(PLAN_CLOSED_KEY, no)) || {};
-  all[no] = Date.now();
-  planSave(planStoreKey(PLAN_CLOSED_KEY, no), all);
-  const s = planSetOf(no), sk = planSkipOf(no);
-  s.items.forEach((it, i) => { const k = planItemKey(it, i); if(!planDoneOf(no)[k] && !sk[k]) planMarkManual(no, k); });
-  planSendDone(no);   // ★全部できていた行しか無いときも closed を送る
-  const nx = planFirstOpen(planIsAuto(no) ? undefined : no);
-  if(nx) planShownNo = nx;   // 次のセットが読めていれば、そちらを出す。無ければ「おわり！」のまま
+// ★★2026-10-11 ユーザー「子供が見づらいし押しづらい。朝間違えたところを先にとか、子供にはどうでもいい。朝の分か夜の分かも選ばせたくない。
+//   朝終わったら『完了』→夜の一人or二人の理科と社会が並ぶ、終わったら完了をおす、というシンプルな構成に。
+//   朝まちがえたところを先に、などの親向けの情報は下のほうに小さく書いてあれば十分」
+//   ・行の title の頭「朝：」「夜：」（「晩：」も夜）で、セットを「朝のぶん」「夜のぶん」に分ける。頭が無い行は1つのぶん
+//   ・子どもの画面には、いまのぶん（まだ終わっていない最初のぶん）だけを、教科ごとに1行（同じ教科の行はまとめて続けて出す）
+//   ・ぶんが終わる＝「完了」を押した、または行が全部できた／やらなかった。終わったら次のぶん、最後のぶんなら次のセット
+//   ・セットの作り（kosuke-records の plan）は変えない。行ごとの「できた」の印・plan_done も今までどおり行ごと
+const PLAN_PART_CLOSED_KEY = "kq_battle_plan_part_closed_v2";   // {番号: {"朝": 完了にした時刻, …}}
+function planPartOf(it){ const m = /^\s*(朝|晩|夜)\s*[:：]/.exec(String(it && it.title || "")); return m ? (m[1] === "晩" ? "夜" : m[1]) : ""; }
+function planParts(s){
+  const out = [];
+  s.items.forEach((it, i) => { const p = planPartOf(it); let g = out.find(x => x.p === p); if(!g){ g = { p: p, idx: [] }; out.push(g); } g.idx.push(i); });
+  return out;
+}
+function planPartClosedOf(no){ const d = planLoad(planStoreKey(PLAN_PART_CLOSED_KEY, no)) || {}; return d[no] || {}; }
+function planPartDone(no, s, g){
+  if(planPartClosedOf(no)[g.p]) return true;
+  return g.idx.every(i => { const st = planRowState(no, planItemKey(s.items[i], i)); return st.ok || st.sk; });
+}
+function planCurrentPart(no){
+  const s = planSetOf(no);
+  if(!s || s.items.length === 0) return null;
+  const ps = planParts(s);
+  return ps.find(g => !planPartDone(no, s, g)) || ps[ps.length - 1];
+}
+// ぶんの中の教科ごとのまとまり（並びは行の順）
+function planSubjGroups(s, g){
+  const out = [];
+  g.idx.forEach(i => { const sj = s.items[i].subj || ""; let x = out.find(o => o.subj === sj); if(!x){ x = { subj: sj, idx: [] }; out.push(x); } x.idx.push(i); });
+  return out;
+}
+function planGroupRef(no, s, grp){
+  const keys = grp.idx.map(i => planItemKey(s.items[i], i));
+  return { no: no, key: keys[0], keys: keys, merge: grp.idx.some(i => planRowMerge(s.items[i])), msg: planStartMsg(s.items[grp.idx[0]], s) };
+}
+// まとめた行の問題: 元の行ごとに選んで（中身を見るで保存した一覧があればそれ）、行の順につなぐ（同じ問題は1回）
+function planGroupIds(no, s, grp){
+  const seen = new Set(), out = [];
+  grp.idx.forEach(i => planRowPick(s.items[i], no, i).ids.forEach(id => { if(!seen.has(id)){ seen.add(id); out.push(id); } }));
+  return out;
+}
+// 「完了」: いまのぶんを終わりにする。まだの行は「できたことにする」（記録＝〇✕は何も変えない）。最後のぶんならセットも完了・次のセットへ
+function planClosePart(no){
+  const s = planSetOf(no);
+  if(!s || sendViewOnly()) return false;
+  try{ planCheckSavedSessions(); }catch(e){ console.error("close part: check failed", e); }
+  const g = planCurrentPart(no);
+  if(!g) return false;
+  const pc = planLoad(planStoreKey(PLAN_PART_CLOSED_KEY, no)) || {};
+  pc[no] = pc[no] || {};
+  pc[no][g.p] = Date.now();
+  planSave(planStoreKey(PLAN_PART_CLOSED_KEY, no), pc);
+  const sk = planSkipOf(no);
+  g.idx.forEach(i => { const k = planItemKey(s.items[i], i); if(!planDoneOf(no)[k] && !sk[k]) planMarkManual(no, k); });
+  if(planAllDone(no)){
+    const all = planLoad(planStoreKey(PLAN_CLOSED_KEY, no)) || {};
+    all[no] = Date.now();
+    planSave(planStoreKey(PLAN_CLOSED_KEY, no), all);
+    const nx = planFirstOpen(planIsAuto(no) ? undefined : no);
+    if(nx) planShownNo = nx;   // 次のセットが読めていれば、そちらを出す。無ければ「おわり！」のまま
+  }
+  planSendDone(no);
   return true;
 }
 function planSendDone(no){
@@ -12741,9 +12810,11 @@ function planSendDone(no){
       return o; });
     sendEnqueue("plan_done_" + no, "plan_done", "battle/plan_done/" + String(no).padStart(4, "0") + ".json",
       Object.assign({ app: "battle", no: no, label: s && s.label || "", all: planAllDone(no), at: new Date().toISOString(), items: items },
-        planClosedAt(no) ? { closed: true, closedAt: new Date(planClosedAt(no)).toISOString() } : {}), true);
+        planClosedAt(no) ? { closed: true, closedAt: new Date(planClosedAt(no)).toISOString() } : {},
+        Object.keys(planPartClosedOf(no)).length ? { parts_closed: planPartClosedOf(no) } : {}), true);
   }catch(e){ console.error("send plan done failed", e); }
 }
+const PLAN_PARENT_OPEN_KEY = "kq_battle_plan_parent_open_v1";   // "1" … 「おうちの人向け」を開いておく（2026-10-11）
 function renderPlanSet(container, no, prefix, closable){
   container.innerHTML = "";
   const s = planSetOf(no);
@@ -12756,6 +12827,65 @@ function renderPlanSet(container, no, prefix, closable){
     const m = document.createElement("div"); m.className = "plan-msg"; m.textContent = s.message; container.appendChild(m);
   }
   const skips = planSkipOf(no), manuals = planManualOf(no), vonly = sendViewOnly();
+  // ★★2026-10-11 子ども向け: いまのぶん（朝／夜）だけ、教科ごとに1行・大きいボタン（上の planPartOf の説明）
+  const part = planCurrentPart(no);
+  if(part){
+    const kid = document.createElement("div");
+    kid.className = "plan-kid";
+    if(part.p){ const ph = document.createElement("div"); ph.className = "plan-part-head"; ph.textContent = part.p + "のぶん"; kid.appendChild(ph); }
+    planSubjGroups(s, part).forEach(grp => {
+      const keys = grp.idx.map(i => planItemKey(s.items[i], i)), sts = keys.map(k => planRowState(no, k));
+      const sk = sts.every(x => x.sk), ok = !sk && sts.every(x => x.ok || x.sk);
+      const ids = planGroupIds(no, s, grp);
+      const row = document.createElement("div");
+      row.className = "plan-kid-row" + (ok ? " done" : "") + (sk ? " skipped" : "");
+      row.dataset.subj = grp.subj;
+      const nm = document.createElement("div");
+      nm.className = "plan-kid-subj";
+      nm.textContent = grp.subj || "もんだい";
+      const sub = document.createElement("span");
+      sub.className = "plan-kid-sub";
+      sub.textContent = ok ? "✔ できた" : (sk ? "やらなかった" : (ids.length ? withMerge(grp.idx.some(i => planRowMerge(s.items[i])), () => planSumWeight(ids)) + "問" : "問題が見つかりません"));
+      nm.appendChild(sub);
+      const bs = document.createElement("div");
+      bs.className = "plan-kid-btns";
+      [["一人で", "solo"], ["二人で", "battle"]].forEach(([lab, k]) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "plan-kid-btn" + (k === "battle" ? " battle" : "");
+        b.dataset.kind = k;
+        b.textContent = lab;
+        b.disabled = ids.length === 0 || sk;
+        b.addEventListener("click", () => {
+          const ref = planGroupRef(no, s, grp), q = planGroupIds(no, s, grp);
+          if(k === "solo") startSoloWithIds(q, ref); else startBattleWithIds(q, ref);
+        });
+        bs.appendChild(b);
+      });
+      row.appendChild(nm); row.appendChild(bs);
+      kid.appendChild(row);
+    });
+    // 「完了」: いまのセットだけ・見るだけの端末には出さない・全部できたら出さない
+    if(closable && !vonly && !planAllDone(no)){
+      const bc = document.createElement("button");
+      bc.type = "button"; bc.className = "plan-close-btn"; bc.id = "plan-close-btn";
+      bc.textContent = "完了";
+      bc.addEventListener("click", () => {
+        if(!confirm((part.p ? part.p + "のぶん" : "今回のぶん") + "を完了にしますか？\n（やったところまでの記録は、そのまま残ります）")) return;
+        planClosePart(no); renderPlan();
+        fetchPlan();   // ★次のセットがまだ読めていなければ読みに行く（読めたら、そちらを出す）
+      });
+      kid.appendChild(bc);
+    }
+    container.appendChild(kid);
+  }
+  // ★2026-10-11 親向け（行の名前・朝まちがえた◯問から・中身を見る・やらなかった・できたことにする）は、下に小さく・たたんで
+  const det = document.createElement("details");
+  det.className = "plan-parent";
+  try{ det.open = window.localStorage.getItem(PLAN_PARENT_OPEN_KEY) === "1"; }catch(e){}
+  det.addEventListener("toggle", () => { try{ window.localStorage.setItem(PLAN_PARENT_OPEN_KEY, det.open ? "1" : "0"); }catch(e){} });
+  const sm = document.createElement("summary");
+  sm.textContent = "おうちの人向け（くわしく）";
+  det.appendChild(sm);
   s.items.forEach((it, i) => {
     const key = planItemKey(it, i), st = planRowState(no, key), ok = st.ok, sk = st.sk, pick = planRowPick(it, no, i), ids = pick.ids;
     const row = document.createElement("div");
@@ -12824,12 +12954,12 @@ function renderPlanSet(container, no, prefix, closable){
     btns.appendChild(b); btns.appendChild(b2); btns.appendChild(b3);
     if(sk) btns.style.display = "none";   // ★やらなかった行は始めない（もどせばまた出る）
     row.appendChild(left); row.appendChild(mk); row.appendChild(btns);
-    container.appendChild(row);
+    det.appendChild(row);
     const panel = document.createElement("div");
     panel.className = "plan-peek";
     panel.style.display = "none";
     if(planRowMerge(it)) panel.dataset.merge = "1";   // ★まとめての行は、一覧の数もまとめての数え方で
-    container.appendChild(panel);
+    det.appendChild(panel);
     b3.addEventListener("click", () => {
       if(panel.style.display !== "none"){ panel.style.display = "none"; delete panel.dataset.ans; panel.innerHTML = ""; b3.textContent = "中身を見る"; return; }
       // ★押した時点で出す問題と順番を決めて保存（すでに保存してあればそれ）
@@ -12840,24 +12970,7 @@ function renderPlanSet(container, no, prefix, closable){
       b3.textContent = "中身をとじる";
     });
   });
-  // ★2026-10-10 「今回の分を完了にする」（上の PLAN_CLOSED_KEY の説明）。いまのセットだけ・見るだけの端末には出さない・全部できたら出さない
-  if(closable && !vonly && !planAllDone(no)){
-    const wrap = document.createElement("div");
-    wrap.className = "plan-close-wrap";
-    const bc = document.createElement("button");
-    bc.type = "button"; bc.className = "plan-close-btn"; bc.id = "plan-close-btn";
-    bc.textContent = "今回の分を完了にする";
-    const note = document.createElement("div");
-    note.className = "plan-close-note";
-    note.textContent = "とちゅうでやめるとき用。やったところまでの記録を送って、次のセットを出します";
-    bc.addEventListener("click", () => {
-      if(!confirm("今回の分を完了にしますか？\n\n・やったところまでの記録を送ります（記録は消えません）\n・まだ終わっていない行は「できたことにする」になります\n・次のセットを出します")) return;
-      planCloseSet(no); renderPlan();
-      fetchPlan();   // ★次のセットがまだ読めていなければ読みに行く（読めたら、そちらを出す）
-    });
-    wrap.appendChild(bc); wrap.appendChild(note);
-    container.appendChild(wrap);
-  }
+  container.appendChild(det);
   return true;
 }
 function renderPlan(){
