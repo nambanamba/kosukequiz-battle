@@ -1725,6 +1725,14 @@
   .speed-row{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0 10px; }
   .speed-row .speed-label{ font-size:12px; color:var(--ink-soft); margin-right:2px; }
   .speed-row .speed-choice{ padding:4px 8px; font-size:12px; white-space:nowrap; flex:0 0 auto; }
+  /* ★2026-10-10 二人のときのホスト（子ども）は速さを変えられない。今の速さを小さく文字で出すだけ */
+  .speed-row .speed-now{ display:none; font-size:12px; color:var(--ink-soft); }
+  .speed-row.locked .speed-choice{ display:none; }
+  .speed-row.locked .speed-now{ display:inline; }
+  .guest-judge-prompt{ margin-top:12px; padding:12px 10px; border-radius:12px; text-align:center; font-size:20px; font-weight:800;
+    color:#fff; background:#d9480f; animation:guestJudgePulse 1.2s ease-in-out infinite; }
+  .guest-judge-prompt small{ display:block; margin-top:4px; font-size:12.5px; font-weight:600; }
+  @keyframes guestJudgePulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.03); } }
   .host-judge-note{ margin-top:14px; font-size:12.5px; text-align:center; color:var(--ink-soft); }
   /* ★2026-10-05 ホスト（子ども）がゲスト（親）を判定する場面: ✕を大きく、〇は小さく目立たなく（押さなくても時間が来れば〇） */
   .judge-row.host-judge .judge-btn.ng{ flex:3; }
@@ -1967,6 +1975,7 @@
       <div class="section-title">考える時間の速さ（一人・二人とも。問題ごとの時間にかける倍率）</div>
       <div class="speed-row" data-speed-row="home">
         <span class="speed-label">考える時間</span>
+        <span class="speed-now"></span>
         <div class="toggle speed-choice" data-speed="0">ゆっくり</div>
         <div class="toggle speed-choice" data-speed="1">少しゆっくり</div>
         <div class="toggle speed-choice" data-speed="2">ふつう</div>
@@ -2475,6 +2484,7 @@
     <!-- ★2026-10-05 対戦中も速さを変えられる（ゲストからも。変えた次の問題から） -->
       <div class="speed-row" data-speed-row="battle">
         <span class="speed-label">考える時間</span>
+        <span class="speed-now"></span>
         <div class="toggle speed-choice" data-speed="0">ゆっくり</div>
         <div class="toggle speed-choice" data-speed="1">少しゆっくり</div>
         <div class="toggle speed-choice" data-speed="2">ふつう</div>
@@ -2503,6 +2513,8 @@
       <button class="judge-btn ng fill-btn" id="judge-ng" data-label="✕ 相手はまちがい"><span class="fill-label">✕ 相手はまちがい</span></button>
       <button class="judge-btn ok fill-btn" id="judge-ok" data-label="〇 相手はせいかい"><span class="fill-label">〇 相手はせいかい</span></button>
     </div>
+    <!-- ★2026-10-10 ゲスト（親）だけ。判定の時間が切れても自動の〇にせず、押すまで待つ -->
+    <div class="guest-judge-prompt" id="guest-judge-prompt" style="display:none;">〇か✕を押してください<small>押すまで、子どもの画面に答えは出ません</small></div>
     <div class="status-banner" id="my-result" style="display:none;"></div>
     <div class="big-verdict" id="big-verdict"><div class="big-verdict-mark"></div></div>
     <button class="next-btn fill-btn" id="next-btn" data-label="つぎの問題へ"><span class="fill-label">つぎの問題へ</span></button>
@@ -3548,7 +3560,7 @@ const els = {};
  "judge-row","judge-ng","judge-ok","my-result","big-verdict",
  "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
  "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn","host-seen-badge",
- "solo-think-timer","solo-think-timer-fill","solo-timeup-note","solo-timeup-next-btn","solo-result-skipinfo","result-skipinfo","host-judge-note",
+ "solo-think-timer","solo-think-timer-fill","solo-timeup-note","solo-timeup-next-btn","solo-result-skipinfo","result-skipinfo","host-judge-note","guest-judge-prompt",
  "solo-hint-box","solo-hint-btn","solo-hint-list","battle-hint-box","battle-hint-btn","battle-hint-list","hint-guest-note",
  "lightbox-overlay","lightbox-stage","lightbox-img","lightbox-close","lightbox-zoom-in","lightbox-zoom-out"
 ].forEach(id => els[id] = document.getElementById(id));
@@ -8399,6 +8411,7 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
 //   ・「◯ / ◯」の分母は、最初の問題数のまま（＝このラウンドの、ちがう問題の数）。ぐるぐるで後ろに回った問題で増やさない
 //   ・分子は「いま何問目か（最初の数の中で）」＝ここまでに出た、ちがう問題の数。出し直しの問題では数は変えず、「もう一度」の印を出す
 //   ・「のこり◯問」は、まだ〇になっていない問題の数（いま出ている問題をふくむ）
+function isRepeatInRound(ids, idx){ return ids.indexOf(ids[idx]) < idx; }   // ★2026-10-10 点を足さない出し直し（roundCounter の again と同じ）
 function roundCounter(ids, idx){
   const seen = new Set();
   for(let i = 0; i <= idx && i < ids.length; i++) seen.add(ids[i]);
@@ -9083,8 +9096,14 @@ function thinkSecFor(id){
   }
   return Math.max(1, Math.round(sec * SPEED_FACTORS[speedLevel]));
 }
+// ★2026-10-10 ユーザー「考える時間って子供の画面でも変えられます？変えられないようにしてください」。
+//   二人のとき（部屋を作ってから抜けるまで）のホスト（子ども）は、速さのボタンを出さず、押しても変わらない。
+//   変えられるのはゲスト（親）だけ（speedAction でホストに届く＝fromPeer は通す）。一人の練習は変えない
+//   ★refreshSpeedRows は読み込みの途中（role を宣言する前）にも呼ばれるので、そのときは「変えられる」
+function speedLockedForHost(){ try{ return role === "host"; }catch(e){ return false; } }
 function setSpeedLevel(lv, fromPeer){
   if(!(lv >= 0 && lv <= 4)) return;
+  if(!fromPeer && speedLockedForHost()) return;
   speedLevel = lv;
   refreshSpeedRows();
   saveSettings();
@@ -9093,6 +9112,12 @@ function setSpeedLevel(lv, fromPeer){
 }
 function refreshSpeedRows(){
   document.querySelectorAll(".speed-row .speed-choice").forEach(el => el.classList.toggle("on", +el.dataset.speed === speedLevel));
+  const locked = speedLockedForHost();
+  document.querySelectorAll(".speed-row").forEach(row => {
+    row.classList.toggle("locked", locked);
+    const now = row.querySelector(".speed-now");
+    if(now) now.textContent = SPEED_NAMES[speedLevel] + "（相手が決めます）";
+  });
 }
 document.querySelectorAll(".speed-row .speed-choice").forEach(el => el.addEventListener("click", () => setSpeedLevel(+el.dataset.speed)));
 // ★大問の小問は、考える時間・答える時間を2倍（2026-09-27 ユーザー「時間を延ばすのは伸ばしたらいい」）。
@@ -9154,7 +9179,7 @@ function startAnswerCountdown(){
 //   親がまるばつを付けたタイミングで見れるようにしてほしい」。
 //   二人のときのホスト（子ども）の画面の答えは、ゲスト（親）が〇か✕を押したときだけ開く（judgeAction.onMessage → revealAnswer）。
 //   ・ホストには「こたえを見る」を出さない。答える時間（チーズ）が切れても開かない（hostAnswerTimeUp）
-//   ・ゲストが判定しないままでも、ゲストの画面の時間切れ（チーズ→判定の自動〇）で判定が届くので止まらない
+//   ・★2026-10-10 から、ゲストの判定の時間が切れても自動の〇にしない（guestMustJudge）＝親が押すまで開かない・進まない
 //   ・スキップ（答えを見て✕・あとでもう一度）・考える時間の時間切れ（答えを出さず・あとでもう一度）は変えない
 //   ・ゲストの「こたえを見る」（guestPeek）・子どもが見たふだは変えない。一人・相手なしの対戦画面も変えない
 function hostWaitsJudge(){ return role === "host" && !!room; }
@@ -9284,16 +9309,30 @@ function stopFillCountdown(groupKey, buttonKeys){
 //      has 10 seconds to tap a verdict; if time runs out, default to
 //      "correct" so a slow-to-press kid never gets penalized for someone
 //      else's hesitation ----
+//   ★2026-10-10 ユーザー（親＝ゲスト）「時間切れになっても、私が正解か不正解を押すまで子供の回答をみせないように変更したい」。
+//   二人のときのゲスト（親）がホスト（子ども）を判定する場面だけ、時間が切れても自動の〇にしない（guestMustJudge）。
+//   ホストの答えは親の〇✕でしか開かない（hostWaitsJudge）ので、親が押すまで子どもの答えは開かず、次へも進まない。
+//   時間切れのあとは「〇か✕を押してください」を目立たせる（guest-judge-prompt）。
+//   ・ホスト（子ども）がゲストを判定するとき・相手なしの画面は、これまでどおり時間切れで〇
+//   ・中断・再開・つなぎ直しは変えない（判定ボタンは出たまま。親が戻って押せる）
+function guestMustJudge(){ return role === "guest" && !!room; }
 function startJudgeCountdown(){
+  els["guest-judge-prompt"].style.display = "none";
   startFillCountdown("judge", ["judge-ok","judge-ng"], battleSecAt("judge", currentIndex), ()=>{
-    if(myVerdictOfOpponent === null){
-      els["judge-ok"].classList.add("auto-press");
-      judgeOpponent(true);
+    if(myVerdictOfOpponent !== null) return;
+    if(guestMustJudge()){
+      // 押すまで待つ。ボタンは赤い（urgent）まま、下に大きく知らせる
+      els["guest-judge-prompt"].style.display = "block";
+      scrollBattleDaimonTo("guest-judge-prompt");
+      return;
     }
+    els["judge-ok"].classList.add("auto-press");
+    judgeOpponent(true);
   });
 }
 function stopJudgeCountdown(){
   stopFillCountdown("judge", ["judge-ok","judge-ng"]);
+  if(els["guest-judge-prompt"]) els["guest-judge-prompt"].style.display = "none";
 }
 
 // ---- host-only: shown alongside 次の問題へ once a question is fully
@@ -9367,7 +9406,12 @@ function showGuestWaitStatus(data){
     el.innerHTML = data.daimon ? "時間切れになりました。この小問は、あとでもう一度出てきます。"
                                : "時間切れになりました。この問題は、あとでもう一度出てきます。";
   }else{
-    el.innerHTML = "つぎの問題の準備中…（"+data.position+" / "+data.total+"問目）";
+    // ★2026-10-10 ユーザー「『つぎの問題の準備中…（19/20問目）』と右上の『19/20』をちゃんと合わせて」。
+    //   右上の「◯ / ◯」と「のこり◯問」も、ここでホストから来た数に直す（3つとも同じ数）。
+    //   出し直し（ぐるぐる）の問題は数を進めず「🔁 もう一度」とだけ足す（2026-10-07 の決まり）
+    el.innerHTML = "つぎの問題の準備中…（"+data.position+" / "+data.total+"問目"+(data.again ? "・🔁 もう一度" : "")+"）";
+    if(typeof data.position === "number" && typeof data.total === "number") els["battle-counter"].textContent = data.position+" / "+data.total;
+    if(typeof data.left === "number") showLoopLeft("battle", data.left, true, !!data.again);
   }
 }
 
@@ -9463,6 +9507,7 @@ function leaveRoom(){
   hideBigVerdict();
   room = null;
   role = null;
+  refreshSpeedRows();   // ★2026-10-10 抜けたら速さのボタンを戻す
   guestMergeFromHost = false;   // ★2026-10-09
   questionIds = [];
   currentIndex = -1;
@@ -9811,6 +9856,7 @@ function setupActions(){
 // ---- create room (host) ----
 async function hostCreateRoomWithCode(code){
   role = "host";
+  refreshSpeedRows();   // ★2026-10-10 ホストは速さを変えられない
   els["room-code-display"].textContent = code;
   els["create-error"].classList.remove("show");
   els["create-diag"].classList.remove("show");
@@ -9897,6 +9943,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
     return;
   }
   role = "host";
+  refreshSpeedRows();   // ★2026-10-10 ホストは速さを変えられない
   questionIds = session.questionIds;
   currentIndex = session.currentIndex;
   scores = session.scores;
@@ -10167,7 +10214,10 @@ function hostAdvanceAndArm(idx){
     // completely in the dark during the think-time countdown
     const q = getQById(questionIds[idx]).q;
     const rcT = roundCounter(questionIds, idx);   // ★分母は最初の問題数のまま（2026-10-07）
-    try{ statusAction.send(withChoiceOrders({type: "thinking", position: rcT.n, total: rcT.total, seconds: thinkSec, q: q})); }catch(e){}
+    // ★2026-10-10 again（出し直し）と left（のこり）も送る。ゲストはこの時点ではまだ前の並びしか持っていないので、
+    //   右上の「◯ / ◯」・「のこり◯問」・待ち画面の「（◯ / ◯問目）」を、ホストと同じ数でそろえるため
+    const leftT = Array.from(new Set(questionIds)).filter(id => !battleDoneIds.has(id)).length;
+    try{ statusAction.send(withChoiceOrders({type: "thinking", position: rcT.n, total: rcT.total, again: rcT.again ? 1 : 0, left: leftT, seconds: thinkSec, q: q})); }catch(e){}
   }
 }
 
@@ -10745,7 +10795,8 @@ function applyJudgeFixOnHost(data){
   // ④ 得点。★まだ採点していない問なら、ここでは動かさない。
   //    ⑤で opponentVerdictOfMe を直しておけば、maybeFinishQuestion が正しい側で数える
   let scoreDelta = 0;
-  if(r.idx !== currentIndex || scored){
+  // ★2026-10-10 出し直し（🔁 もう一度）の問は、もともと点を足していないので、直しても点は動かさない
+  if(!isRepeatInRound(questionIds, r.idx) && (r.idx !== currentIndex || scored)){
     if(data.correct) scoreDelta = 1;
     else if(scores.host > 0) scoreDelta = -1;
     scores.host += scoreDelta;
@@ -10832,8 +10883,12 @@ function maybeFinishQuestion(){
   const hostCorrect = role === "host" ? opponentVerdictOfMe : myVerdictOfOpponent;
   const guestCorrect = role === "guest" ? opponentVerdictOfMe : myVerdictOfOpponent;
   if(hostCorrect) battleDoneIds.add(questionIds[currentIndex]);   // ★「のこり◯問」はホストの〇で数える（2026-10-07）
-  if(hostCorrect) scores.host += 1;
-  if(guestCorrect) scores.guest += 1;
+  // ★2026-10-10 ユーザー「私の正解の数を重複してカウントしないで（20以上にしない）…間違えてもう一回やる問題は数えない」。
+  //   点はこのラウンドの1回目の答えだけで数える。ぐるぐるの出し直し（並びで前にも出ている＝🔁 もう一度）は〇でも足さない。
+  //   ＝点は最大でも「◯ / ◯」の分母（ちがう問題の数）。大問の小問・分けての部分も同じ（id で見る）
+  const firstTry = !isRepeatInRound(questionIds, currentIndex);
+  if(hostCorrect && firstTry) scores.host += 1;
+  if(guestCorrect && firstTry) scores.guest += 1;
   updateScoreUI();
   // avatar evolution is symmetric -- each side's character grows whenever
   // that side got it right, regardless of the other's result

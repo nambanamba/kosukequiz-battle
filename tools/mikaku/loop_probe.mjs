@@ -9,6 +9,9 @@
 //   L5 学習ログ: 1問ごとに「何回目」・1回ごとに「何周」
 //   L6 ★2026-10-07 分母は最初の問題数のまま・出し直しは「もう一度」・のこりは〇になっていない数（ユーザー「21/23ってでて、なんで？」）
 //   B1 二人: ホストが✕（ゲストの判定）の問題は、〇になるまでうしろへ回る・ゲストにも同じ並び・記録はどちらも1回目だけ・もう一勝負は出ない
+//   B2（2026-10-10 ユーザー「私の正解の数を重複してカウントしないで（20以上にしない）。『つぎの問題の準備中…（19/20問目）』と右上の『19/20』をちゃんと合わせて」）
+//      二人の点は1回目の答えだけ（出し直しで〇でも足さない）＝ホスト1・ゲスト2（2問）。
+//      ゲストの待ち画面「（◯ / ◯問目）」・ゲストの右上・ホストの右上がいつも同じ数・出し直しは「🔁 もう一度」・のこりも同じ
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -16,6 +19,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BASE_COMMIT = "cdf5a32";   // 直す前
+const BASE_SCORE = "01728b8";    // ★B2 の直す前（出し直しの〇も点に足していた）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -133,12 +137,17 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    const bseq = [], gseq = [], gcnt = [];
+    const bseq = [], gseq = [], gcnt = [], three = [];
     let firstA = true;
     for (let k = 0; k < 5; k++) {
       await waitVis(host.page, "#advance-btn", 30000).catch(() => {});
       if (!(await vis(host.page, "#advance-btn"))) break;
       const id = await qid(host.page, "battle"); bseq.push(id);
+      // ★B2 考えているあいだ（ゲストは待ち画面）: 3つの表示をくらべる
+      await guest.page.waitForFunction(() => { const e = document.getElementById("guest-wait-status"); return e && e.classList.contains("show") && /準備中/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
+      await guest.page.waitForTimeout(300);
+      three.push({ wait: await txt(guest.page, "#guest-wait-status"), g: await txt(guest.page, "#battle-counter"), h: await txt(host.page, "#battle-counter"),
+        gl: await txt(guest.page, "#battle-left"), hl: await txt(host.page, "#battle-left") });
       await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       gseq.push(await qid(guest.page, "battle")); gcnt.push(await txt(guest.page, "#battle-counter"));
@@ -151,6 +160,13 @@ async function run(label, src) {
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn"); await host.page.waitForTimeout(500);
     }
+    const scoreMe = pg => pg.evaluate(() => { const e = document.getElementById("score-me"); return e ? e.textContent.trim() : ""; });
+    const scoreOpp = pg => pg.evaluate(() => { const e = document.getElementById("score-opp"); return e ? e.textContent.trim() : ""; });
+    const sc = { hMe: await scoreMe(host.page), hOpp: await scoreOpp(host.page), gMe: await scoreMe(guest.page), gOpp: await scoreOpp(guest.page) };
+    check("B2 二人の点は1回目の答えだけ（ホスト1・ゲスト2。出し直しの〇は足さない）", sc.hMe === "1" && sc.gOpp === "1" && sc.gMe === "2" && sc.hOpp === "2", JSON.stringify(sc));
+    const sameNum = three.length === 3 && three.every(t => { const m = /（(\d+ \/ \d+)問目/.exec(t.wait); return m && m[1] === t.g && t.g === t.h && t.gl === t.hl; });
+    const againOk = three.length === 3 && !/もう一度/.test(three[0].wait + three[1].wait) && /もう一度/.test(three[2].wait) && /もう一度/.test(three[2].gl) && three[2].h === "2 / 2";
+    check("B2 待ち画面の「（◯ / ◯問目）」・ゲストとホストの右上・のこりがいつも同じ・出し直しは「🔁 もう一度」で数は進めない", sameNum && againOk, JSON.stringify(three));
     await host.page.waitForTimeout(800);
     const onRes = await host.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"));
     const retryBtn = await vis(host.page, "#result-retry-battle-btn");
@@ -170,6 +186,12 @@ console.log("■ 自己テスト: 直す前 " + BASE_COMMIT + " … ★鳴るの
 const ngB = report("対照 " + BASE_COMMIT, await run("base", BASELINE));
 console.log(ngB > 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴った）" : "  → ✘ 自己テスト不合格");
 if (ngB === 0) await done(3);
+console.log("■ 自己テスト: 点の数え方を直す前 " + BASE_SCORE + " … ★B2 で鳴るのが正しい");
+const outS = await run("basescore", execSync("git show " + BASE_SCORE + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+report("対照 " + BASE_SCORE, outS);
+const ngS = outS.filter(c => !c.ok && /B2/.test(c.n)).length;
+console.log(ngS > 0 ? "  → ✔ 自己テスト合格（B2 が " + ngS + " 件で鳴った）" : "  → ✘ 自己テスト不合格");
+if (ngS === 0) await done(3);
 const ng = report("いまの index.html", await run("now", CURRENT));
 console.log(ng === 0 ? "\n✔ 全部通りました" : "\n✘ " + ng + " 件ひっかかりました");
 await done(ng ? 1 : 0);

@@ -8,16 +8,23 @@
 //   R3 ゲストが〇（✕）を押すと、ホストの答えが開く（ゲストのふだ「あなたの判定で…」）・ホストの判定ボタンも出る
 //   R4 子どもが「スキップ」→ 今までどおり答えを見せる（あとでもう一度）
 //   R5 考える時間の時間切れ → 答えは開かない（あとでもう一度）
-// 自己テスト: 直す前（BASE_COMMIT）で鳴る
+//   R6（2026-10-10）ゲスト（親）の判定の時間が切れても自動の〇にならない＝ホストの答えは開かない・次へ進まない・
+//      ゲストに「〇か✕を押してください」が出る。そのあと押せば R3 のとおり開く
+//      ユーザー原文「時間切れになっても、私が正解か不正解を押すまで子供の回答をみせないように変更したい」
+//   R7（2026-10-10 司令塔の念押し「どの時計が切れても次の問題に進まない」）「次の問題へ」・スキップのあとの自動送りを 2秒に縮め、
+//      親が押さないまま長く待っても1問目のまま（ホスト・ゲストとも）。押したあとは時計が効いて自動で2問目へ進む（時計が生きていることの確かめ）
+// 自己テスト: 直す前（BASE_COMMIT）で鳴る。R6 は判定待ちを入れる前（BASE_WAIT）でも鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_reveal_by_judge"); fs.mkdirSync(SHOTS, { recursive: true });
 const BASE_COMMIT = "b3f7f51";
+const BASE_WAIT = "01728b8";   // ★判定の時間切れで自動〇だった最後（2026-10-10 の直す前）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const BASELINE_WAIT = execSync("git show " + BASE_WAIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const relay = await startFakeRelay({ broadcast: true, label: "revealjudge" });
 let SERVED = CURRENT;
 function withFakeRelay(src) {
@@ -37,13 +44,14 @@ await new Promise(r => server.listen(0, "127.0.0.1", r));
 const PAGE_URL = "http://127.0.0.1:" + server.address().port + "/index.html";
 const browser = await chromium.launch({ channel: "chrome" });
 const MIG = { "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 };
-// 考える時間 3秒（小問は2倍）・答える時間 3秒（小問は2倍）・判定の時間は長く（ゲストが自動〇にならないように）
+// 考える時間 3秒（小問は2倍）・答える時間 3秒（小問は2倍）・判定の時間 3秒（小問は2倍。★R6 でゲストの判定の時間を切らす）
 const SEED = (arg) => {
-  const [mig, kind] = arg;
+  const [mig, kind, extra] = arg;
   localStorage.clear();
   localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(mig));
   localStorage.setItem("kq_battle_daimon_merged_v1", "1");
-  const times = { headStartSec: 3, answerTimeSec: 3, judgeTimeSec: 600, nextTimeSec: 600, skipNextTimeSec: 600, speedLevel: 2 };
+  const times = { headStartSec: 3, answerTimeSec: 3, judgeTimeSec: 3, nextTimeSec: 600, skipNextTimeSec: 600, speedLevel: 2 };
+  Object.assign(times, extra || {});
   if (kind === "qa") {
     const u = QA_DATA.find(q => q.subj === "社会" && q.kind !== "calc" && !q.img).u;
     localStorage.setItem("kq_battle_settings_v1", JSON.stringify(Object.assign({ subject: "社会", unitsBySubject: { "社会": [u] }, units: [u], count: 4, shuffle: false, filterUnmastered: false, filterWeak: false, fairMode: false }, times)));
@@ -60,7 +68,8 @@ const SEED = (arg) => {
   localStorage.setItem("kq_battle_settings_v1", JSON.stringify(Object.assign({ subject: "理科", unitsBySubject: { "理科": units }, units: units, count: g.items.length, shuffle: false, tiers: [0], filterUnmastered: false, filterWeak: false, fairMode: false, reviewAllUnits: true }, times)));
 };
 
-async function run(label, src, kind) {
+async function run(label, src, kind, opts) {
+  opts = opts || {};
   SERVED = src; const out = [];
   const tag = kind === "qa" ? "一問一答" : "小問";
   const F = kind === "qa" ? 1 : 2;   // 小問は時間が2倍
@@ -81,8 +90,9 @@ async function run(label, src, kind) {
   const shot = (pg, n) => pg.screenshot({ path: path.join(SHOTS, label + "_" + kind + "_" + n + ".png"), fullPage: true }).catch(() => {});
   const host = await mk(), guest = await mk();
   try {
-    await host.page.evaluate(SEED, [MIG, kind]);
-    await guest.page.evaluate(SEED, [MIG, kind]);
+    const extra = opts.r7 ? { nextTimeSec: 2, skipNextTimeSec: 2 } : null;
+    await host.page.evaluate(SEED, [MIG, kind, extra]);
+    await guest.page.evaluate(SEED, [MIG, kind, extra]);
     await host.page.reload(); await guest.page.reload(); await host.page.waitForTimeout(800); await guest.page.waitForTimeout(800);
     await tap(host.page, "#create-btn");
     await host.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
@@ -106,6 +116,30 @@ async function run(label, src, kind) {
     // ゲストが答えを見て（いつでも見られる）〇を押す
     if (await vis(guest.page, "#answer-reveal-btn")) await tap(guest.page, "#answer-reveal-btn");
     await waitVis(guest.page, "#judge-row", 15000);
+    // ===== R6: ゲストが押さないまま判定の時間（3秒・小問6秒）が切れる =====
+    await guest.page.waitForTimeout(3000 * F + 2000);
+    const r6 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), hostNext: await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")),
+      guestJudgeRow: await vis(guest.page, "#judge-row"), guestPrompt: await vis(guest.page, "#guest-judge-prompt"),
+      hostBanner: await host.page.$eval("#status-banner", e => e.textContent) };
+    check("R6 ゲストの判定の時間が切れても、ホストの答えは開かない・次へ進まない（ホスト「" + r6.hostBanner + "」）", !r6.hostOpen && !r6.hostJudge && !r6.hostNext && /相手が〇✕をつけると/.test(r6.hostBanner), JSON.stringify(r6));
+    check("R6 ゲストに〇✕ボタンが残り「〇か✕を押してください」が出る", r6.guestJudgeRow && r6.guestPrompt, JSON.stringify(r6));
+    await shot(guest.page, "R6_guest_timeup"); await shot(host.page, "R6_host_waiting");
+    if (opts.r7) {
+      const q0 = await host.page.$eval("#battle-q-id", e => e.textContent);
+      await host.page.waitForTimeout(15000 * F);   // 考える・答える・判定・次へ・スキップのあと、どれよりも長く
+      const idxOf = pg => pg.$eval("#battle-q-id", e => e.textContent).then(t => t === q0 ? 0 : t ? 1 : -1);   // 1問目のままなら 0
+      const r7 = { hostIdx: await idxOf(host.page), guestIdx: await idxOf(guest.page), q0, q1: await host.page.$eval("#battle-q-id", e => e.textContent),
+        hostOpen: await aOpen(host.page), hostNext: await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")),
+        guestPrompt: await vis(guest.page, "#guest-judge-prompt") };
+      check("R7 親が押さないまま " + (15 * F) + "秒待っても1問目のまま（どの時計でも次へ進まない）", r7.hostIdx === 0 && r7.guestIdx === 0 && r7.q0 === r7.q1 && !r7.hostOpen && !r7.hostNext && r7.guestPrompt, JSON.stringify(r7));
+      await tap(guest.page, "#judge-ok");
+      // ホストの判定は時間切れ（3秒）で〇 → 「次の問題へ」2秒で自動 → 2問目
+      await host.page.waitForFunction(q => { const t = document.getElementById("battle-q-id").textContent; return t && t !== q; }, q0, { timeout: 20000 * F }).catch(() => {});
+      const r7b = { hostIdx: await idxOf(host.page), hostOpen0: r7.hostOpen };
+      check("R7 親が〇を押したあとは、時計どおり自動で2問目へ進む", r7b.hostIdx === 1, JSON.stringify(r7b));
+      check("画面のエラー 0", host.errs.length + guest.errs.length === 0, host.errs.concat(guest.errs).join(" | "));
+      return out;
+    }
     await tap(guest.page, "#judge-ok");
     await host.page.waitForTimeout(900);
     const r3 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), badge: await badge(guest.page) };
@@ -138,7 +172,15 @@ console.log("■ 自己テスト: 直す前 " + BASE_COMMIT + " … ★鳴るの
 const ngB = report("対照 " + BASE_COMMIT + "（一問一答）", await run("base", BASELINE, "qa"));
 console.log(ngB > 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴った）" : "  → ✘ 自己テスト不合格");
 if (ngB === 0) await done(3);
+console.log("■ 自己テスト: 判定待ちを入れる前 " + BASE_WAIT + " … ★R6 で鳴るのが正しい");
+const outW = await run("basewait", BASELINE_WAIT, "qa");
+report("対照 " + BASE_WAIT + "（一問一答）", outW);
+const ngW = outW.filter(c => !c.ok && /R6/.test(c.n)).length;
+console.log(ngW > 0 ? "  → ✔ 自己テスト合格（R6 が " + ngW + " 件で鳴った）" : "  → ✘ 自己テスト不合格");
+if (ngW === 0) await done(3);
 let ng = report("いまの index.html（一問一答）", await run("now", CURRENT, "qa"));
 ng += report("いまの index.html（大問の小問）", await run("now", CURRENT, "daimon"));
+ng += report("いまの index.html（R7 一問一答・自動送り2秒）", await run("r7", CURRENT, "qa", { r7: true }));
+ng += report("いまの index.html（R7 大問の小問・自動送り2秒）", await run("r7", CURRENT, "daimon", { r7: true }));
 console.log(ng === 0 ? "\n✔ 全部通りました" : "\n✘ " + ng + " 件ひっかかりました");
 await done(ng ? 1 : 0);
