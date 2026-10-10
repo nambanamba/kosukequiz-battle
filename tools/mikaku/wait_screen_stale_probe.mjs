@@ -33,6 +33,13 @@
 // ■ ★見ていないもの（4-2）
 //   - 実機・実回線（ここは まねごとの待ち合わせ先で、1台のPCの中の2つの画面）
 //   - ホスト側。★showGuestWaitStatus() は role !== "guest" で早く返るため、ホストは通らない
+// ★★2026-10-10 追記（二人の新しい流れ）: ゲストの「つぎの問題の準備中…」待ち画面は二人では無くなった
+//   （status thinking はもう送らない・問題は両方に同時に出る）。そこで「残りかす」の確認を次に変えた:
+//   ①③ 問題が着いた／変わったとき、ゲストの単元名・No.・出典がホストの今の問題と同じ（1つ前のものが残らない）
+//   ③b スキップのあと（showGuestWaitStatus は今も通る）は引っこめ、次の問題で戻る（消したまま戻さない側）
+//   ④ 次のラウンドの1問目で、ゲストのアバターの進化と単元名・No.・出典が前のラウンドのままではない
+//   「もう一勝負」は 2026-10-06 から出ない（ce0ce6f でも同じ）ので、ホストが作り直す次のラウンドで確かめる。
+//   偽の実装(c)は startAction のアバター初期化を外すものに替えた（(a)(b) はそのまま showGuestWaitStatus の道に当たる）。
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -72,13 +79,13 @@ const RESTORE_TAGS =
   '  ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {\n' +
   '    els[k].style.display = "";\n' +
   '  });\n';
-const RESET_AVATARS = "      resetAvatars();\n";
+const RESET_AVATARS = "    resetAvatars();\n    setupAvatarLabels();\n";
 // (a) 待ち画面で消さない
 const fakeNoClear = src => cut(src, CLEAR_TAGS, "  /* ★偽の実装: わざと消さない */\n", "待ち画面で消すところ");
 // (b) ★消したまま戻さない（消しすぎ・失敗3）
 const fakeNoRestore = src => cut(src, RESTORE_TAGS, "  /* ★偽の実装: わざと戻さない */\n", "問題を出すとき戻すところ");
 // (c) ★アバターを戻さない
-const fakeNoAvatar = src => cut(src, RESET_AVATARS, "      /* ★偽の実装: アバターを戻さない */\n", "アバターを戻すところ");
+const fakeNoAvatar = src => cut(src, RESET_AVATARS, "    setupAvatarLabels();\n", "アバターを戻すところ（startAction）");
 
 const relay = await startFakeRelay({ broadcast: true, label: "waitstale" });
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png" };
@@ -170,87 +177,96 @@ async function run(label, src) {
     await tap(host.page, "#start-together-btn");
     await tap(guest.page, "#join-start-together-btn");
     await waitBattle(guest.page, 40000);
-    await waitVisible(guest.page, "#guest-wait-status", 20000);
-
-    // ===== ① はじめの対戦。1問目の前は、まだ何も出ていないはず =====
-    const t0 = await tags(guest.page);
-    check("★① 1問目の前、単元名が出ていない", !t0.unit.shown, JSON.stringify(t0.unit));
-    check("★① 1問目の前、No. が出ていない", !t0.qid.shown, JSON.stringify(t0.qid));
-    check("★① 1問目の前、出典が出ていない", !t0.src.shown, JSON.stringify(t0.src));
-
-    const judge = async (hostOk, guestOk) => {
-      await waitVisible(host.page, "#judge-row", 30000);
+    // ★2026-10-10: 二人では「準備中」の待ち画面は出ない。1問目は両方に同時に出る
+    const waitQ = (pg, prev) => pg.waitForFunction(q => {
+      const v = document.getElementById("battle-view"), e = document.getElementById("battle-q-id");
+      return !!(v && getComputedStyle(v).display !== "none" && e && /^No\./.test(e.textContent) && e.textContent !== q);
+    }, prev || "", { timeout: 30000 });
+    const sameTags = (g, h) => g.unit.text === h.unit.text && g.qid.text === h.qid.text && g.src.text === h.src.text;
+    const judgeOk = async () => {
       await waitVisible(guest.page, "#judge-row", 30000);
-      await tap(host.page, hostOk ? "#judge-ok" : "#judge-ng");
-      await tap(guest.page, guestOk ? "#judge-ok" : "#judge-ng");
+      await tap(guest.page, "#judge-ok");
       await host.page.waitForFunction(
         () => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     };
-    await waitVisible(host.page, "#advance-btn", 30000);
-    await tap(host.page, "#advance-btn");
-    await judge(true, true);
-
+    const resultActive = () => guest.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"));
+    // ===== ① はじめの対戦。1問目が着いたとき、ゲストの単元名・No.・出典がホストと同じ =====
+    await waitQ(guest.page, "");
+    const t0 = await tags(guest.page), h0 = await tags(host.page);
+    check("★① 1問目: ゲストに単元名・No.・出典が出ていて、ホストと同じ",
+      t0.unit.shown && t0.qid.shown && t0.src.shown && t0.src.text.length > 0 && sameTags(t0, h0), JSON.stringify(t0) + " / " + JSON.stringify(h0));
+    const initAvatar = { host: t0.hostAvatar, guest: t0.guestAvatar };
+    await judgeOk();
     // ===== ② 問題が出ているときは、ちゃんと出ている（消しすぎていない・失敗3）=====
     const t1 = await tags(guest.page);
     const hostTags = await tags(host.page);
     await shot(guest.page, "2_guest_question");
-    check("★② 問題が出ているとき、単元名が出ている",
-      t1.unit.shown && t1.unit.text.length > 0, JSON.stringify(t1.unit));
-    check("★② 問題が出ているとき、No. が出ている",
-      t1.qid.shown && /^No\./.test(t1.qid.text), JSON.stringify(t1.qid));
-    check("★② 問題が出ているとき、出典が出ている",
-      t1.src.shown && t1.src.text.length > 0, JSON.stringify(t1.src));
-    check("★② ホストとゲストで、単元名・No.・出典が同じ",
-      t1.unit.text === hostTags.unit.text && t1.qid.text === hostTags.qid.text && t1.src.text === hostTags.src.text,
-      JSON.stringify(t1) + " / " + JSON.stringify(hostTags));
-
-    // ===== ③ つぎの問題の準備中。★1つ前の問題のものが残っていないか =====
+    check("★② 判定のあとも、単元名が出ている", t1.unit.shown && t1.unit.text.length > 0, JSON.stringify(t1.unit));
+    check("★② 判定のあとも、No. が出ている", t1.qid.shown && /^No\./.test(t1.qid.text), JSON.stringify(t1.qid));
+    check("★② 判定のあとも、出典が出ている", t1.src.shown && t1.src.text.length > 0, JSON.stringify(t1.src));
+    check("★② ホストとゲストで、単元名・No.・出典が同じ", sameTags(t1, hostTags), JSON.stringify(t1) + " / " + JSON.stringify(hostTags));
+    // ===== ③ 問題が変わったとき。★1つ前の問題のものが残らず、新しい問題のものに替わっている =====
     await tap(host.page, "#next-btn");
-    await waitVisible(guest.page, "#guest-wait-status", 30000);
-    await guest.page.waitForFunction(
-      () => getComputedStyle(document.getElementById("battle-view")).display === "none", null, { timeout: 20000 });
-    const t2 = await tags(guest.page);
-    await shot(guest.page, "3_guest_waiting");
-    check("★★③ つぎの問題の準備中に、1つ前の単元名が残っていない",
-      !t2.unit.shown, JSON.stringify(t2.unit) + " ／ 1つ前は " + JSON.stringify(t1.unit.text));
-    check("★★③ つぎの問題の準備中に、1つ前の No. が残っていない",
-      !t2.qid.shown, JSON.stringify(t2.qid) + " ／ 1つ前は " + JSON.stringify(t1.qid.text));
-    check("★★③ つぎの問題の準備中に、1つ前の出典が残っていない",
-      !t2.src.shown, JSON.stringify(t2.src) + " ／ 1つ前は " + JSON.stringify(t1.src.text));
-
-    // ===== 残りを流して、結果画面まで =====
-    await waitVisible(host.page, "#advance-btn", 30000);
-    await tap(host.page, "#advance-btn");
-    await judge(false, false);          // 2問目は おたがい ✕（もう一勝負を出すため）
-    await tap(host.page, "#next-btn");
-    for (let i = 3; i <= Q_COUNT; i++) {
-      await waitVisible(host.page, "#advance-btn", 30000);
-      await tap(host.page, "#advance-btn");
-      await judge(true, true);
+    await waitQ(guest.page, t1.qid.text);
+    const t2 = await tags(guest.page), h2 = await tags(host.page);
+    await shot(guest.page, "3_guest_next_q");
+    check("★★③ 問題が変わったとき、ゲストの No. が1つ前のものではない", t2.qid.shown && t2.qid.text !== t1.qid.text, JSON.stringify(t2.qid) + " ／ 1つ前は " + JSON.stringify(t1.qid.text));
+    check("★★③ 問題が変わったとき、ゲストの単元名・No.・出典がホストの新しい問題と同じ（残りかすなし）",
+      t2.unit.shown && t2.src.shown && sameTags(t2, h2), JSON.stringify(t2) + " / " + JSON.stringify(h2));
+    check("★★③ ゲストに「準備中」の待ち画面は出ない（二人では無い）",
+      !(await guest.page.evaluate(() => { const e = document.getElementById("guest-wait-status"); return !!(e && getComputedStyle(e).display !== "none" && e.classList.contains("show") && /準備中/.test(e.textContent)); })));
+    // ===== ③b スキップ。★ゲストは「相手がこの問題をスキップしました」になり、この問題の単元名・No.・出典を引っこめる =====
+    await waitVisible(host.page, "#skip-btn", 20000);
+    await tap(host.page, "#skip-btn");
+    await waitVisible(guest.page, "#guest-wait-status", 20000);
+    const t3 = await tags(guest.page);
+    await shot(guest.page, "3b_guest_skipped");
+    check("★★③b スキップのあと、ゲストに単元名が残っていない", !t3.unit.shown, JSON.stringify(t3.unit));
+    check("★★③b スキップのあと、ゲストに No. が残っていない", !t3.qid.shown, JSON.stringify(t3.qid));
+    check("★★③b スキップのあと、ゲストに出典が残っていない", !t3.src.shown, JSON.stringify(t3.src));
+    await waitVisible(host.page, "#skip-continue-btn", 20000);
+    await tap(host.page, "#skip-continue-btn");
+    await waitQ(guest.page, "");
+    await guest.page.waitForTimeout(300);
+    const t4 = await tags(guest.page), h4 = await tags(host.page);
+    check("★★③b スキップのあと次の問題が出たら、単元名・No.・出典が戻りホストと同じ（消したまま戻さない側・失敗3）",
+      t4.unit.shown && t4.qid.shown && t4.src.shown && sameTags(t4, h4), JSON.stringify(t4) + " / " + JSON.stringify(h4));
+    // ===== 残りを流して、結果画面まで（親は全部〇）=====
+    for (let i = 0; i < 14; i++) {
+      if (await resultActive()) break;
+      await waitVisible(guest.page, "#judge-row", 30000).catch(() => {});
+      if (await resultActive()) break;
+      await judgeOk();
       await tap(host.page, "#next-btn");
+      await host.page.waitForTimeout(300);
     }
     await guest.page.waitForFunction(
       () => document.getElementById("screen-result").classList.contains("active"), null, { timeout: 30000 });
-
-    // ===== ④ もう一勝負。★アバターの進化が前のラウンドのまま残っていないか =====
+    // ===== ④ 次のラウンド。★アバターの進化・単元名・No.・出典が前のラウンドのまま残っていないか =====
     const stale = await tags(guest.page);
-    check("【下じき】前のラウンドで、ゲストのアバターが育っている（これが次で戻るべきもの）",
-      stale.guestAvatar !== "🙂" || stale.hostAvatar !== "🙂",
-      "host=" + stale.hostAvatar + stale.hostLevel + " guest=" + stale.guestAvatar + stale.guestLevel);
-    await waitVisible(host.page, "#result-retry-battle-btn", 20000);
-    await tap(host.page, "#result-retry-battle-btn").catch(() => {});
+    check("【下じき】前のラウンドで、ゲストの画面のアバターが育っている（これが次で戻るべきもの）",
+      stale.hostAvatar !== initAvatar.host || stale.hostLevel !== "" || stale.guestAvatar !== initAvatar.guest,
+      "host=" + stale.hostAvatar + stale.hostLevel + " guest=" + stale.guestAvatar + stale.guestLevel + " ／ はじめは " + JSON.stringify(initAvatar));
+    // ★「まちがえた問題だけもう一勝負」は 2026-10-06 から出ない（ce0ce6f でも同じ）。かわりに、ホストが作り直す次のラウンド
+    await tap(host.page, "#result-home-btn"); await host.page.waitForTimeout(400);
+    await tap(host.page, "#create-btn");
+    await host.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
+    await waitVisible(host.page, "#start-together-btn", 30000);
+    await tap(host.page, "#start-together-btn");
+    await host.page.waitForTimeout(1500);
+    if (await guest.page.evaluate(() => { const e = document.getElementById("result-home-btn"); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); })) { await tap(guest.page, "#result-home-btn"); await guest.page.waitForTimeout(1500); }
+    await waitVisible(guest.page, "#join-start-together-btn", 20000);
+    await tap(guest.page, "#join-start-together-btn");
     await waitBattle(guest.page, 40000);
-    await waitVisible(guest.page, "#guest-wait-status", 25000);
-    const t3 = await tags(guest.page);
-    await shot(guest.page, "4_guest_retry");
-    check("★★④ もう一勝負の1問目の前に、1つ前の単元名が残っていない", !t3.unit.shown, JSON.stringify(t3.unit));
-    check("★★④ もう一勝負の1問目の前に、1つ前の No. が残っていない", !t3.qid.shown, JSON.stringify(t3.qid));
-    check("★★④ もう一勝負の1問目の前に、1つ前の出典が残っていない", !t3.src.shown, JSON.stringify(t3.src));
+    await waitQ(guest.page, "");
+    const t5 = await tags(guest.page), h5 = await tags(host.page);
+    await shot(guest.page, "4_guest_next_round");
+    check("★★④ 次のラウンドの1問目: ゲストの単元名・No.・出典がホストと同じ（前のラウンドのものではない）",
+      t5.unit.shown && t5.qid.shown && t5.src.shown && sameTags(t5, h5), JSON.stringify(t5) + " / " + JSON.stringify(h5));
     check("★★④ ★アバターが前のラウンドのまま残っていない（名指しの3つ以外の残りかす）",
-      t3.hostAvatar === "🙂" && t3.guestAvatar === "🙂" && t3.hostLevel === "" && t3.guestLevel === "",
-      "host=" + t3.hostAvatar + t3.hostLevel + " guest=" + t3.guestAvatar + t3.guestLevel
+      t5.hostAvatar === initAvatar.host && t5.guestAvatar === initAvatar.guest && t5.hostLevel === "" && t5.guestLevel === "",
+      "host=" + t5.hostAvatar + t5.hostLevel + " guest=" + t5.guestAvatar + t5.guestLevel
         + " ／ 前のラウンドは host=" + stale.hostAvatar + stale.hostLevel + " guest=" + stale.guestAvatar + stale.guestLevel);
-
     check("画面のエラーが 0（ホスト）", host.errs.length === 0, host.errs.join(" | "));
     check("画面のエラーが 0（ゲスト）", guest.errs.length === 0, guest.errs.join(" | "));
   } catch (e) {

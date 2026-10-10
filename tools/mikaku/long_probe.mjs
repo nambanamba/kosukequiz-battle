@@ -11,6 +11,7 @@
 //   B1 二人: ゲストも本文は閉じている・答えのあとに where
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
+// 2026-10-10 追記: 二人の新しい流れに合わせた。B1 は「わかった！」なし・ゲストは最初から答えと〇✕が見える・where は親の〇のあとホストの画面に出る、を見る形に直した
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
@@ -118,15 +119,16 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
-    const hb = { body: await vis(host.page, ".long-lead-body"), btn: await vis(host.page, ".long-lead-btn") };
-    await tap(host.page, "#advance-btn");
+    await waitVis(host.page, "#skip-btn", 30000);   // ★2026-10-10 「わかった！」なし。問題は両方に同時に出る
     await guest.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.kumi6_01" && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
-    const gb = { body: await vis(guest.page, ".long-lead-body"), btn: await vis(guest.page, ".long-lead-btn"), where: !!(await guest.page.$(".long-where")), aSeen: (await seen(guest.page, "battle")).includes(D.a1) };
-    await tap(guest.page, "#answer-reveal-btn");   // ★2026-10-08 ホストの「こたえを見る」は無い（ゲストの〇✕で開く）
+    const hb = { body: await vis(host.page, ".long-lead-body"), btn: await vis(host.page, ".long-lead-btn"), where: !!(await host.page.$(".long-where")), aSeen: (await seen(host.page, "battle")).includes(D.a1) };
+    // ★2026-10-10 ゲスト（親）には最初から答えと〇✕が出る（本文は閉じたまま）。where はホストの答えが開いてから
     await waitVis(guest.page, "#judge-row", 15000);
-    gb.w = await txt(guest.page, ".long-where");
-    check("B1 二人: ホスト・ゲストとも本文は閉じている・答える前は答えも where も無い → 答えのあとに where", hb.btn && !hb.body && gb.btn && !gb.body && !gb.where && !gb.aSeen && /^ここを読めばよかった/.test(gb.w), JSON.stringify({ hb, gb }));
+    const gb = { body: await vis(guest.page, ".long-lead-body"), btn: await vis(guest.page, ".long-lead-btn"), aSeen: (await seen(guest.page, "battle")).includes(D.a1) };
+    await tap(guest.page, "#judge-ok");   // 親の〇 → ホストの答えが開く
+    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+    hb.w = await txt(host.page, ".long-where");
+    check("B1 二人: ホスト・ゲストとも本文は閉じている・ホストは答える前は答えも where も無い（ゲストは最初から答えが見える）→ 親の〇のあとホストに where", hb.btn && !hb.body && !hb.where && !hb.aSeen && gb.btn && !gb.body && gb.aSeen && /^ここを読めばよかった/.test(hb.w), JSON.stringify({ hb, gb }));
     check("E 画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await solo.ctx.close(); await host.ctx.close(); await guest.ctx.close(); }

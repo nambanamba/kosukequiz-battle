@@ -4,7 +4,9 @@
 //   K1 ホストが小問(1)をスキップ → 答えが出て、ホストの記録は✕（1回目）
 //   K2 次は(2)。ホスト・ゲストとも「前の小問」の欄で(1)は「あとでもう一度出ます」だけ（答えは出さない）
 //   K3 (1)は大問の残りの小問のあとにもう一度出る（ゲストも同じ並び）
-//   K4 出し直しで答えても、ホストの記録は増えない（✕1のまま）。ゲストは出し直しで初めて答えるので、ふつうに記録が付く
+//   K4 出し直しで答えても、ホストの記録は増えない（✕1のまま）。ゲストの端末には記録が付かない
+// 2026-10-10 追記: 「わかった！」をなくした新しい流れに合わせた。次の小問は両方の画面に同時に出て、ゲストが最初から出ている〇を押すと
+//   ホストの答えが開く（ホストの #advance-btn・ゲストの #answer-reveal-btn・ホストの〇✕は無い）。K4 のゲストは「記録が付かない」（ホストがゲストを判定しなくなった）
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -71,11 +73,12 @@ async function run(label, src) {
     check("K1 ホストが小問 " + d1 + " をスキップ → 答えが出て、ホストの記録は✕", d1 === S.ids[0] && k1.a && k1.st && k1.st.wrong === 1 && (k1.st.correct || 0) === 0, JSON.stringify(k1));
     await tap(host.page, "#skip-continue-btn").catch(() => {}); await host.page.waitForTimeout(500);
     const seqH = [d1], seqG = [];
+    let prev = d1;
     for (let k = 0; k < S.ids.length + 2; k++) {
-      const ok = await waitVis(host.page, "#advance-btn", 15000).then(() => true, () => false);
+      // ★2026-10-10 「わかった！」はなくした: 次の小問はホスト・ゲストの画面に同時に出る。ゲストには最初から答えと〇✕
+      const ok = await host.page.waitForFunction(p => { const e = document.getElementById("skip-btn"); return document.getElementById("battle-q-id").textContent !== "No." + p && !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, prev, { timeout: 15000 }).then(() => true, () => false);
       if (!ok) break;
-      const id = await shown(host.page); seqH.push(id);
-      await tap(host.page, "#advance-btn");
+      const id = await shown(host.page); seqH.push(id); prev = id;
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       seqG.push(id);
       if (k === 0) {
@@ -84,10 +87,8 @@ async function run(label, src) {
         check("K2 次は " + S.ids[1] + "・前の小問の欄で(1)は「あとでもう一度出ます」だけ（ホスト・ゲスト）", id === S.ids[1] && lh.later && lg.later && !lh.leak && !lg.leak, JSON.stringify({ lh, lg }));
         await shot(host.page, "K2_host"); await shot(guest.page, "K2_guest");
       }
-      // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-      await tap(guest.page, "#answer-reveal-btn");
+      // ゲスト（親）が〇 → ホストの答えが開いて記録が付く（ホストに〇✕は出ない）
       await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
-      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn"); await host.page.waitForTimeout(400);
       if (await host.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"))) break;
@@ -95,7 +96,7 @@ async function run(label, src) {
     const want = S.ids.concat([S.ids[0]]);
     check("K3 (1)は大問の残りの小問のあとにもう一度（" + seqH.join(" ") + "）・ゲストも同じ", JSON.stringify(seqH) === JSON.stringify(want) && JSON.stringify(seqG) === JSON.stringify(want.slice(1)), seqG.join(" "));
     const h2 = await statOf(host.page, d1), g2 = await statOf(guest.page, d1);
-    check("K4 出し直しで答えてもホストの記録は✕1のまま・ゲストはふつうに〇1", h2 && h2.wrong === 1 && (h2.correct || 0) === 0 && g2 && g2.correct === 1, JSON.stringify({ h2, g2 }));
+    check("K4 出し直しで答えてもホストの記録は✕1のまま・ゲストの端末には記録が付かない", h2 && h2.wrong === 1 && (h2.correct || 0) === 0 && !(g2 && (g2.correct || g2.wrong)), JSON.stringify({ h2, g2 }));
     check("画面のエラー 0", host.errs.length + guest.errs.length === 0, host.errs.concat(guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await host.ctx.close(); await guest.ctx.close(); }

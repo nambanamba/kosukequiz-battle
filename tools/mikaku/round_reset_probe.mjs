@@ -40,6 +40,12 @@
 //     ★これらも battle-view の外にあり、「つぎの問題の準備中…」のあいだ1つ前の問題のものが残る。
 //     ①の依頼書が「触ってよいのは点数と問題数の初期化だけ」としているため、今回は直していない
 //   - 一人練習の画面（solo）。今回の依頼は対戦だけ
+// ★★2026-10-10 追記（二人の新しい流れに合わせた書き直し）:
+//   ゲストの「1問目がまだ画面に無い」待ち画面（status thinking → showGuestWaitStatus・「準備中」）は二人では無くなった。
+//   1問目は startAction で両方の画面に同時に出る。なので S1/S2 は「1問目が着いた瞬間のゲストの画面（◯ / ◯・点・アバター）が
+//   この対戦のものか」に変えた。ゲストの点の欄は1つ（#score-me＝子どもの〇の数・scores.host）で、#score-opp は隠れる。
+//   判定はゲスト（親）の〇✕だけ。ホストの #advance-btn・#judge-ok/ng は無い。
+//   偽の実装(a)(b)は、待ち画面の道ではなく startAction/showQuestion の道を壊すものに差し替えた（(c) 再接続はそのまま）。
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -70,26 +76,14 @@ function cut(src, needle, replacement, what) {
   if (n !== 1) throw new Error("偽の実装を作れません（" + what + " が " + n + " 件見つかりました。1件でないと壊し損ねます）");
   return src.replace(needle, replacement);
 }
-// (a) 点数だけ戻して、問題数（◯ / ◯）を戻さない
-const COUNTER_WRITE =
-  '      els["battle-counter"].textContent =\n' +
-  '        (data && typeof data.position === "number" && typeof data.total === "number")\n' +
-  '          ? data.position+" / "+data.total : "";\n';
-const fakeNoCounter = src => cut(src, COUNTER_WRITE, "      /* ★偽の実装: わざと問題数を戻さない */\n", "問題数を書く3行");
-// (b) 問題数だけ戻して、点数を戻さない
-//     ★`scores = {host:0, guest:0};` は他にもあるので、前後ごと指定して1件に絞る
-// ⚠★ 2026-09-26: この仕切りは一度壊れました。
-//   B（待ち画面の残りかす）を直したとき、`scores = {...}` の**すぐ下に**
-//   resetAvatars() のブロックが入り、「次の行」で探していた仕切りが 0件 になりました。
-//   ★**入口の自己テストが数字を出さずに止まったので気づけました**（4-6）。
-//   → ★**後ろに何が入っても動かないよう、「前の行」を仕切りにしました**。
-//   そのコメントはこの `scores` の行そのものを説明しているので、離れません。
+// (a) ★2026-10-10: showQuestion が「◯ / ◯」を書く行を外す（1問目が着いても HTML の作り置き「1 / 10」や前回の数字が残る）
+const COUNTER_WRITE = '  els["battle-counter"].textContent = rc.n+" / "+rc.total;\n';
+const fakeNoCounter = src => cut(src, COUNTER_WRITE, "  /* ★偽の実装: わざと問題数を書かない */\n", "問題数を書く1行");
+// (b) ★2026-10-10: ゲストが新しいラウンドの合図(startAction)を受けたとき、点数を 0 に戻さない
 const SCORES_RESET =
-  '      //   ホストの送ってきた点数を入れて showQuestion() します。**そこで 0 に戻してはいけません**。\n' +
-  '      scores = {host:0, guest:0};\n';
-const fakeNoScores = src => cut(src, SCORES_RESET,
-  '      //   ホストの送ってきた点数を入れて showQuestion() します。\n      /* ★偽の実装: わざと点数を戻さない */\n',
-  "点数を戻す1行");
+  '      scores = {host:0, guest:0};\n' +
+  '      clearJudgeFix();';
+const fakeNoScores = src => cut(src, SCORES_RESET, '      /* ★偽の実装: わざと点数を戻さない */\n      clearJudgeFix();', "点数を戻す1行");
 // (c) ★再接続（resync）のときにも 0 に戻してしまう（依頼書の失敗4）
 const RESYNC_KEEP = "      scores = data.scores || {host:0, guest:0};";
 const fakeResyncZero = src => cut(src, RESYNC_KEEP,
@@ -194,33 +188,33 @@ async function run(label, src) {
     await tap(host.page, "#start-together-btn");
     await tap(guest.page, "#join-start-together-btn");
 
-    // ================= S1: はじめの対戦。1問目が出る前のゲストの画面 =================
+    // ================= S1: はじめの対戦。1問目が着いた瞬間のゲストの画面 =================
+    // ★新しい流れでは待ち画面が無い。1問目が出た（battle-view が見える・No. が入る）のを待って、すぐ読む
     await waitBattle(guest.page, 40000);
-    await waitVisible(guest.page, "#guest-wait-status", 20000);
-    // ★1問目がまだ出ていないことを確かめる（出ていたら、この場面を見ていない＝検査が空振り）
-    const notYet = !(await visible(guest.page, "#battle-view"));
-    check("★S1 いま見ているのは「1問目がまだ画面に無い」場面（battle-view は隠れている）", notYet);
+    await guest.page.waitForFunction(() => {
+      const e = document.getElementById("battle-view"), q = document.getElementById("battle-q-id");
+      return !!(e && getComputedStyle(e).display !== "none" && q && /^No\./.test(q.textContent));
+    }, null, { timeout: 30000 });
     const s1 = await header(guest.page);
-    await shot(guest.page, "S1_guest_before_q1");
+    const hostQ1 = await txt(host.page, "#battle-q-id");
+    await shot(guest.page, "S1_guest_q1");
+    check("★S1 ゲストにもホストと同じ1問目が出ている（待ち画面は無い）", (await txt(guest.page, "#battle-q-id")) === hostQ1, hostQ1);
     check("★S1 ゲストの「◯ / ◯」が、この対戦のもの（1 / " + Q_COUNT + "）になっている",
       s1.counter === "1 / " + Q_COUNT, "battle-counter=" + JSON.stringify(s1.counter));
-    check("★S1 ゲストの点数が 0 / 0 になっている", s1.me === "0" && s1.opp === "0", JSON.stringify(s1));
+    check("★S1 ゲストの点数（子どもの〇の数）が 0 になっている・相手の点の箱は隠れている",
+      s1.me === "0" && !(await visible(guest.page, "#score-opp")), JSON.stringify(s1));
 
-    // ================= 1問目を、二人とも〇で通す =================
-    const judge = async (hostOk, guestOk) => {
-      await waitVisible(host.page, "#judge-row", 30000);
+    // ================= 1問目を、ゲスト（親）が〇で通す =================
+    const judge = async (guestOk) => {
       await waitVisible(guest.page, "#judge-row", 30000);
-      await tap(host.page, hostOk ? "#judge-ok" : "#judge-ng");
       await tap(guest.page, guestOk ? "#judge-ok" : "#judge-ng");
       await host.page.waitForFunction(
         () => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     };
-    await waitVisible(host.page, "#advance-btn", 30000);
-    await tap(host.page, "#advance-btn");
-    await judge(true, true);            // ホストもゲストも「相手はせいかい」→ 1 / 1
+    await judge(true);            // 親が〇 → ホストの点 1
     const afterQ1 = await header(guest.page);
-    check("1問目のあと、ゲストの画面が 1 / 1 点になっている",
-      afterQ1.me === "1" && afterQ1.opp === "1", JSON.stringify(afterQ1));
+    check("1問目のあと、ゲストの画面が 1 点（子どもの〇の数）になっている",
+      afterQ1.me === "1", JSON.stringify(afterQ1));
     check("ホストとゲストの「◯ / ◯」が食いちがっていない（失敗5）",
       (await txt(host.page, "#battle-counter")) === afterQ1.counter,
       "host=" + (await txt(host.page, "#battle-counter")) + " guest=" + afterQ1.counter);
@@ -245,17 +239,20 @@ async function run(label, src) {
     const s3 = await header(guest.page);
     await shot(guest.page, "S3_guest_resync");
     // ★ここが依頼書の失敗4（逆向きの事故）。再接続でホストの送ってきた点数を捨ててはいけない
-    check("★S3 再接続したゲストの点数が 1 / 1 のまま（0 に戻していない）",
-      s3.me === "1" && s3.opp === "1", JSON.stringify(s3));
+    check("★S3 再接続したゲストの点数が 1 のまま（0 に戻していない）",
+      s3.me === "1", JSON.stringify(s3));
 
     // ================= 残りの問題。★2問目はゲストがホストを ✕ にする（もう一勝負を出すため）==
-    await judge(false, false);          // 2問目: おたがい「まちがい」→ ホストにも まちがい が1件
+    await judge(false);          // 2問目: 親が✕ → ホストに まちがい が1件（ホストの問題は後ろへ回る）
     await tap(host.page, "#next-btn");
-    for (let i = 3; i <= Q_COUNT; i++) {
-      await waitVisible(host.page, "#advance-btn", 30000);
-      await tap(host.page, "#advance-btn");
-      await judge(true, true);
+    for (let i = 0; i < 12; i++) {   // 残りは親が全部〇（✕で後ろに回った問題も含めて）
+      const done = await guest.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"));
+      if (done) break;
+      await waitVisible(guest.page, "#judge-row", 30000).catch(() => {});
+      if (await guest.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"))) break;
+      await judge(true);
       await tap(host.page, "#next-btn");
+      await host.page.waitForTimeout(300);
     }
 
     // ================= S2: 「まちがえた問題だけもう一勝負」 =================
@@ -265,22 +262,31 @@ async function run(label, src) {
     const stale = await header(guest.page);
     await shot(guest.page, "S2_guest_result");
     check("【下じき】結果画面では、ゲストの画面に前のラウンドの数字が残っている（これが次で消えるべきもの）",
-      stale.me !== "0" && stale.counter === Q_COUNT + " / " + Q_COUNT, JSON.stringify(stale));
-    await waitVisible(host.page, "#result-retry-battle-btn", 20000);
-    if (await visible(host.page, "#result-retry-battle-btn")) {
-      await tap(host.page, "#result-retry-battle-btn").catch(() => {});
-    }
+      stale.me !== "0" && /^\d+ \/ \d+$/.test(stale.counter), JSON.stringify(stale));
+    // ★2026-10-10: 「まちがえた問題だけもう一勝負」は 2026-10-06 から出ない（endGame の `if(false && ...)`。ce0ce6f でも同じ）。
+    //   一番近い「次のラウンド」＝ホストが結果画面から作り直し、ゲストが結果画面のボタンを押してつなぎ直す（serial_battle_probe のつなぎ A）
+    await tap(host.page, "#result-home-btn"); await host.page.waitForTimeout(400);
+    await tap(host.page, "#create-btn");
+    await host.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
+    await waitVisible(host.page, "#start-together-btn", 30000);
+    await tap(host.page, "#start-together-btn");
+    await host.page.waitForTimeout(1500);
+    if (await visible(guest.page, "#result-home-btn")) { await tap(guest.page, "#result-home-btn"); await guest.page.waitForTimeout(1500); }
+    await waitVisible(guest.page, "#join-start-together-btn", 20000);
+    await tap(guest.page, "#join-start-together-btn");
+    // ★次のラウンドの1問目が着いた瞬間（待ち画面は無い）。新しい No. が入るのを待つ
     await waitBattle(guest.page, 40000);
-    await waitVisible(guest.page, "#guest-wait-status", 25000);
-    const notYet2 = !(await visible(guest.page, "#battle-view"));
-    check("★S2 いま見ているのは「もう一勝負の1問目がまだ画面に無い」場面", notYet2);
+    await guest.page.waitForFunction(() => {
+      const e = document.getElementById("battle-view"), q = document.getElementById("battle-q-id");
+      return !!(e && getComputedStyle(e).display !== "none" && q && /^No\./.test(q.textContent));
+    }, null, { timeout: 30000 });
     const s2 = await header(guest.page);
     const hostCounter = await txt(host.page, "#battle-counter");
-    await shot(guest.page, "S2_guest_retry_before_q1");
-    await shot(host.page, "S2_host_retry_before_q1");
-    check("★★S2 もう一勝負で、ゲストの点数が 0 / 0 に戻っている（依頼書の失敗3）",
-      s2.me === "0" && s2.opp === "0", JSON.stringify(s2) + " ／ 前のラウンドは " + JSON.stringify(stale));
-    check("★★S2 もう一勝負で、ゲストの「◯ / ◯」がこのラウンドのものになっている",
+    await shot(guest.page, "S2_guest_next_round_q1");
+    await shot(host.page, "S2_host_next_round_q1");
+    check("★★S2 次のラウンドで、ゲストの点数が 0 に戻っている（依頼書の失敗3）",
+      s2.me === "0", JSON.stringify(s2) + " ／ 前のラウンドは " + JSON.stringify(stale));
+    check("★★S2 次のラウンドで、ゲストの「◯ / ◯」がこのラウンドのものになっている",
       s2.counter === hostCounter && /^1 \/ \d+$/.test(s2.counter),
       "guest=" + JSON.stringify(s2.counter) + " host=" + JSON.stringify(hostCounter));
 

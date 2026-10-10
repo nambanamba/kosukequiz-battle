@@ -16,7 +16,8 @@
 //   P9 部分の記録の書き出し・取り込み（引越し用）: 移る・同じ id は新しいほう・二重にならない
 //   P10 数え方（ユーザー回答 B）: 分けて出すカードは部分1つ＝1問。15問を選ぶと答える回数が15
 //   B1 二人: ホストが分けてで出すとゲストにも同じ部分が出る・「分けて」・両方の部分の記録に付く・カードの記録は付かない
-//   B2 二人: 分けての時間切れ: 記録しない・あとでもう一度
+//   B2 二人: 考える時間が切れても何も起きない（①のまま・答えも開かない・記録しない）
+//   （2026-10-10 追記）二人の新しい流れに合わせた: 「わかった！」なし・問題は両方に同時・ゲストは最初から答えと〇✕・点と記録はホストだけ。B2 は「時間切れで後ろへ回る」から「何も起きない」に変えた
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -207,31 +208,37 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
+    await waitVis(host.page, "#skip-btn", 30000);
+    await guest.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.r6m36~1" && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
     const b2 = { id: await qid(host.page, "battle"), title: await txt(host.page, "#battle-daimon .battle-daimon-title") };
     await shot(host.page, "B_host_part1");
-    await waitVis(host.page, "#skip-continue-btn", 20000);   // 考える時間 3秒×2 で時間切れ
-    b2.enc = await txt(host.page, "#skip-encourage"); b2.part = await partOf(host.page, "r6m36~1");
-    await tap(host.page, "#skip-continue-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
-    b2.next = await qid(host.page, "battle");
-    check("B2 分けての時間切れ: 記録しない・あとでもう一度（次は②）", b2.id === "r6m36~1" && /分けて 1\/3/.test(b2.title) && /時間切れ/.test(b2.enc) && b2.part === null && b2.next === "r6m36~2", JSON.stringify(b2));
-    await tap(host.page, "#advance-btn");
-    await guest.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.r6m36~2" && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
+    // ★2026-10-10 二人では考える時間が切れても何も起きない（時間切れで後ろへ回らない・答えも開かない・記録しない）
+    await host.page.waitForTimeout(8000);   // 考える時間 3秒×2 を過ぎるまで
+    b2.enc = await host.page.evaluate(() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; });
+    b2.cont = await host.page.evaluate(() => { const e = document.getElementById("skip-continue-btn"); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent); });
+    b2.still = await qid(host.page, "battle");
+    b2.part = await partOf(host.page, "r6m36~1");
+    b2.hostJudge = await host.page.evaluate(() => { const e = document.getElementById("judge-row"); return !!(e && e.offsetParent); });
+    check("B2 二人: 考える時間が切れても何も起きない（①のまま・答えも開かない・記録しない・ホストに〇✕なし）", b2.id === "r6m36~1" && /分けて 1\/3/.test(b2.title) && !b2.cont && !/時間切れ/.test(b2.enc) && b2.still === "r6m36~1" && b2.part === null && !b2.hostJudge, JSON.stringify(b2));
+    // ゲスト（親）: 最初から答えと〇✕が出ている。①を〇 → ホストの部分の記録に付く（ゲストの端末には付かない）
     const b1 = { gtitle: await txt(guest.page, "#battle-daimon .battle-daimon-title"), gq: await txt(guest.page, "#battle-q") };
+    await waitVis(guest.page, "#judge-row", 15000);
+    await tap(guest.page, "#judge-ok");
+    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+    await tap(host.page, "#next-btn");
+    await guest.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.r6m36~2" && getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 });
+    await host.page.waitForFunction(() => document.getElementById("battle-q-id").textContent === "No.r6m36~2", null, { timeout: 20000 });
+    b1.gtitle = await txt(guest.page, "#battle-daimon .battle-daimon-title"); b1.gq = await txt(guest.page, "#battle-q");
     await shot(guest.page, "B_guest_part2");
-    // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-    await tap(guest.page, "#answer-reveal-btn");
     await waitVis(guest.page, "#judge-row", 15000);
     b1.ga = await txt(guest.page, "#battle-a");
     await tap(guest.page, "#judge-ok");
-    await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     await host.page.waitForTimeout(400);
     b1.h = await partOf(host.page, "r6m36~2"); b1.g = await partOf(guest.page, "r6m36~2");
     b1.hc = await statOf(host.page, "r6m36"); b1.gc = await statOf(guest.page, "r6m36");
-    check("B1 二人: ゲストにも同じ部分・「分けて 2/3」・答えは部分だけ・両方の部分の記録に付く・カードの記録は付かない",
-      /分けて 2\/3/.test(b1.gtitle) && /ろっ骨/.test(b1.gq) && b1.ga === "下がる" && b1.h && b1.h.correct === 1 && b1.g && b1.g.correct === 1 && b1.hc === null && b1.gc === null, JSON.stringify(b1));
+    check("B1 二人: ゲストにも同じ部分・「分けて 2/3」・答えは部分だけ・ホストの部分の記録に付く（ゲストの端末には付かない）・カードの記録は付かない",
+      /分けて 2\/3/.test(b1.gtitle) && /ろっ骨/.test(b1.gq) && b1.ga === "下がる" && b1.h && b1.h.correct === 1 && b1.g === null && b1.hc === null && b1.gc === null, JSON.stringify(b1));
     check("E 画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await solo.ctx.close(); await host.ctx.close(); await guest.ctx.close(); }

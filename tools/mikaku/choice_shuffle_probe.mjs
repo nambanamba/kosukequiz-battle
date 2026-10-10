@@ -18,6 +18,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_choice_shuffle"); fs.mkdirSync(SHOTS, { recursive: true });
+// 2026-10-10 追記: 二人の新しい流れに合わせた（C6: 「わかった！」・ゲストの「こたえを見る」・ホストの〇✕を外し、ホストの答えが開いたあとでホストとゲストの表示を比べる）
 const BASE_COMMIT = "1c1fe4f";   // 直す前
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -185,17 +186,18 @@ async function run(label, src) {
     const one = pg2 => pg2.evaluate(() => ({ q: document.getElementById("battle-q").textContent, a: document.getElementById("battle-a").textContent,
       lead: ((document.querySelector("#battle-daimon .daimon-lead-text") || {}).textContent) || "", sol: document.getElementById("battle-sol").textContent }));
     for (let k = 0; k < bIds.length; k++) {
-      await waitVis(host.page, "#advance-btn", 30000);
+      // ★2026-10-10 「わかった！」なし。問題は両方に同時に出る。ゲスト（親）には最初から答えと〇✕。ホストの答えは親の〇のあとに開く
+      await waitVis(host.page, "#skip-btn", 30000);
       const id = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-      await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       await host.page.waitForTimeout(300);
-      bs[id] = { h: await one(host.page), g: await one(guest.page) };
+      await waitVis(guest.page, "#judge-row", 15000);
       if (id === "r6m60") { await shot(host.page, "C6_host"); await shot(guest.page, "C6_guest"); }
-      await waitVis(guest.page, "#answer-reveal-btn", 20000).catch(() => {}); await tap(guest.page, "#answer-reveal-btn").catch(() => {});
-      await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
-      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
-      if (k < bIds.length - 1) { await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }); await tap(host.page, "#next-btn"); }
+      await tap(guest.page, "#judge-ok");
+      await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+      await host.page.waitForTimeout(300);
+      bs[id] = { h: await one(host.page), g: await one(guest.page) };   // 答えが開いたあとの、ホスト・ゲストの表示
+      if (k < bIds.length - 1) await tap(host.page, "#next-btn");
     }
     const b60 = bs.r6m60, ch60 = b60 && readLines(b60.h.q, r60.stem);
     const bLead = leadIds.map(id => bs[id]);
