@@ -465,14 +465,39 @@
   }
   /* ★2026-10-10 ⚡スピードポイント */
   .quiz-head .head-right{ display:flex; align-items:center; gap:10px; }
-  .sp-now{ font-size:13px; font-weight:800; color:#b8860b; background:#fff7d6; border:1px solid #f0d57a; border-radius:999px; padding:1px 9px; }
-  .sp-toast{ position:fixed; left:50%; top:64px; transform:translate(-50%, -6px); z-index:60; pointer-events:none;
+  /* ★2026-10-10（speed-points-2）ユーザー「⚡14 は地味すぎる」→ 合計は大きく金色に。もらった瞬間に「+3」が大きく出て合計にとびこむ */
+  .sp-now{ font-size:22px; font-weight:900; color:#7a4b00; background:linear-gradient(180deg,#fff3b0,#ffd54a); border:2px solid #e8b400;
+    border-radius:999px; padding:2px 14px; box-shadow:0 2px 6px rgba(200,140,0,.35); line-height:1.25; display:inline-block; }
+  .sp-now.bump{ animation:spBump .45s ease-out; }
+  @keyframes spBump{ 0%{ transform:scale(1); } 35%{ transform:scale(1.4); background:#fff8c8; } 100%{ transform:scale(1); } }
+  /* ★いま答えればもらえる⚡（出題中）。時間がたつと ⚡⚡⚡ → ⚡⚡ → ⚡ → 0 と1つずつ消え、帯の色も変わる */
+  .sp-live{ display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:8px 12px; border-radius:14px; background:#fffaf0; border:2px solid #f0d57a; }
+  .sp-live-bolts{ font-size:32px; line-height:1; white-space:nowrap; letter-spacing:-3px; }
+  .sp-live-bolts .b{ display:inline-block; transition:opacity .25s, filter .25s, transform .25s; }
+  .sp-live-bolts .b.off{ opacity:.15; filter:grayscale(1); transform:scale(.75); }
+  .sp-live-bolts .b.drop{ animation:spDrop .6s ease-out; }
+  @keyframes spDrop{ 0%{ transform:scale(1.5) rotate(-15deg); opacity:1; filter:none; } 100%{ transform:scale(.75); opacity:.15; filter:grayscale(1); } }
+  .sp-live-main{ flex:1; min-width:0; }
+  .sp-live-label{ font-size:15px; font-weight:900; color:#8a6400; }
+  .sp-live-bar{ position:relative; height:14px; border-radius:7px; background:#ece6d6; overflow:hidden; margin-top:5px; }
+  .sp-live-fill{ height:100%; width:100%; background:#f5b301; transition:width .1s linear, background-color .3s; }
+  .sp-live-bar .tick{ position:absolute; top:0; bottom:0; width:3px; background:#fffaf0; }
+  .sp-live[data-lv="2"] .sp-live-fill{ background:#ff8a1f; }
+  .sp-live[data-lv="1"] .sp-live-fill{ background:#4a90e2; }
+  .sp-live[data-lv="0"] .sp-live-fill{ background:#bbb; }
+  .sp-live[data-lv="0"] .sp-live-label{ color:#888; }
+  .sp-live.done{ opacity:.5; }
+  .sp-toast{ position:fixed; left:50%; top:40%; transform:translate(-50%, -50%) scale(.5); z-index:60; pointer-events:none; text-align:center;
     font-size:15px; font-weight:800; color:#8a6400; background:#fff7d6; border:1.5px solid #f0d57a; border-radius:999px;
     padding:5px 14px; box-shadow:0 2px 8px rgba(0,0,0,.12); opacity:0; transition:opacity .2s, transform .2s; white-space:nowrap; }
-  .sp-toast.show{ opacity:1; transform:translate(-50%, 0); }
-  .sp-summary{ margin:12px auto 0; max-width:320px; background:#fff7d6; border:1.5px solid #f0d57a; border-radius:12px; padding:10px 12px; color:#6b4f00; }
-  .sp-summary .sp-sum-now{ font-size:20px; font-weight:800; }
-  .sp-summary .sp-sum-row{ font-size:13.5px; margin-top:3px; }
+  .sp-toast.show{ opacity:1; transform:translate(-50%, -50%) scale(1); }
+  .sp-toast.fly{ transition:transform .45s ease-in, opacity .45s ease-in; opacity:.15;
+    transform:translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(.3); }
+  .sp-toast .sp-pop-big{ font-size:56px; font-weight:900; color:#e09b00; line-height:1; text-shadow:0 2px 0 #fff, 0 4px 10px rgba(200,140,0,.4); }
+  .sp-toast .sp-pop-sub{ font-size:14px; margin-top:4px; }
+  .sp-summary{ margin:14px auto 0; max-width:340px; background:#fff7d6; border:1.5px solid #f0d57a; border-radius:12px; padding:10px 12px; color:#6b4f00; }
+  .sp-summary .sp-sum-now{ font-size:30px; font-weight:900; color:#c27c00; }
+  .sp-summary .sp-sum-row{ font-size:16px; font-weight:700; margin-top:4px; }
   .sp-summary .sp-rec{ color:#c0392b; }
   .sp-home{ text-align:right; font-size:12.5px; font-weight:700; color:#8a6400; margin:-4px 0 6px; }
   .score-row{
@@ -2261,6 +2286,8 @@
       <div class="back" id="solo-back">← やめてもどる</div>
       <div class="head-right"><span class="sp-now" id="solo-sp-now" style="display:none;"></span><div class="counter" id="solo-counter">1 / 10</div></div>
     </div>
+    <!-- ★2026-10-10 いま答えればもらえる⚡（時間がたつと減っていく） -->
+    <div class="sp-live" id="solo-sp-live" style="display:none;"><div class="sp-live-bolts"><span class="b">⚡</span><span class="b">⚡</span><span class="b">⚡</span></div><div class="sp-live-main"><div class="sp-live-label"></div><div class="sp-live-bar"><div class="sp-live-fill"></div><span class="tick" style="left:40%;"></span><span class="tick" style="left:70%;"></span></div></div></div>
     <!-- ★2026-10-06 正解するまでぐるぐる。のこりの数 -->
     <div class="loop-left" id="solo-left" style="display:none;"></div>
     <div class="undo-row" id="solo-undo-row" style="display:none;">
@@ -2455,6 +2482,8 @@
       <div class="head-right"><span class="sp-now" id="battle-sp-now" style="display:none;"></span><div class="counter" id="battle-counter">1 / 10</div></div>
     </div>
     <div class="loop-left" id="battle-left" style="display:none;"></div>
+    <!-- ★2026-10-10 いま答えればもらえる⚡（時間がたつと減っていく） -->
+    <div class="sp-live" id="battle-sp-live" style="display:none;"><div class="sp-live-bolts"><span class="b">⚡</span><span class="b">⚡</span><span class="b">⚡</span></div><div class="sp-live-main"><div class="sp-live-label"></div><div class="sp-live-bar"><div class="sp-live-fill"></div><span class="tick" style="left:40%;"></span><span class="tick" style="left:70%;"></span></div></div></div>
     <div class="battle-avatars" id="battle-avatars">
       <div class="avatar-box" id="host-avatar-box">
         <div class="avatar-char" id="host-avatar">🙂</div>
@@ -3736,11 +3765,65 @@ function spToast(e){
   if(e[2]) parts.push("〇 +" + e[2]);
   if(e[3]) parts.push("⚡" + SP_STREAK_N + "連続！ +" + e[3]);
   if(!parts.length) return;
-  el.textContent = parts.join("　");
-  el.classList.remove("show"); void el.offsetWidth;
+  el.innerHTML = '<div class="sp-pop-big">+' + (e[1] + e[2] + e[3]) + '</div><div class="sp-pop-sub">' + parts.join("　") + '</div>';
+  el.classList.remove("show", "fly"); void el.offsetWidth;
   el.classList.add("show");
   clearTimeout(spToastTimer);
-  spToastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+  // ★大きく出したあと、右上の合計にとびこむ（短く）。とびこんだら合計がぽんとはねる
+  spToastTimer = setTimeout(() => {
+    const t = document.querySelector(".screen.active .sp-now");
+    if(t && t.offsetParent){
+      const a = el.getBoundingClientRect(), b = t.getBoundingClientRect();
+      el.style.setProperty("--dx", Math.round((b.left + b.width / 2) - (a.left + a.width / 2)) + "px");
+      el.style.setProperty("--dy", Math.round((b.top + b.height / 2) - (a.top + a.height / 2)) + "px");
+    }
+    el.classList.add("fly");
+    spToastTimer = setTimeout(() => {
+      el.classList.remove("show", "fly");
+      if(t){ t.classList.remove("bump"); void t.offsetWidth; t.classList.add("bump"); }
+    }, 450);
+  }, 700);
+}
+// ★いま答えればもらえる⚡（出題中）。一人は問題が出てから、二人は親の反応ぶん（SP_JUDGE_LAG_SEC）を引いて数える。
+//   決まったら（こたえを見る・スキップ・親の〇✕）止めて薄くする。もう決めた問題（出し直し）・チェックのみ・ゲスト・スイッチ「出さない」では出さない
+const spLive = { k: "", timer: null, lag: 0, base: 0, lv: -1 };
+function spLiveEl(k){ return document.getElementById(k + "-sp-live"); }
+function spLiveHide(k){
+  if(!k || spLive.k === k){ clearInterval(spLive.timer); spLive.timer = null; }
+  ["solo", "battle"].forEach(x => { if(!k || x === k){ const el = spLiveEl(x); if(el) el.style.display = "none"; } });
+}
+function spLiveStart(k, id, lag){
+  spLiveHide();
+  const r = spRounds[k];
+  if(spOff() || !r || !id || r.q[id] || (k === "solo" && reviewMode) || (k === "battle" && role !== "host")) return;
+  const el = spLiveEl(k);
+  if(!el) return;
+  spLive.k = k; spLive.lag = lag || 0; spLive.base = spBaseSec(id); spLive.lv = -1;
+  el.classList.remove("done");
+  el.style.display = "";
+  spLiveTick();
+  spLive.timer = setInterval(spLiveTick, 100);
+}
+function spLiveTick(){
+  const el = spLiveEl(spLive.k);
+  if(!el) return;
+  const b = spLive.base, sec = Math.max(0, spElapsed(spLive.k) - spLive.lag);
+  const lv = spLevel(sec, b);
+  el.querySelector(".sp-live-fill").style.width = (Math.max(0, 1 - sec / b) * 100) + "%";
+  if(lv !== spLive.lv){
+    const bolts = el.querySelectorAll(".sp-live-bolts .b");
+    bolts.forEach((x, i) => { x.classList.toggle("off", i >= lv); x.classList.remove("drop"); });
+    if(spLive.lv > lv && bolts[lv]){ void bolts[lv].offsetWidth; bolts[lv].classList.add("drop"); }
+    el.dataset.lv = String(lv);
+    el.querySelector(".sp-live-label").textContent = lv > 0 ? "いま答えると ⚡+" + lv : "⚡なし（つぎは はやく！）";
+    spLive.lv = lv;
+  }
+  if(lv === 0){ clearInterval(spLive.timer); spLive.timer = null; }
+}
+function spLiveStop(){
+  clearInterval(spLive.timer); spLive.timer = null;
+  const el = spLiveEl(spLive.k);
+  if(el && el.style.display !== "none") el.classList.add("done");
 }
 // 終わりの画面: 今回・今日（きのうより）・今週・自己ベスト
 function spRenderResult(k, elId){
@@ -3773,6 +3856,7 @@ function setupSpeedPointsToggle(){
     t.classList.toggle("on", off);
     spRenderHome();
     spShowNow("solo"); spShowNow("battle");
+    if(off) spLiveHide();
   });
 }
 // ==== ここまで スピードポイント ====
@@ -8570,6 +8654,7 @@ function startSoloCard(){
   spMarkShown("solo", quizPos + ":" + id + ":" + quizResults.length, id);   // ★⚡ここから「決めるまで」を数える
   soloSpNew = null;
   spShowNow("solo");
+  spLiveStart("solo", id, 0);   // ★いま答えればもらえる⚡
   saveSoloSession();
 }
 let soloSpNew = null;   // ★⚡この問題で、いま決まった速さ（「こたえを見る」で決まり、〇✕を押したときに小さく出す）
@@ -8588,6 +8673,7 @@ els["solo-reveal-btn"].addEventListener("click", ()=>{
   studyLogReveal("solo");   // ★学習ログ: 考えた秒はここまで（2026-10-05）
   // ★⚡一人は「こたえを見る」で速さが決まる（チェックのみはつけない）。出し直し・やり直しは spDecide が何もしない
   if(!reviewMode) soloSpNew = spDecide("solo", quizQueue[quizPos], spElapsed("solo"));
+  spLiveStop();
   hideHintBtn("solo");   // ★答えを見たら、もうヒントは要らない（出したヒントは残す）
   // ★大問の小問の答えの図は、ここで初めて作る（battle と同じ）
   revealDaimonAnswerFig("solo", quizQueue, quizPos);
@@ -8709,6 +8795,7 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
     const firstAns = !soloIsRepeat(id);
     studyLogAnswer("solo", id, "skip", !firstAns);   // ★学習ログ
     spToast(spDecide("solo", id, spElapsed("solo")));   // ★⚡スキップも速さでつく（〇のおまけはなし）
+    spLiveStop();
     recordSoloAnswer(false);   // ★うしろにもう一度（正解するまで。recordSoloAnswer の中で回す）・記録は1回目だけ
     if(firstAns) quizResults[quizResults.length - 1].skip = true;
     soloSkippedIds.add(id);
@@ -8727,6 +8814,7 @@ els["solo-skip-btn"].addEventListener("click", ()=>{
   const firstSkip = !soloIsRepeat(sid);
   studyLogAnswer("solo", sid, "skip", !firstSkip);   // ★学習ログ
   spToast(spDecide("solo", sid, spElapsed("solo")));   // ★⚡小問のスキップも同じ
+  spLiveStop();
   // ★出し直しでのスキップは記録しない（recordSoloAnswer の norecord）。
   //   あとでもう一度（同じ大問の残りの小問のうしろ・最後の手なら末尾）も recordSoloAnswer の中で回す（正解するまで）
   recordSoloAnswer(false);
@@ -8804,6 +8892,7 @@ els["solo-review-jump-btn"].addEventListener("click", ()=>{
 });
 
 els["solo-back"].addEventListener("click", ()=>{
+  spLiveHide("solo");
   stopSoloThink();
   if(quizResults.length === 0 || confirm("とちゅうでやめますか？ここまでの記録は保存されます。")){
     studyLogPause("solo");   // ★学習ログ: 途中でやめた（続きから再開すれば同じ1回に戻る）
@@ -8819,6 +8908,7 @@ function soloLaps(){
   return Object.values(c).reduce((m, v) => Math.max(m, v), 0);
 }
 function finishSoloQuiz(){
+  spLiveHide("solo");
   stopSoloThink();
   clearSoloSession();
   planNoteFinish();   // ★今日やることの行を「できた」に（2026-10-07）
@@ -9720,6 +9810,7 @@ function saveLastCode(code){
 }
 
 function leaveRoom(){
+  spLiveHide("battle");
   studyLogPause("battle");   // ★学習ログ: 対戦の途中で抜けた（中断・もどる）。終わった対戦では何もしない
   clearConnectTrouble();   // やめる・もどるで抜けたときも、知らせを消してタイマーを止める
   if(room){
@@ -10008,7 +10099,8 @@ function setupActions(){
       lastHostRecord = { qid: qid, idx: currentIndex, rawCorrect: data.correct, forcedWrong: false, statBefore: null, norecord: true };
       hostRecordedIdx = currentIndex;
     }
-    if(spE && lastHostRecord && lastHostRecord.idx === currentIndex){ lastHostRecord.sp = true; spToast(spE); }   // ★⚡「一個前を直す」で〇のおまけを付け外しする印
+    if(spE && lastHostRecord && lastHostRecord.idx === currentIndex){ lastHostRecord.sp = true; spToast(spE); }
+    if(role === "host") spLiveStop();   // ★⚡「一個前を直す」で〇のおまけを付け外しする印
     // ★2026-10-06 ホスト（子ども）が✕なら、〇になるまでラウンドのうしろへ回す（この添字では1回だけ）
     if(role === "host" && hostRequeuedIdx !== currentIndex){
       hostRequeuedIdx = currentIndex;
@@ -10429,6 +10521,9 @@ function showQuestion(idx, hostPrivate){
   // ★⚡ホスト（子ども）: 問題が両方に出たときから「決めるまで」を数える（同じ問題の出し直し・つなぎ直しでは変えない）
   if(role === "host" && !hostPrivate) spMarkShown("battle", idx + ":" + questionIds[idx] + ":" + (spRounds.battle ? spRounds.battle.sid : ""), questionIds[idx]);
   spShowNow("battle");
+  // ★いま答えればもらえる⚡（ホスト＝子どもだけ。二人は親の反応ぶん2秒を引いた数え方）
+  if(role === "host" && !hostPrivate && (!room || kidFlow())) spLiveStart("battle", questionIds[idx], room ? SP_JUDGE_LAG_SEC : 0);   // ★公平モードは⚡をつけないので出さない
+  else spLiveHide("battle");
 
   // the question is already live for both sides (either it was just sent,
   // or a reconnecting peer is being resynced to it) -- skip straight to the
@@ -10596,6 +10691,7 @@ function performDaimonSkip(){
   const id = questionIds[currentIndex];
   studyLogAnswer("battle", id, "skip", daimonSkipRecorded.has(id));   // ★学習ログ
   if(kidFlow()) spToast(spDecide("battle", id, spElapsed("battle")));   // ★⚡小問のスキップも同じ
+  spLiveStop();
   // ★2026-10-05 ユーザー「あとで出しましょう」: 小問のスキップも一問一答とそろえて、答えを見せて✕で記録し、あとでもう一度出す。
   //   ✕を付けるのは1回目だけ（出し直しでまたスキップしても、出し直しで答えても、ホストの記録は付けない）
   if(hostRecordedIdx !== currentIndex && !daimonSkipRecorded.has(id)){
@@ -10642,6 +10738,7 @@ function performSkip(){
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   if(kidFlow()) spToast(spDecide("battle", questionIds[currentIndex], spElapsed("battle")));   // ★⚡子どものスキップも速さでつく（2秒は引かない）
+  spLiveStop();
   const skippedId = moveCurrentToEndOfRound();
   studyLogAnswer("battle", skippedId, "skip", hostSkippedIds.has(skippedId));   // ★学習ログ
   // ★hostSkippedIds に入るのは「自分で押した」ときだけ。ここに入った問題は、
@@ -11260,6 +11357,12 @@ function updateScoreUI(){
   if(who) who.textContent = kid ? (role === "guest" ? "子どもの〇の数" : "〇の数") : "あなた";
   els["guest-avatar-box"].style.display = kid ? "none" : "";
   if(kid) els["host-avatar-label"].textContent = role === "guest" ? "子ども" : "あなた";
+  // ★2026-10-10（speed-points-2）ユーザー「どうせ全部正解するまでやるので、正解の数のアイコンはいらないかも」。
+  //   親子の二人では「〇の数」の欄（点の箱）とアバターを出さない（数は内部で数えていて、終わりの画面には出る）
+  const row = els["screen-battle"].querySelector(".score-row");
+  if(row) row.style.display = kid ? "none" : "";
+  const av = document.getElementById("battle-avatars");
+  if(av) av.style.display = kid ? "none" : "";
 }
 
 const RETRY_COUNTDOWN_SEC = 3;
@@ -11282,6 +11385,7 @@ function endGame(){
     els["result-sub"].textContent = "";
   }
   spRenderResult("battle", "battle-sp-summary");   // ★⚡ホスト（子ども）の画面だけ
+  spLiveHide("battle");
   // ★2026-10-05 スキップ・時間切れの数（ホストだけが知っている数なので、ホストの画面に出す）
   els["result-skipinfo"].textContent = role === "host" ? ("スキップ " + hostSkippedIds.size + "問・時間切れ " + battleTimeupCount + "問") : "";
   if(!missesUnknown) saveLastMiss(myMissesThisRound);

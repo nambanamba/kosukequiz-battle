@@ -21,13 +21,19 @@
 //   B2 親が（ふつうの時間の3割＋1.2秒）後に〇 → 2秒を引くと3割以内 → 3点＋1（引かなければ2点）
 //   B3 子どもがすぐスキップ → 3点（2秒は引かない）・出し直しで〇でも0点
 //   B4 ポイントはホスト（子ども）の画面だけ。終わりの画面にも子どもの側だけ
+//  ★2026-10-10（speed-points-2）ユーザー「⚡14 は地味すぎる」「今なら⚡がいくつ、が減っていく感じがわかるように」「正解の数のアイコンはいらないかも」
+//   M1 一人: 出題中に「いま答えればもらえる⚡」（⚡⚡⚡）が出て、時間がたつと ⚡⚡ → ⚡ → なし と減る（帯も短くなる）・決めたら止まる
+//   M2 もらった瞬間に大きく「+4」が出て、右上の合計にとびこむ（合計がはねる）
+//   M3 二人: 子どもの画面に出る（親には出ない）。2秒引く分も合わせて、ふつうの時間の3割＋1.2秒でもまだ ⚡⚡⚡
+//   M4 親子の二人では「〇の数」の欄（点の箱）とアバターを出さない
+//   M5 スイッチ「出さない」で、いま答えればもらえる⚡も出ない
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_speed_points"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "ce0ce6f";
+const BASE_COMMIT = "620b898";   // ★#39 を公開した master（speed-points-2 の前）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -82,6 +88,9 @@ const vis = (pg, sel) => pg.evaluate(s => { const e = document.querySelector(s);
 const waitVis = (pg, sel, ms) => pg.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 20000 });
 const txt = (pg, sel) => pg.evaluate(s => { const e = document.querySelector(s); return e ? e.textContent : null; }, sel);
 const today = pg => pg.evaluate(k => { try { return ((JSON.parse(localStorage.getItem("kq_battle_speed_points_v1") || "{}").days) || {})[k] || 0; } catch (e) { return -1; } }, TODAY);
+const live = (pg, k) => pg.evaluate(k => { const e = document.getElementById(k + "-sp-live"); if (!e) return null;
+  return { vis: getComputedStyle(e).display !== "none" && e.offsetParent !== null, lv: e.dataset.lv, lit: e.querySelectorAll(".sp-live-bolts .b:not(.off)").length,
+    fill: parseFloat(e.querySelector(".sp-live-fill").style.width) || 0, label: e.querySelector(".sp-live-label").textContent, done: e.classList.contains("done") }; }, k);
 const toastShown = pg => pg.evaluate(() => { const e = document.getElementById("sp-toast"); return e && e.classList.contains("show") ? e.textContent : ""; });
 const shot = (pg, n) => pg.screenshot({ path: path.join(SHOTS, n + ".png"), fullPage: true }).catch(() => {});
 
@@ -162,7 +171,7 @@ async function runSolo(label, src) {
     // ---- スイッチ ----
     await soloStart(s.page, { count: 2, base: 10, off: true });
     const t10 = await soloAnswer(s.page, "ok");
-    const p8 = { nowVis: await vis(s.page, "#solo-sp-now"), toast: t10, today: await today(s.page) };
+    const p8 = { nowVis: await vis(s.page, "#solo-sp-now"), toast: t10, today: await today(s.page), liveVis: await vis(s.page, "#solo-sp-live") };
     await soloAnswer(s.page, "ok");
     await s.page.waitForFunction(() => document.getElementById("screen-solo-result").classList.contains("active"), null, { timeout: 10000 });
     p8.sumVis = await vis(s.page, "#solo-sp-summary");
@@ -170,10 +179,42 @@ async function runSolo(label, src) {
     p8.homeVis = await vis(s.page, "#sp-home");
     p8.toggleOn = await s.page.evaluate(() => { const e = document.getElementById("sp-off-toggle"); return !!(e && e.classList.contains("on")); });
     p8.todayEnd = await today(s.page);
+    check("M5 「出さない」で、いま答えればもらえる⚡も出ない", !p8.liveVis, JSON.stringify(p8));
     check("P8 「出さない」で右上・小さい表示・終わりの画面・ホームに出ない（数えるのは続ける: 今日 8）", !p8.nowVis && !p8.toast && !p8.sumVis && !p8.homeVis && p8.toggleOn && p8.todayEnd === 8, JSON.stringify(p8));
     await s.page.$eval("#sp-off-toggle", e => e.click()); await s.page.waitForTimeout(200);
     const back = await txt(s.page, "#sp-home");
     check("P8 スイッチを戻すとホームに今日の合計が出る", (await vis(s.page, "#sp-home")) && back === "今日の⚡8", back);
+    // ---- M1・M2: いま答えればもらえる⚡が減っていく／+4 がとびこむ（基本10秒・1問） ----
+    await soloStart(s.page, { count: 2, base: 10 });
+    const base = await baseOf(s.page, "solo");
+    const m0 = await live(s.page, "solo");
+    await shot(s.page, label + "_M1_solo_lv3");
+    await s.page.waitForTimeout(base * 450);
+    const m2 = await live(s.page, "solo");
+    await shot(s.page, label + "_M1_solo_lv2");
+    await s.page.waitForTimeout(base * 350);
+    const m1 = await live(s.page, "solo");
+    await shot(s.page, label + "_M1_solo_lv1");
+    await s.page.waitForTimeout(base * 300);
+    const mz = await live(s.page, "solo");
+    check("M1 いま答えればもらえる⚡: はじめ ⚡⚡⚡（いま答えると ⚡+3）→ 4.5割で ⚡⚡ → 8割で ⚡ → ふつうの時間をこえて なし・帯も短くなる",
+      m0 && m0.vis && m0.lit === 3 && /⚡\+3/.test(m0.label) && m2.lit === 2 && m2.lv === "2" && m1.lit === 1 && mz.lit === 0 && mz.lv === "0" && m0.fill > m2.fill && m2.fill > m1.fill && mz.fill === 0,
+      JSON.stringify({ base, m0, m2, m1, mz }));
+    await tap(s.page, "#solo-reveal-btn");
+    const md = await live(s.page, "solo");
+    await waitVis(s.page, "#solo-judge-ok"); await tap(s.page, "#solo-judge-ok");   // 遅い〇（+1）
+    check("M1 決めたら止まって薄くなる", md && md.done, JSON.stringify(md));
+    // 2問目: すぐ〇 → 大きく +4 → 右上へとびこむ
+    await waitVis(s.page, "#solo-reveal-btn");
+    await s.page.evaluate(() => { const e = document.getElementById("sp-toast"); if (e) e.classList.remove("show"); });
+    await tap(s.page, "#solo-reveal-btn"); await waitVis(s.page, "#solo-judge-ok"); await tap(s.page, "#solo-judge-ok");
+    await s.page.waitForTimeout(250);
+    const big = await s.page.evaluate(() => { const e = document.querySelector("#sp-toast.show .sp-pop-big"); return e ? { t: e.textContent, fs: parseFloat(getComputedStyle(e).fontSize) } : null; });
+    await shot(s.page, label + "_M2_pop");
+    await s.page.waitForTimeout(1000);
+    const after = await s.page.evaluate(() => ({ toast: document.getElementById("sp-toast").classList.contains("show"), bump: document.querySelector(".screen.active .sp-now, #solo-sp-now").classList.contains("bump"),
+      nowFs: parseFloat(getComputedStyle(document.getElementById("solo-sp-now")).fontSize) }));
+    check("M2 もらった瞬間に大きく「+4」（40px 以上）→ 1秒ほどで消えて右上の合計がはねる・合計は 20px 以上", big && big.t === "+4" && big.fs >= 40 && !after.toast && after.nowFs >= 20, JSON.stringify({ big, after }));
     check("画面のエラー 0", s.errs.length === 0, s.errs.join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); await shot(s.page, label + "_ERR_solo"); }
   finally { await s.ctx.close(); }
@@ -202,17 +243,21 @@ async function runBattle(label, src) {
     await guest.page.waitForFunction(q => document.getElementById("battle-q-id").textContent === q, h1, { timeout: 1500 }).catch(() => {});
     const a1 = { host: h1, guest: await qid(guest.page), hostAdv: await vis(host.page, "#advance-btn"), hostSkip: await vis(host.page, "#skip-btn"), hostReveal: await vis(host.page, "#answer-reveal-btn"),
       hostOpen: await aOpen(host.page), guestOpen: await aOpen(guest.page), guestJudge: await vis(guest.page, "#judge-row"), guestReveal: await vis(guest.page, "#answer-reveal-btn") };
+    a1.hostLive = await live(host.page, "battle"); a1.guestLive = await vis(guest.page, "#battle-sp-live");
+    check("M3 子どもの画面に「いま答えると ⚡+3」（親には出ない）", a1.hostLive && a1.hostLive.vis && a1.hostLive.lit === 3 && !a1.guestLive, JSON.stringify({ h: a1.hostLive, g: a1.guestLive }));
     check("A1 子どもに「わかった！」「こたえを見る」が出ない・スキップは出る", !a1.hostAdv && !a1.hostReveal && a1.hostSkip, JSON.stringify(a1));
     check("A1 問題は両方に同時に出る（1.5秒以内に同じ問題）・親には最初から答えと〇✕・子どもの答えは閉じたまま", a1.host && a1.host === a1.guest && a1.guestOpen && a1.guestJudge && !a1.guestReveal && !a1.hostOpen, JSON.stringify(a1));
     await shot(host.page, label + "_A1_host"); await shot(guest.page, label + "_A1_guest");
     await tap(guest.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 10000 }).catch(() => {});
     await host.page.waitForTimeout(500);
-    const boxes = pg => pg.evaluate(() => Array.from(document.querySelectorAll("#screen-battle .score-row .score-box")).filter(e => getComputedStyle(e).display !== "none").map(e => e.textContent.replace(/\s+/g, "")));
+    const boxes = pg => pg.evaluate(() => Array.from(document.querySelectorAll("#screen-battle .score-row .score-box")).filter(e => getComputedStyle(e).display !== "none" && e.offsetParent !== null).map(e => e.textContent.replace(/\s+/g, "")));
     const a2 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), hostSkip: await vis(host.page, "#skip-btn"), hostBoxes: await boxes(host.page), guestBoxes: await boxes(guest.page),
       hostNext: await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")) };
     check("A2 親の〇で子どもの答えが開く・子どもに〇✕は出ない・つぎへ", a2.hostOpen && !a2.hostJudge && !a2.hostSkip && a2.hostNext, JSON.stringify(a2));
-    check("A2 点の欄は子どもの〇の数だけ（ホスト「〇の数1」・ゲスト「子どもの〇の数1」）", JSON.stringify(a2.hostBoxes) === '["〇の数1"]' && JSON.stringify(a2.guestBoxes) === '["子どもの〇の数1"]', JSON.stringify(a2));
+    a2.hostAv = await vis(host.page, "#battle-avatars"); a2.guestAv = await vis(guest.page, "#battle-avatars"); a2.hostRow = await vis(host.page, "#screen-battle .score-row"); a2.guestRow = await vis(guest.page, "#screen-battle .score-row");
+    a2.scoreMe = await txt(host.page, "#score-me");
+    check("M4 親子の二人では「〇の数」の欄（点の箱）とアバターを出さない（数は内部で 1）", a2.hostBoxes.length === 0 && a2.guestBoxes.length === 0 && !a2.hostAv && !a2.guestAv && !a2.hostRow && !a2.guestRow && a2.scoreMe === "1", JSON.stringify(a2));
     const b1 = { today: await today(host.page), now: await txt(host.page, "#battle-sp-now"), nowVis: await vis(host.page, "#battle-sp-now"), guestNowVis: await vis(guest.page, "#battle-sp-now"), guestToday: await today(guest.page) };
     check("B1 親がすぐ〇 → 3点＋1（ホスト 今日 4・右上 ⚡4）", b1.today === 4 && b1.now === "⚡4" && b1.nowVis, JSON.stringify(b1));
     check("B4 ゲスト（親）の画面にはポイントが出ない・ためない", !b1.guestNowVis && b1.guestToday === 0, JSON.stringify(b1));
@@ -224,11 +269,15 @@ async function runBattle(label, src) {
     await guest.page.waitForFunction(q => document.getElementById("battle-q-id").textContent === q, h2, { timeout: 5000 });
     const base2 = await baseOf(host.page, "battle");
     const w2 = Math.round((0.3 * base2 + 1.2) * 1000);   // 2秒を引くと3割以内・引かなければ3割をこえる
-    await host.page.waitForTimeout(w2);
+    await host.page.waitForTimeout(w2 - 150);
+    const m3 = await live(host.page, "battle");
+    await shot(host.page, label + "_M3_battle_lag");
+    await host.page.waitForTimeout(150);
     await tap(guest.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 10000 }).catch(() => {});
     await host.page.waitForTimeout(200);
     const b2 = { base: base2, waitMs: w2, today: await today(host.page), toast: await toastShown(host.page) };
+    check("M3 2秒引く分も合わせて、ふつうの時間の3割＋1.2秒でもまだ ⚡⚡⚡", m3 && m3.lit === 3 && m3.lv === "3", JSON.stringify(m3));
     check("B2 親が（ふつうの時間の3割＋1.2秒）後に〇 → 2秒を引いて3割以内 → 3点＋1（今日 8。引かなければ2点）", base2 >= 8 && b2.today === 8 && /⚡⚡⚡ \+3/.test(b2.toast), JSON.stringify(b2));
     // ---- 3問目: すぐスキップ → 出し直しで〇 ----
     await tap(host.page, "#next-btn");
