@@ -103,6 +103,7 @@ try {
 
   await page.evaluate(() => [...document.querySelectorAll("#unit-choices .choice.selected")].filter(e => e.dataset.unit !== "ALL").forEach(e => e.click()));
   await page.waitForTimeout(200);
+  await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   await page.click(`#unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(200);
   const sel = await page.evaluate(() => [...document.querySelectorAll("#unit-choices .choice.selected")].map(e => e.dataset.unit).filter(x => x !== "ALL"));
   check("P3 " + UNIT + " だけが選ばれる", sel.length === 1 && sel[0] === UNIT, sel.join(" | "));

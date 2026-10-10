@@ -13,9 +13,11 @@ const br = await chromium.launch({ channel: "chrome" });
 const p = await (await br.newContext({ viewport:{width:390,height:844}, deviceScaleFactor:2 })).newPage();
 await p.goto(B); await p.waitForTimeout(900);
 await p.evaluate(()=>localStorage.clear()); await p.reload(); await p.waitForTimeout(900);
+await p.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await p.click('#unit-choices .choice[data-unit="ALL"]'); await p.waitForTimeout(200);
 const gh = await p.$('.unit-group-header[data-group="history"]'); if (gh) await gh.click();
 await p.waitForTimeout(200);
+await p.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await p.click('#unit-choices .choice[data-unit="第2回.古墳時代・飛鳥時代"]'); await p.waitForTimeout(250);
 await p.evaluate(()=>{ const o=document.querySelector("#order-toggle"); if(o&&o.checked)o.click();
   const c=[...document.querySelectorAll(".count-choice")].find(e=>e.dataset.count==="all"); if(c&&!c.classList.contains("on"))c.click(); });

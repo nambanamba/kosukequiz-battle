@@ -74,7 +74,7 @@ async function tryStart({ wait, blockFirst, label }){
     });
   }
   await page.goto(BASE + "index.html", { waitUntil: "load" });
-  await page.waitForSelector("#unit-choices .choice", { timeout: 60000 });
+  await page.waitForSelector("#unit-choices .choice", { timeout: 60000, state: "attached" });   // ★単元の一覧は畳んである（2026-10-10）。見えるのを待たない
   if (wait) await page.waitForTimeout(wait);   // 裏の先読みが終わるのを待つ
   await page.click("#create-btn");
   // 部屋のコードが出て「相手を待っています」の状態になるまで

@@ -85,7 +85,9 @@ async function walk(tag, overridePath) {
     for (const el of shut) { try { await el.click(); } catch {} }
     await page.waitForTimeout(200);
   }
+  await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   await page.click('#unit-choices .choice[data-unit="ALL"]'); await page.waitForTimeout(200);
+  await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   await page.click(`#unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(250);
   // ★「出題順どおり」にする。**`#order-toggle` は checkbox ではなく div.toggle** なので、
   //   `o.checked` を見ると**常に undefined で、一度も切りかわらない**。

@@ -52,9 +52,11 @@ const seeded = await page.evaluate(([u, T0, DAY]) => {
 await page.reload(); await page.waitForTimeout(800);
 
 // 単元をこの1つにして、未クリア＋よく間違える をONにする
+await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await page.click('#unit-choices .choice[data-unit="ALL"]');
 await page.waitForTimeout(200);
 if ((await page.$$('#unit-choices .choice.selected')).length) {
+  await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   await page.click('#unit-choices .choice[data-unit="ALL"]'); await page.waitForTimeout(200);
 }
 // ★夏期講習の単元は「地理」グループの中。アコーディオンを開かないと押せない
@@ -62,6 +64,7 @@ if ((await page.$$('#unit-choices .choice.selected')).length) {
 const gh = await page.$('#unit-choices .unit-group-header[data-group="geo"]');
 if (gh && !(await gh.evaluate(e => e.classList.contains("open")))) await gh.click();
 await page.waitForTimeout(250);
+await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await page.click(`#unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(200);
 // ★ 2026-09-26: 出題モードが段の選択になった。
 //   経路1は「メイン側で 1段目と2段目を見る」ので、その2つだけ ON
@@ -119,6 +122,7 @@ await page.evaluate(() => {
   const o = document.getElementById("order-toggle");         // ランダム順ではなく出題順どおり
   if (!o.classList.contains("on")) o.click();
 });
+await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await page.click(`#unit-choices .choice[data-unit="${UNIT}"]`); await page.waitForTimeout(200);
 const oh = await page.$('#unit-choices .unit-group-header[data-group="history"]');
 if (oh && !(await oh.evaluate(e => e.classList.contains("open")))) await oh.click();
@@ -127,6 +131,7 @@ const other = await page.evaluate(() => {
   const e = [...document.querySelectorAll("#unit-choices .choice")].find(x => x.dataset.unit.startsWith("第"));
   return e ? e.dataset.unit : null;
 });
+await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await page.click(`#unit-choices .choice[data-unit="${other}"]`); await page.waitForTimeout(200);
 await page.evaluate(() => {
   // ★★ 2026-09-26: 出題の組み立てが変わりました。問題数は**合計**になり、

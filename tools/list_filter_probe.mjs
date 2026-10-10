@@ -81,6 +81,7 @@ async function setMainUnits(units) {
   await page.evaluate(() => { const p = document.getElementById("unit-fold-panel"); if (p && p.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   // ALL は「全部選択中なら全解除、そうでなければ全選択」のトグル。まず全解除してから個別に選ぶ
   const allOn = await page.evaluate(() => document.querySelector('#unit-choices .choice[data-unit="ALL"]').classList.contains("selected"));
+  await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   if (allOn) await page.click('#unit-choices .choice[data-unit="ALL"]');
   else {
     // 念のため、いま選ばれているものを全部外す
@@ -95,6 +96,7 @@ async function setMainUnits(units) {
 // 属性セレクタの値として使うだけなので、CSS識別子エスケープは不要。" と \ だけ気をつける
 function escapeAttr(s) { return s.replace(/[\\"]/g, ch => "\\" + ch); }
 async function clickUnit(u) {
+  await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   await page.click(`#unit-choices .choice[data-unit="${escapeAttr(u)}"]`);
 }
 // 社会は地理/公民/歴史でアコーディオン化されている。閉じたグループの中の単元は

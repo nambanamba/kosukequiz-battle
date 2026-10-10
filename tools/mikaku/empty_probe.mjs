@@ -28,8 +28,10 @@ await p.evaluate(([ids,base,day])=>{
   localStorage.setItem("kq_battle_migrations_v1",JSON.stringify({"kaki1-4":1,"lastcorrect-backfill":1}));
 },[ids,base,day]);
 await p.reload(); await p.waitForTimeout(1000);
+await p.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await p.click('#unit-choices .choice[data-unit="ALL"]'); await p.waitForTimeout(250);
 const gh=await p.$('.unit-group-header[data-group="history"]'); if(gh) await gh.click(); await p.waitForTimeout(250);
+await p.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await p.click(`#unit-choices .choice[data-unit="${unit}"]`); await p.waitForTimeout(250);
 await p.evaluate(()=>{
   // ★ 2026-09-26: 出題モードが段の選択になった。「苦手な問題」（2段目）だけ ON にする。

@@ -71,8 +71,10 @@ async function openUnitGroupIfNeeded(u) {
 await page.click("#subject-science"); await page.waitForTimeout(300);
 // 単元をこの1つだけにする
 const allOn = await page.evaluate(() => document.querySelector('#unit-choices .choice[data-unit="ALL"]').classList.contains("selected"));
+await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 if (allOn) await page.click('#unit-choices .choice[data-unit="ALL"]');
 await openUnitGroupIfNeeded(setup.unit);
+await page.evaluate(() => { const q = document.getElementById("unit-fold-panel"); if (q && q.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
 await page.click('#unit-choices .choice[data-unit="' + setup.unit.replace(/"/g, '\\"') + '"]');
 await page.waitForTimeout(150);
 await page.click('.count-choice[data-count="all"]');
