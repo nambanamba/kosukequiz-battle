@@ -111,11 +111,12 @@ async function test(name, fn) {
     stats: () => page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}")),
     // 社会の歴史グループを開く（閉じているとクリックできない）
     async openHistory() {
+      await page.evaluate(() => { const p = document.getElementById("unit-fold-panel"); if (p && p.hidden) document.getElementById("unit-fold-open").click(); });
       const h = await page.$('.unit-group-header[data-group="history"]');
       if (h) await h.click();
       await page.waitForTimeout(150);
     },
-    async clickUnit(u) { await page.click(`#unit-choices .choice[data-unit="${u}"]`); await page.waitForTimeout(200); },
+    async clickUnit(u) { await page.evaluate(() => { const p = document.getElementById("unit-fold-panel"); if (p && p.hidden) document.getElementById("unit-fold-open").click(); }); await page.click(`#unit-choices .choice[data-unit="${u}"]`); await page.waitForTimeout(200); },
     screen: () => page.evaluate(() => {
       const s = [...document.querySelectorAll(".screen")].find(e => getComputedStyle(e).display !== "none");
       return s ? s.id : "?";
@@ -641,6 +642,7 @@ async function seedTiers(t, withRest) {
   return g;
 }
 const openGroup = async (t, key) => {
+  await t.page.evaluate(() => { const p = document.getElementById("unit-fold-panel"); if (p && p.hidden) document.getElementById("unit-fold-open").click(); });
   const h = await t.page.$(`#unit-choices .unit-group-header[data-group="${key}"]`);
   if (h && !(await h.evaluate(e => e.classList.contains("open")))) await h.click();
   await t.page.waitForTimeout(150);

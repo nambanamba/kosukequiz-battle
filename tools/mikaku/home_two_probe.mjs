@@ -163,7 +163,7 @@ async function run(label, src) {
     const btnTop = await pg.evaluate(() => Math.round(document.getElementById("start-together-btn").getBoundingClientRect().bottom));
     await pg.screenshot({ path: path.join(SHOTS, label + "_B3_start_together.png") }).catch(() => {});
     await tap(pg, "#create-cancel"); await pg.waitForTimeout(600);
-    const back3 = { setup: await vis(pg, "#home-setup"), units: await vis(pg, "#unit-choices"), plan: await vis(pg, "#plan-box"), waiting: await vis(pg, "#home-waiting") };
+    const back3 = { setup: await vis(pg, "#home-setup"), units: await vis(pg, "#unit-fold-open"), plan: await vis(pg, "#plan-box"), waiting: await vis(pg, "#home-waiting") };
     check("B3 相手が来ると「二人で開始する」が同じ画面に見える（画面の中）・「もどる」で選ぶ画面にもどる",
       started && w3.kids.length === 1 && btnTop > 0 && btnTop < 844 && back3.setup && back3.units && back3.plan && !back3.waiting, JSON.stringify({ started, w3, btnTop, back3 }));
     await guest.page.evaluate(() => { const b = document.getElementById("join-back"); if (b) b.click(); }); await guest.page.waitForTimeout(400);

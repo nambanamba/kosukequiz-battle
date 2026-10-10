@@ -78,6 +78,7 @@ await page.waitForTimeout(700);
 
 // ---- メイン画面: 単元選択をちょうど units の集合にする ----
 async function setMainUnits(units) {
+  await page.evaluate(() => { const p = document.getElementById("unit-fold-panel"); if (p && p.hidden) document.getElementById("unit-fold-open").click(); });   // ★単元の一覧は、はじめ閉じている（2026-10-10）
   // ALL は「全部選択中なら全解除、そうでなければ全選択」のトグル。まず全解除してから個別に選ぶ
   const allOn = await page.evaluate(() => document.querySelector('#unit-choices .choice[data-unit="ALL"]').classList.contains("selected"));
   if (allOn) await page.click('#unit-choices .choice[data-unit="ALL"]');
