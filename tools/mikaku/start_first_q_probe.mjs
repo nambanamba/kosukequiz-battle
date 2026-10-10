@@ -87,6 +87,7 @@ async function run(name, hostSeed, guestSeed, how) {
     // TAP=1 … 指で押す（本物のタップ。上に何かかぶっていたら押せない）。VW/VH で画面の大きさ
     const ctx = await browser.newContext({ viewport: { width: +(process.env.VW || 390), height: +(process.env.VH || 844) }, hasTouch: !!process.env.TAP, isMobile: !!process.env.TAP });
     const page = await ctx.newPage(); const errs = [];
+    await page.addInitScript(() => { window.__osc = 0; const C = window.AudioContext || window.webkitAudioContext; if (C && C.prototype.createOscillator) { const o = C.prototype.createOscillator; C.prototype.createOscillator = function () { window.__osc++; return o.apply(this, arguments); }; } });
     page.on("pageerror", e => errs.push(who + " pageerror: " + String(e).split("\n")[0]));
     page.on("console", m => { if (m.type() === "error" || m.type() === "warning") errs.push(who + " console." + m.type() + ": " + m.text().slice(0, 200)); });
     page.on("dialog", d => d.accept().catch(() => {}));
@@ -125,9 +126,21 @@ async function run(name, hostSeed, guestSeed, how) {
     const h = await okq(host.page);
     let g = false, j = false;
     if (h) {
-      const adv = await host.page.evaluate(() => { const e = document.getElementById("advance-btn"); return !!(e && getComputedStyle(e).display !== "none"); });
-      if (adv) console.log("     ★ホストに「わかった！」が出ている");
-      g = (await okq(guest.page)) && !adv;
+      // ★2026-10-11 「わかった！」は見た目だけ復活（ユーザー「ただボタンだけを復活」「押してもタイマーは止めない」）。
+      //   ホストには出ている・押しても何も起きない（送信・画面切替・音・記録・タイマー停止なし）ことを見る
+      const adv = await host.page.evaluate(() => { const e = document.getElementById("advance-btn"); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); });
+      const snap = pg => pg.evaluate(() => ({ screen: document.querySelector(".screen.active").id, q: document.getElementById("battle-q-id").textContent, open: document.getElementById("battle-a-block").classList.contains("show"),
+        timerShown: getComputedStyle(document.getElementById("think-timer")).display !== "none", fill: parseFloat(document.getElementById("think-timer-fill").style.width) || 0,
+        skip: getComputedStyle(document.getElementById("skip-btn")).display !== "none", stats: localStorage.getItem("kq_battle_stats_v1"), osc: window.__osc || 0, banner: document.getElementById("status-banner").textContent }));
+      await host.page.waitForTimeout(500);
+      const b0 = await snap(host.page), gb0 = await snap(guest.page);
+      if (process.env.TAP) await host.page.tap("#advance-btn", { timeout: 5000 }); else await host.page.$eval("#advance-btn", e => e.click());
+      await host.page.waitForTimeout(1200);
+      const b1 = await snap(host.page), gb1 = await snap(guest.page);
+      const inert = adv && b1.screen === b0.screen && b1.q === b0.q && !b1.open && b1.skip === b0.skip && b1.stats === b0.stats && b1.osc === b0.osc && b1.banner === b0.banner
+        && b1.timerShown && b1.fill < b0.fill && gb1.q === gb0.q && gb1.open === gb0.open && gb1.screen === gb0.screen;
+      console.log("     わかった！ 表示=" + adv + " 押しても変わらない=" + inert + " タイマー幅 " + b0.fill.toFixed(0) + "→" + b1.fill.toFixed(0) + " 音(osc)=" + b0.osc + "→" + b1.osc);
+      g = (await okq(guest.page)) && inert;
       // ゲストが〇 → ホストの答えが開く
       if (g) j = await waitVis(guest.page, "#judge-ok", 15000).then(async () => { if (process.env.TAP) await guest.page.tap("#judge-ok", { timeout: 5000 }); else await guest.page.$eval("#judge-ok", e => e.click());
         return host.page.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 15000 }).then(() => true); }).catch(() => false);

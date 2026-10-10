@@ -10739,6 +10739,7 @@ function hostResyncForReconnect(idx){
 }
 
 function doAdvance(){
+  if(kidFlow()) return;   // ★2026-10-11 二人（親子）のときの「わかった！」は見た目だけ。送信・画面切替・音・記録は何もしない
   clearTimeout(pendingSendTimer);
   stopCountdown();
   playAdvanceCue(); // 「次に進むよ」の合図。正解音とは別の音にしてある
@@ -10966,6 +10967,8 @@ function enterKidPhase(){
     // ★答えがもう開いている（つなぎ直しで同じ問題を出し直した）ときはスキップを出さない
     const opened = els["battle-a-block"].classList.contains("show");
     els["skip-btn"].style.display = opened ? "none" : "block";
+    // ★2026-10-11 ユーザー「わかったボタンになんの機能もいらない。ただボタンだけを復活」: 見た目だけ。押しても何も起きない（doAdvance の先頭で戻る）
+    els["advance-btn"].style.display = opened ? "none" : "block";
     els["status-banner"].textContent = "声に出してこたえを言いましょう！ 相手が〇✕をつけると、こたえが出ます。";
     scrollBattleDaimonTo("skip-btn");
   }else{
@@ -11180,7 +11183,7 @@ function revealAnswer(){
   const idx = currentIndex;
   clearTimeout(judgeShowTimer);
   // ★2026-10-10 二人のときのホスト（子ども）は親を判定しない（親が答える流れはなくした）。スキップも、もう出さない
-  if(role === "host" && kidFlow()){ els["skip-btn"].style.display = "none"; stopCountdown(); return; }
+  if(role === "host" && kidFlow()){ els["skip-btn"].style.display = "none"; els["advance-btn"].style.display = "none"; stopCountdown(); return; }
   judgeShowTimer = setTimeout(()=>{
     // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
     if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
