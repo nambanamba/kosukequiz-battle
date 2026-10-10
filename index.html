@@ -291,6 +291,21 @@
     flex:1;
     margin-top:0;
   }
+  /* ★2026-10-10 ホームの「一人で始める」「二人で始める」を大きく目立つように */
+  .start-btn.home-big-btn{
+    padding:22px 16px;
+    font-size:21px;
+    border-radius:16px;
+    letter-spacing:.08em;
+  }
+  .start-btn.home-big-btn.battle{ background:#c2562b; box-shadow:0 8px 18px rgba(194,86,43,0.32); }
+  .start-btn.home-big-btn:disabled{ background:#b7b2a4; box-shadow:none; }
+  /* ★2026-10-10 「二人で始める」を押したら、ホームは部屋の番号と「二人で開始する」（と、もどる）だけにする。
+     ユーザー「二人でを押しても画面が切り替わらないので二人で開始するが出ていることに気づかない」 */
+  #screen-home.home-waiting-mode > :not(#home-waiting){ display:none !important; }
+  #screen-home.home-waiting-mode #home-waiting .code-box{ margin-top:8px; }
+  #screen-home.home-waiting-mode #start-together-btn{ padding:22px 16px; font-size:21px; border-radius:16px; }
+  .home-waiting-title{ font-size:18px; font-weight:700; text-align:center; margin:4px 0 12px; color:var(--navy-deep); }
 
   .btn-secondary{
     width:100%;
@@ -1764,6 +1779,8 @@
   .plan-skip-btn{ margin-top:6px; padding:3px 9px; border:1px dashed var(--ink-soft); border-radius:8px; background:transparent; color:var(--ink-soft); font-size:11.5px; font-weight:700; cursor:pointer; }
   .plan-row.skipped .plan-row-title{ color:var(--ink-soft); text-decoration:line-through; text-decoration-thickness:1px; }
   .plan-mark.skip{ color:var(--ink-soft); }
+  /* ★2026-10-10 「✔ できた（やり直しは途中）」は2行（「✔ できた」の下に小さく）。行の名前を細くしない */
+  .plan-mark .plan-mark-sub{ display:block; font-size:10.5px; font-weight:600; color:var(--ink-soft); text-align:center; }
   .plan-alldone{ margin-top:12px; font-size:18px; font-weight:700; color:var(--ok); text-align:center; }
   .today-note{ margin-top:6px; font-size:12px; color:var(--ink-soft); text-align:center; }
   .hint-btn{ display:block; margin:0 auto; padding:8px 18px; border:1.5px solid var(--gold); border-radius:999px;
@@ -1929,11 +1946,11 @@
         <div class="time-custom-row" id="count-custom-row" style="display:none;"><input type="number" class="time-custom-input" id="count-custom-input" min="1" max="999" /><span>問</span></div>
       </div>
 
-      <button class="start-btn" id="create-btn" style="margin-top:14px;">二人で始める</button>
+      <button class="start-btn home-big-btn battle" id="create-btn" style="margin-top:14px;">二人で始める</button>
       <div class="toggle-row">
         <div class="toggle check-toggle" id="fair-mode-toggle">こどもどうし公平モード（ホストの先読み・スキップなし、単元は双方の希望を反映）</div>
       </div>
-      <button class="start-btn" id="solo-start-btn" style="margin-top:10px;">一人で始める</button>
+      <button class="start-btn home-big-btn" id="solo-start-btn" style="margin-top:10px;">一人で始める</button>
       <div class="toggle-row">
         <div class="toggle check-toggle" id="review-mode-toggle">チェックのみ（採点・記録なし）</div>
       </div>
@@ -2132,6 +2149,7 @@
     </div>
 
     <div id="home-waiting" style="display:none;">
+      <div class="home-waiting-title">二人で始める</div>
       <div class="code-box">
         <div class="code-label">この番号を相手に伝えてください</div>
         <div class="code-num" id="room-code-display">----</div>
@@ -2146,7 +2164,7 @@
         <button class="btn-secondary diag-copy" id="create-diag-copy">この内容をコピー</button>
       </div>
       <div class="back-link room-code-change" id="room-code-change">別のコードにする</div>
-      <div class="back-link" id="create-cancel">✕ やめる</div>
+      <div class="back-link" id="create-cancel">← もどる（やめる）</div>
     </div>
   </section>
 
@@ -4104,6 +4122,7 @@ window.addEventListener("popstate", ()=>{
       armBackGuard();            // ★やめないなら積み直す。これを忘れると次が素通りする
       return;
     }
+    planNoteBattleQuit();   // ★2026-10-10 中断でも、1回目が全部ついていれば「できた（やり直しは途中）」
     leaveRoom();
     renderHome();
     showScreen("screen-home");
@@ -4112,6 +4131,9 @@ window.addEventListener("popstate", ()=>{
       armBackGuard();
       return;
     }
+    stopSoloThink();
+    planNoteSoloQuit();   // ★2026-10-10 「← もどる」と同じ
+    studyLogPause("solo");
     renderHome();
     showScreen("screen-home");
   }
@@ -5251,6 +5273,7 @@ function renderHome(){
   refreshResumeBattleButton();
   refreshDaimonButton();
   refreshPaperButton();
+  planCheckSavedSessions();   // ★2026-10-10 閉じて終わった回も「できた（やり直しは途中）」に
   renderPlan();   // ★今日やることの「できた」を新しくする（2026-10-07）
 }
 
@@ -6471,8 +6494,7 @@ els["join-back"].addEventListener("click", ()=>{
 });
 els["create-cancel"].addEventListener("click", ()=>{
   leaveRoom();
-  els["home-setup"].style.display = "block";
-  els["home-waiting"].style.display = "none";
+  setHomeWaiting(false);
 });
 els["result-home-btn"].addEventListener("click", ()=>{
   // ★2026-10-03 ゲストは部屋を出ずに次の対戦を待つ（出るとホストに「接続が切れました」が出て、連続で遊べない）
@@ -7065,8 +7087,7 @@ els["selection-battle-btn"].addEventListener("click", ()=>{
   planBattlePending = null;   // ★今日やることの行には結びつけない
   hostSkippedIds = new Set();
   showScreen("screen-home");
-  els["home-setup"].style.display = "none";
-  els["home-waiting"].style.display = "block";
+  setHomeWaiting(true);
   const code = loadLastCode() || genCode();
   hostCreateRoomWithCode(code);
 });
@@ -7583,13 +7604,18 @@ const studyLogReady = (async () => {
   studyLog.sessions.sort((a, b) => a.st - b.st);
   studyLogReadyDone = true;
   // 前に開いていたときに、解いている最中に閉じられた回を、最後に答えた時刻でしめる（続きから再開すれば同じ回に戻る）
+  const closedNow = [];
   Object.keys(studyLog.cur).forEach(k => {
     const s = studyLogCur(k);
     if(!s){ delete studyLog.cur[k]; return; }
-    if(!s.done && s.seg && s.seg < studyLogBootAt){ studyLogClose(s, s.la || s.seg, true, false); studyLogPending.add(s.id); }
+    if(!s.done && s.seg && s.seg < studyLogBootAt){
+      studyLogClose(s, s.la || s.seg, true, false); studyLogPending.add(s.id);
+      if(Array.isArray(s.q) && s.q.length > 0){ s.sentPartial = true; closedNow.push(s); }   // ★2026-10-10 閉じて終わった回も送る（studyLogPause と同じ）
+    }
   });
   if(!studyLogDb) studyLogMarkFailed(new Error("IndexedDB が使えません"));
   else if(studyLogPending.size) studyLogSave();
+  closedNow.forEach(s => { try{ sendSession(s); }catch(e){ console.error("send closed session failed", e); } });
 })();
 const studyLogBootAt = Date.now();
 function studyLogLoad(){ return studyLog; }
@@ -7676,11 +7702,18 @@ function studyLogResume(k, ids, opt){
   return s;
 }
 // とちゅうでやめた（ホームにもどる・対戦を中断する）。あとで続きから再開できる
+// ★2026-10-10 途中でやめた回も、自動送信で送る（学習ログの1回分・途中でやめた＝はい）。
+//   答えが1つも無い回・もうやめてある回（動いていない）は送らない。送った回は sentPartial の印を付け、
+//   続きから再開して終えたら同じファイルを上書きする（sendSession）
 function studyLogPause(k){
   const s = studyLogCur(k);
   if(!s || s.done) return;
+  const running = !!s.seg;
   studyLogClose(s, Date.now(), true, false);
+  const send = running && Array.isArray(s.q) && s.q.length > 0;
+  if(send) s.sentPartial = true;
   studyLogSave(s);
+  if(send) sendSession(s);
 }
 // 結果の画面まで行った
 function studyLogFinish(k){
@@ -8895,6 +8928,7 @@ els["solo-back"].addEventListener("click", ()=>{
   spLiveHide("solo");
   stopSoloThink();
   if(quizResults.length === 0 || confirm("とちゅうでやめますか？ここまでの記録は保存されます。")){
+    planNoteSoloQuit();   // ★2026-10-10 1回目が全部ついていれば、今日やることの行を「できた（やり直しは途中）」
     studyLogPause("solo");   // ★学習ログ: 途中でやめた（続きから再開すれば同じ1回に戻る）
     renderHome();
     showScreen("screen-home");
@@ -9812,6 +9846,7 @@ function saveLastCode(code){
 function leaveRoom(){
   spLiveHide("battle");
   studyLogPause("battle");   // ★学習ログ: 対戦の途中で抜けた（中断・もどる）。終わった対戦では何もしない
+  setHomeWaiting(false);   // ★2026-10-10 部屋を出たら、ホームは選ぶ画面に戻す（番号だけの画面のままにしない）
   clearConnectTrouble();   // やめる・もどるで抜けたときも、知らせを消してタイマーを止める
   if(room){
     try{ room.leave(); }catch(e){}
@@ -10185,8 +10220,7 @@ function setupActions(){
     if(els["screen-battle"].classList.contains("active") || els["home-waiting"].style.display === "block" || els["screen-join"].classList.contains("active")){
       alert("相手との接続が切れました。ホーム画面にもどります。");
       leaveRoom();
-      els["home-setup"].style.display = "block";
-      els["home-waiting"].style.display = "none";
+      setHomeWaiting(false);
       showScreen("screen-home");
     }
   };
@@ -10215,6 +10249,14 @@ async function hostCreateRoomWithCode(code){
   }
 }
 
+// ★2026-10-10 ホームの「選ぶ画面」⇔「部屋の番号と二人で開始する だけの画面」の切りかえ（一か所にまとめた）。
+//   on … 選ぶ欄（単元・問題数など）と、上の今日やること・数のカードもかくして、部屋の番号・「二人で開始する」・もどるだけ
+function setHomeWaiting(on){
+  els["home-setup"].style.display = on ? "none" : "block";
+  els["home-waiting"].style.display = on ? "block" : "none";
+  els["screen-home"].classList.toggle("home-waiting-mode", !!on);
+  if(on) window.scrollTo(0, 0);
+}
 els["create-btn"].addEventListener("click", ()=>{
   const pool = buildFinalPool();
   if(pool.length === 0) return;
@@ -10226,8 +10268,7 @@ els["create-btn"].addEventListener("click", ()=>{
   hostSkippedIds = new Set();
   inMissRetryRound = false;
 
-  els["home-setup"].style.display = "none";
-  els["home-waiting"].style.display = "block";
+  setHomeWaiting(true);
   els["home-waiting-note"].innerHTML = '<span class="spinner"></span>相手の参加を待っています…';
   els["start-together-btn"].style.display = "none";
   resetStartTogether();
@@ -11327,6 +11368,7 @@ els["battle-end-btn"].addEventListener("click", ()=>{
 
 els["battle-pause-btn"].addEventListener("click", ()=>{
   if(!confirm("対戦を中断してホーム画面にもどりますか？（あとで続きから再開できます）")) return;
+  planNoteBattleQuit();   // ★2026-10-10
   leaveRoom();
   renderHome();
   showScreen("screen-home");
@@ -11889,7 +11931,8 @@ function sendSession(s){
     const body = { app: "battle", id: s.id, summary: summary, q: q, parts: parts };
     // ★2026-10-10 ⚡スピードポイント（今までの欄は変えず、足すだけ）。sp＝この回の合計・spq＝{ID: [段, 速さの点, 〇の点, 連続の点]}
     if(typeof s.sp === "number"){ body.sp = s.sp; body.spq = s.spq || {}; }
-    sendEnqueue("session_" + s.id, "session", "battle/session/" + sendDay(s.st) + "/" + s.id + ".json", body, false);
+    // ★途中でやめて送った回（sentPartial）は、そのあとも同じファイルを上書きする（続きをやって終えたら、終えた中身に）
+    sendEnqueue("session_" + s.id, "session", "battle/session/" + sendDay(s.st) + "/" + s.id + ".json", body, !!s.sentPartial);
     sendSnapshotIfDue();
   }catch(e){ console.error("send session failed", e); }
 }
@@ -12037,6 +12080,14 @@ function planIndex(){ const a = planLoad(PLAN_INDEX_KEY); return Array.isArray(a
 function planSets(){ return planLoad(PLAN_SETS_KEY) || {}; }
 function planSetOf(no){ if(planIsAuto(no)) return planAutoSet(no); const s = planSets()[no]; return (s && Array.isArray(s.items)) ? s : null; }
 function planDoneOf(no){ const d = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || {}; return d[no] || {}; }
+// ★2026-10-10 ユーザー「理科が最後の一問のやり直しを放棄してやめていました。…そんなこともあると思うので回避策が欲しい」
+//   → その回で出した問題（count ぶん）の【1回目の答え】が全部ついていれば、ぐるぐるの出し直しが残っていても、
+//     やめた（一人の「← もどる」）・おわる・中断（二人）・閉じた（次にホームを開いたとき）で、その行を「できた」にする。
+//     印は「✔ できた（やり直しは途中）」。そのあと続きから再開して最後まで終えたら、ふつうの「✔ できた」に変わる。
+//   ・1回目がまだ残っている回は今のまま（できたにしない）。記録（〇✕）は今のまま（答えるたびに付いている）
+//   ・やり直しが途中の行は {番号: {行の鍵: 時刻}}（できた印 kq_battle_plan_done_v2 は今までと同じ形のまま）
+const PLAN_PARTIAL_KEY = "kq_battle_plan_partial_v2";
+function planPartialOf(no){ const d = planLoad(planStoreKey(PLAN_PARTIAL_KEY, no)) || {}; return d[no] || {}; }
 // ★2026-10-09 ユーザー「今日やることの行にスキップボタン。今晩は飛ばした、今朝は飛ばした、みたいなかんじで」
 //   →（司令塔が確認）「暗記カードの『今朝の分、今晩の分』を丸ごとやらなかったことにする」。
 //   ・行の「やらなかった」→ 確認 →「— やらなかった」（「できた」とは別の見た目）。セットが全部済んだかの判定では済みと数える
@@ -12051,7 +12102,7 @@ function planRemoteSave(no, j){
   const m = {};
   if(j && Array.isArray(j.items)) j.items.forEach(o => {
     if(!o || typeof o !== "object") return;
-    m[planItemKey({ title: o.title }, o.i)] = { done: !!o.done, skipped: !o.done && !!o.skipped };
+    m[planItemKey({ title: o.title }, o.i)] = { done: !!o.done, skipped: !o.done && !!o.skipped, partial: !!o.done && !!o.partial };
   });
   const all = planLoad(PLAN_REMOTE_KEY) || {};
   all[no] = m;
@@ -12060,9 +12111,9 @@ function planRemoteSave(no, j){
 // 行の状態 {ok, sk, remote}。見るだけで子どもの端末の印が読めていれば、そちらを優先（この端末の印は使わない）
 function planRowState(no, key){
   const rm = sendViewOnly() ? planRemoteOf(no) : null;
-  if(rm){ const r = rm[key] || {}; return { ok: !!r.done, sk: !r.done && !!r.skipped, remote: true }; }
+  if(rm){ const r = rm[key] || {}; return { ok: !!r.done, sk: !r.done && !!r.skipped, pt: !!r.done && !!r.partial, remote: true }; }
   const ok = !!planDoneOf(no)[key];
-  return { ok: ok, sk: !ok && !!planSkipOf(no)[key], remote: false };
+  return { ok: ok, sk: !ok && !!planSkipOf(no)[key], pt: ok && !!planPartialOf(no)[key], remote: false };
 }
 function planAllDone(no){
   const s = planSetOf(no);
@@ -12449,13 +12500,69 @@ function planNoteFinish(){
   const miss = quizResults.filter(r => !r.norecord && !r.correct).map(r => r.id);
   planMarkDone(a.no, a.key, miss);
 }
+// ★2026-10-10 やめたときの「できた（やり直しは途中）」（上の PLAN_PARTIAL_KEY の説明）。
+//   queue … その回の並び（ぐるぐるで後ろに回した同じ問題も入っている）、answered … 1回目の答えがついた問題。
+//   並びのちがう問題（＝最初に出した count ぶん）が全部 answered に入っていれば「できた（やり直しは途中）」。
+//   もう「できた」の行（もう一度やってやめた など）は、そのまま（途中には戻さない）
+function planFirstAllAnswered(queue, answered){
+  const u = Array.from(new Set(queue || []));
+  return u.length > 0 && u.every(id => answered.has(id));
+}
+function planMarkPartial(ref, queue, answered, miss){
+  if(!ref || !ref.no || !ref.key || !planSetOf(ref.no)) return false;
+  if(!planFirstAllAnswered(queue, answered)) return false;
+  if(planDoneOf(ref.no)[ref.key]) return false;   // ★もう「できた」（最後まで・途中とも）なら何もしない
+  planMarkDone(ref.no, ref.key, miss, true);
+  return true;
+}
+// 一人: やめた（← もどる・戻るボタン）とき
+function planNoteSoloQuit(){
+  if(reviewMode) return false;
+  const first = quizResults.filter(r => !r.norecord);
+  return planMarkPartial(planLoad(PLAN_ACTIVE_KEY), quizQueue, new Set(first.map(r => r.id)), first.filter(r => !r.correct).map(r => r.id));
+}
+// 二人（ホスト）: おわる・中断のとき。スキップした問題も1回目に出した（答えを見た）ので数える
+function planNoteBattleQuit(){
+  if(role !== "host" || !planBattleActive) return false;
+  const answered = new Set(Array.from(battleAnsweredIds).concat(Array.from(hostSkippedIds)));
+  const miss = myMissesThisRound.concat(Array.from(battleTimeupIds), Array.from(hostSkippedIds));
+  return planMarkPartial(planBattleActive, questionIds, answered, miss);
+}
+// ホームを出すたび: 閉じて（やめるボタンを押さずに）終わった回も、保存してある続きから同じように見る
+function planCheckSavedSessions(){
+  try{
+    const a = planLoad(PLAN_ACTIVE_KEY);
+    if(a && a.no){
+      const ss = restoreSoloSession(loadSoloSession());
+      if(ss && !ss.reviewMode){
+        const first = ss.quizResults.filter(r => !r.norecord);
+        planMarkPartial(a, ss.quizQueue, new Set(first.map(r => r.id)), first.filter(r => !r.correct).map(r => r.id));
+      }
+    }
+    const bs = loadBattleSession();
+    if(bs && bs.plan && bs.plan.no && Array.isArray(bs.questionIds) && !bs.inMissRetryRound){
+      const sk = Array.isArray(bs.hostSkippedIds) ? bs.hostSkippedIds : [];
+      const answered = new Set((Array.isArray(bs.answered) ? bs.answered : []).concat(sk));
+      const miss = (Array.isArray(bs.misses) ? bs.misses : []).concat(Array.isArray(bs.timeupIds) ? bs.timeupIds : [], sk);
+      planMarkPartial(bs.plan, bs.questionIds, answered, miss);
+    }
+  }catch(e){ console.error("plan check saved failed", e); }
+}
 // 行を「できた」にする（一人・二人で共通）。miss … 1回目が✕・スキップ・時間切れだった問題（小問・部分の id でもよい）
-function planMarkDone(no, key, miss){
+// ★partial … やり直し（ぐるぐる）が途中でやめた回（2026-10-10）。最後まで終えた回（partial なし）は「途中」の印を消す
+function planMarkDone(no, key, miss, partial){
   const all = planLoad(planStoreKey(PLAN_DONE_KEY, no)) || {};
   const d = all[no] || {};
+  const wasDone = !!d[key];
   if(!d[key]) d[key] = Date.now();
   all[no] = d;
   planSave(planStoreKey(PLAN_DONE_KEY, no), all);
+  const pa = planLoad(planStoreKey(PLAN_PARTIAL_KEY, no)) || {};
+  const pd = pa[no] || {};
+  if(partial){ if(!wasDone) pd[key] = Date.now(); }
+  else delete pd[key];
+  if(Object.keys(pd).length) pa[no] = pd; else delete pa[no];
+  planSave(planStoreKey(PLAN_PARTIAL_KEY, no), pa);
   planSavePick(no, key, null);   // ★「中身を見る」で保存した一覧は、やり終えたら消す（次はまた選び直す）
   const ms = planLoad(planStoreKey(PLAN_MISS_KEY, no)) || {};
   const m = ms[no] || {};
@@ -12481,8 +12588,7 @@ function startBattleWithIds(ids, planRef){
   inMissRetryRound = false;
   planBattlePending = planRef || null;
   showScreen("screen-home");
-  els["home-setup"].style.display = "none";
-  els["home-waiting"].style.display = "block";
+  setHomeWaiting(true);   // ★2026-10-10 今日やることの「二人で」も同じ画面に
   els["home-waiting-note"].innerHTML = '<span class="spinner"></span>相手の参加を待っています…';
   els["start-together-btn"].style.display = "none";
   resetStartTogether();
@@ -12495,6 +12601,7 @@ function startBattleWithIds(ids, planRef){
 }
 // endGame から呼ぶ（ホストだけ）: 最後まで終えた対戦なら、その行を「できた」に
 function planNoteBattleEnd(finished){
+  if(!finished) planNoteBattleQuit();   // ★2026-10-10 「おわる」でも、1回目が全部ついていれば「できた（やり直しは途中）」
   const a = planBattleActive;
   planBattleActive = null;
   if(!a || !finished) return;
@@ -12504,10 +12611,11 @@ function planNoteBattleEnd(finished){
 function planSendDone(no){
   if(planIsAuto(no)) return;   // ★自動のセットは送らない（kosuke-records の番号とまざらないように）
   try{
-    const s = planSetOf(no), d = planDoneOf(no), sk = planSkipOf(no);
+    const s = planSetOf(no), d = planDoneOf(no), sk = planSkipOf(no), pt = planPartialOf(no);
     const items = (s ? s.items : []).map((it, i) => { const k = planItemKey(it, i);
       const o = { i: i, subj: it.subj || "", title: it.title || "", done: !!d[k], doneAt: d[k] ? new Date(d[k]).toISOString() : "", miss: (planMissOf(no)[k] || []) };
       if(!d[k] && sk[k]){ o.skipped = true; o.skippedAt = new Date(sk[k]).toISOString(); }   // ★やらなかった（2026-10-09）
+      if(d[k] && pt[k]) o.partial = true;   // ★やり直し（ぐるぐる）は途中でやめた（2026-10-10）
       return o; });
     sendEnqueue("plan_done_" + no, "plan_done", "battle/plan_done/" + String(no).padStart(4, "0") + ".json",
       { app: "battle", no: no, label: s && s.label || "", all: planAllDone(no), at: new Date().toISOString(), items: items }, true);
@@ -12542,6 +12650,10 @@ function renderPlanSet(container, no, prefix){
     const mk = document.createElement("span");
     mk.className = "plan-mark";
     mk.textContent = ok ? "✔ できた" : (sk ? "— やらなかった" : (st.remote ? "まだ" : ""));
+    if(ok && st.pt){   // ★やり直し（ぐるぐる）が途中でやめた回（2026-10-10）。文字は「✔ できた（やり直しは途中）」
+      mk.dataset.partial = "1";
+      const sub = document.createElement("span"); sub.className = "plan-mark-sub"; sub.textContent = "（やり直しは途中）"; mk.appendChild(sub);
+    }
     if(sk || (st.remote && !ok)) mk.classList.add("skip");
     if(st.remote) mk.dataset.remote = "1";   // ★見るだけ: 子どもの端末の印
     // ★やらなかった／もどす（2026-10-09）。行の名前の下・左がわ（右の「一人で」「二人で」から離す）
