@@ -6,6 +6,7 @@
 //   ・スキップの高さが「こたえを見る」以上・60px 以上、幅は「こたえを見る」と同じくらい
 //   ・スキップと、いっしょに出ているほかのボタン（こたえを見る・わかった！・ヒント・〇✕）との間が 40px 以上
 //   ・押すとこれまでどおりスキップになる（一人: 答えが開いて✕で記録／二人: スキップの知らせ）
+// 2026-10-10 追記: 二人のホストには「わかった！」「こたえを見る」が出なくなったので、待つ相手を #skip-btn に変えた（となりはヒントだけ）
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る（間が 14px しかない）
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -109,10 +110,11 @@ async function run(label, src) {
       await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
       await waitVis(host.page, "#start-together-btn", 60000);
       await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-      await waitVis(host.page, "#advance-btn", 30000); await host.page.waitForTimeout(300);
+      // ★2026-10-10 ホストの「わかった！」「こたえを見る」はなくした（問題は両方に同時に出る）。いっしょに出るのはヒントだけ
+      await waitVis(host.page, "#skip-btn", 30000); await host.page.waitForTimeout(300);
       const m3 = await host.page.evaluate(MEASURE, ["#skip-btn", ["#advance-btn", "#battle-hint-btn", "#answer-reveal-btn"]]);
       await shot(host.page, "3_battle_host");
-      judge("二人・ホスト", m3, "#answer-reveal-btn");
+      judge("二人・ホスト", m3, "#answer-reveal-btn");   // 「こたえを見る」は二人では出ない（高さ0扱い＝60px 以上だけを見る）
       await tap(host.page, "#skip-btn"); await host.page.waitForTimeout(400);
       const enc = await host.page.evaluate(() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; });
       check(V.n + " 二人・ホスト: 押すとこれまでどおりスキップ", /あとでもう一度/.test(enc), enc);

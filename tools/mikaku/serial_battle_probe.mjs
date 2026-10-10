@@ -15,6 +15,8 @@
 //   K2 その戦が最後の問題まで二人とも通る（出た問題がその科目）
 //   K3 「接続が切れました」が一度も出ない
 //   K4 記録（correct+wrong の合計）が、その戦の問題数ぶんだけ増える（二重にも、抜けにもならない）。ホスト・ゲスト両方
+// 2026-10-10 追記: 二人の新しい流れに合わせた。ホストの「わかった！」・ホストが付ける〇✕は無い。
+//   問題は両方に同時に出る → ゲスト（親）が〇を押す → ホストの記録が付く・次へ。ゲストの端末には記録が付かない（K4 はそこを変えた）。
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -77,7 +79,7 @@ async function run(label, src) {
   const isVis = (pg, sel) => pg.evaluate(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel);
   const waitVis = (pg, sel, ms) => pg.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 25000 });
   const screen = pg => pg.evaluate(() => (document.querySelector(".screen.active") || {}).id || "?");
-  const total = pg => pg.evaluate(() => { const s = JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}"); let t = 0; for (const k in s) t += (s[k].correct || 0) + (s[k].wrong || 0); return t; });
+  const total = pg => pg.evaluate(() => { let t = 0; for (const key of ["kq_battle_stats_v1", "kq_battle_parts_v1"]) { const s = JSON.parse(localStorage.getItem(key) || "{}"); for (const k in s) t += (s[k].correct || 0) + (s[k].wrong || 0); } return t; });   // ★2026-10-10: 「分けて」の部分(~)の記録は kq_battle_parts_v1 に入る（10-06 から）。両方数える
   const shot = (p, n) => p.screenshot({ path: path.join(SHOTS, label + "_" + n + ".png"), fullPage: true }).catch(() => {});
   const host = await mk("ホスト"), guest = await mk("ゲスト");
   const playRound = async (no, subj) => {
@@ -86,11 +88,10 @@ async function run(label, src) {
     await guest.page.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active"), null, { timeout: 30000 });
     let n = 0, firstId = "";
     for (let i = 0; i < 20; i++) {
-      await waitVis(host.page, "#advance-btn", 30000);
+      await waitVis(host.page, "#skip-btn", 30000);
       if (!firstId) firstId = (await host.page.$eval("#battle-q-id", e => e.textContent)).replace(/^No\./, "");
-      await tap(host.page, "#advance-btn");
-      await waitVis(host.page, "#judge-row", 30000); await waitVis(guest.page, "#judge-row", 30000);
-      await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+      await waitVis(guest.page, "#judge-row", 30000);
+      await tap(guest.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       n++;
       await tap(host.page, "#next-btn");
@@ -102,7 +103,7 @@ async function run(label, src) {
     check("K2 第" + no + "戦（" + subj + "）が最後まで通った（" + n + "問・最初 " + firstId + "）", n >= 1 && isSubj, firstId);
     await host.page.waitForTimeout(400);
     const dh = (await total(host.page)) - t0h, dg = (await total(guest.page)) - t0g;
-    check("K4 第" + no + "戦: 記録がちょうど " + n + " 件ふえた（ホスト +" + dh + "・ゲスト +" + dg + "）", dh === n && dg === n, dh + "/" + dg);
+    check("K4 第" + no + "戦: 記録がちょうど " + n + " 件ふえた（ホスト +" + dh + "）・ゲストの端末には付かない（+" + dg + "）", dh === n && dg === 0, dh + "/" + dg);
     await shot(guest.page, "r" + no + "_guest_result");
   };
   // order "A": ホスト先・ゲストあと ／ "B": ゲスト先

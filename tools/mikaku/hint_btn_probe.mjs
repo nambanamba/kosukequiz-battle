@@ -125,9 +125,8 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
+    await waitVis(host.page, "#skip-btn", 30000); // 2026-10-10: 新しい流れ（#advance-btn は無い。問題は両画面に同時に出る）
     const b1 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-    await tap(host.page, "#advance-btn");
     await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", b1, { timeout: 20000 });
     const hHint = await vis(host.page, "#battle-hint-btn"), gHint = await vis(guest.page, "#battle-hint-btn");
     if (hHint) { await tap(host.page, "#battle-hint-btn"); await host.page.waitForTimeout(800); }

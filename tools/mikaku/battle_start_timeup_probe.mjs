@@ -3,9 +3,12 @@
 //
 // 見るのはこの4つ:
 //   [1] 開始ボタンが二人とも出る／片方が押しただけでは始まらない／二人押したら始まる
-//   [2] ★時間切れ: 答えが出ない・記録が何も変わらない
-//   [3] ★時間切れの問題が、あとで回ってきて正解したら「正解」として記録される
+//   [2] ★考える時間が切れても何も起きない: 答えが出ない・後ろに回らない・記録が何も変わらない
+//   [3] ★切れたあとの問題も、ゲストの〇で「正解」として記録される
 //   [4] スキップを押したとき: 答えが出て、あとで正解しても「誤答」のまま
+// 2026-10-10 追記: 「わかった！」と二人の時間切れ（後ろへ回る）をなくした新しい流れに合わせた。
+//   [2][3] は旧版では「時間切れで後ろへ回り、あとで回ってきて正解」を見ていたが、二人では切れても何も起きなくなったので、
+//   「切れても何も起きない」「切れたあとの問題もゲストの〇でふつうに正解」に変えた。ホストの〇✕・ゲストの「こたえを見る」は無い
 //
 // 通信は node が中継するスタブに差し替える（test_battle_resume.mjs と同じ作り）。
 // スクリーンショットは tools/mikaku/shots_battle/ に残す。
@@ -119,22 +122,40 @@ await tap(guest.page,"#join-start-together-btn");
 await visible(host.page,"#skip-btn");
 ok("[1] ★二人とも押したら始まる", await battleActive(host.page));
 
-// ---- [2] 時間切れ（1問目をわざと放置する）----
+// ---- [2] 考える時間が切れても何も起きない（1問目をわざと放置する）----
+// ★2026-10-10 二人では考える時間が切れても「時間切れ」にならない（後ろに回らない・答えは開かない・記録も付かない）。親の〇✕を待つ
 const timedOutId = await qid(host.page);
-await visible(host.page,"#skip-continue-btn", 12000);   // headStartSec 3秒で時間切れになる
-await host.page.waitForTimeout(300);
-ok("[2] ★時間切れでは答えが出ない", !(await answerShown(host.page)));
-ok("[2] 時間切れだと分かる文言が出る", (await txt(host.page,"#skip-encourage")).includes("時間切れ"),
-   "実際の文言: "+await txt(host.page,"#skip-encourage"));
-ok("[2] ゲスト側も「時間切れ」と出る", (await txt(guest.page,"#guest-wait-status")).includes("時間切れ"),
-   "実際の文言: "+await txt(guest.page,"#guest-wait-status"));
+await host.page.waitForTimeout(6500);   // headStartSec 3秒を過ぎる
+const skipContVis = await host.page.evaluate(()=>{ const e=document.getElementById("skip-continue-btn"); return !!(e && getComputedStyle(e).display!=="none"); });
+const encText = await host.page.evaluate(()=>{ const e=document.getElementById("skip-encourage"); return e && getComputedStyle(e).display!=="none" ? e.textContent : ""; });
+ok("[2] ★切れても答えは出ない", !(await answerShown(host.page)));
+ok("[2] ★切れても「時間切れ」にならず・後ろに回らない（同じ問題・つぎへの案内なし）", !skipContVis && !encText.includes("時間切れ") && (await qid(host.page)) === timedOutId,
+   "続きボタン="+skipContVis+" 文言="+encText+" いま="+await qid(host.page));
+const gTxt = await guest.page.evaluate(()=>document.getElementById("screen-battle").innerText);
+const gJudge = await guest.page.evaluate(()=>{ const e=document.getElementById("judge-row"); return !!(e && getComputedStyle(e).display!=="none"); });
+ok("[2] ゲスト側に「時間切れ」は出ない・〇✕は出たまま", !gTxt.includes("時間切れ") && gJudge, "〇✕="+gJudge);
 const stAfterTimeUp = await stats(host.page);
-ok("[2] ★時間切れでは記録が何も増えない", Object.keys(stAfterTimeUp).length === 0,
+ok("[2] ★切れても記録が何も増えない", Object.keys(stAfterTimeUp).length === 0,
    "記録: "+JSON.stringify(stAfterTimeUp));
 await shot(host.page,"2_host_timeup"); await shot(guest.page,"2_guest_timeup");
 
-// ---- [4] スキップを押す（次の問題）----
-await tap(host.page,"#skip-continue-btn");
+// ---- 1問ぶん解く（ホストの記録はゲストの〇✕で入る。問題は両方に同時に出ていて、ゲストの〇✕は最初から出ている）----
+async function answerOnce(hostCorrect){
+  await visible(host.page,"#skip-btn");
+  await visible(guest.page,"#judge-row");
+  await tap(guest.page, hostCorrect ? "#judge-ok" : "#judge-ng");   // ホストの結果（ホストに〇✕は出ない）
+  await visible(host.page,"#next-btn");
+  await tap(host.page,"#next-btn");
+}
+
+// ---- [3] 切れたあとでも、ゲストの〇でふつうに「正解」として記録される ----
+await answerOnce(true);
+const st1 = await stats(host.page);
+ok("[3] ★切れたあとの問題も、ゲストの〇で「正解」で記録される",
+   st1[timedOutId] && st1[timedOutId].correct >= 1 && !st1[timedOutId].wrong,
+   timedOutId+" の記録: "+JSON.stringify(st1[timedOutId]));
+
+// ---- [4] スキップを押す（2問目）→ 答えが出て、あとで正解しても誤答のまま ----
 await visible(host.page,"#skip-btn");
 const skippedId = await qid(host.page);
 await tap(host.page,"#skip-btn");
@@ -143,36 +164,9 @@ ok("[4] スキップを押したときは答えが出る", await answerShown(hos
 ok("[4] 文言は「あとでもう一度出てくるよ」", (await txt(host.page,"#skip-encourage")).includes("あとでもう一度"),
    "実際の文言: "+await txt(host.page,"#skip-encourage"));
 await shot(host.page,"4_host_skip");
-
-// ---- 1問ぶん解く（ホストの記録はゲストの判定で入る）----
-async function answerOnce(hostCorrect){
-  await visible(host.page,"#advance-btn");
-  await tap(host.page,"#advance-btn");
-  // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-  await visible(guest.page,"#answer-reveal-btn");
-  await tap(guest.page,"#answer-reveal-btn");
-  await visible(guest.page,"#judge-row");
-  await tap(guest.page, hostCorrect ? "#judge-ok" : "#judge-ng");   // ホストの結果
-  await visible(host.page,"#judge-row");
-  await tap(host.page,"#judge-ok");                                  // ゲストの結果
-  await visible(host.page,"#next-btn");
-  await tap(host.page,"#next-btn");
-}
 await tap(host.page,"#skip-continue-btn");   // スキップの次へ
 await visible(host.page,"#skip-btn");
 await answerOnce(true);                      // まだ触っていない問題を1問、正解しておく
-
-// ---- [3] 時間切れの問題が回ってきたら、正解は正解として記録される ----
-await visible(host.page,"#skip-btn", 12000);
-ok("[3] ★時間切れの問題が、あとで回ってくる", (await qid(host.page)) === timedOutId,
-   "いま出ているのは "+await qid(host.page)+"（時間切れにしたのは "+timedOutId+"）");
-await answerOnce(true);
-const st1 = await stats(host.page);
-ok("[3] ★時間切れの問題は、正解したら「正解」で記録される",
-   st1[timedOutId] && st1[timedOutId].correct >= 1 && !st1[timedOutId].wrong,
-   timedOutId+" の記録: "+JSON.stringify(st1[timedOutId]));
-
-// ---- [4] スキップした問題は、正解しても誤答のまま ----
 await visible(host.page,"#skip-btn", 12000);
 ok("[4] スキップした問題が、あとで回ってくる", (await qid(host.page)) === skippedId,
    "いま出ているのは "+await qid(host.page)+"（スキップしたのは "+skippedId+"）");

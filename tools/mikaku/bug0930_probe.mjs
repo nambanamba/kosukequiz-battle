@@ -18,6 +18,11 @@
 // ■ 自己テスト = 直す前の版（1605b0d・コミットで固定）でも同じ手順を走らせ、鳴った件数を数える
 // 使い方: node tools/mikaku/bug0930_probe.mjs            （now と base の両方）
 //         node tools/mikaku/bug0930_probe.mjs --only now  （now / base）
+// ★2026-10-10 追記（二人の新しい流れ）: 二人の部分を書き直した。ホストの「わかった！」・考える時間の時間切れで後ろに回る・
+//   ホストが付ける〇✕・ゲストの記録は無い。問題は両方に同時に出て、ゲスト（親）は最初から答えと〇✕が見える。
+//   B1: ゲストは最初から答え＋〇✕／B3: 小問の判定の帯＝考える時間×2。切れてもホストは何も起きず自動〇にもならない
+//   B4: ホストの「こたえを見る」・チーズは出ない（考える時間の帯とスキップが画面の中）／B5: ゲストの端末には記録が付かない
+//   B2: スキップしたあと、ゲストは〇✕が引っこみ「スキップしました」になる（同時に出るので、ゲストは一度は見ている）
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
@@ -169,17 +174,23 @@ async function run(label, src) {
   allErrs.push(...solo.errs);
   await solo.ctx.close();
 
-  // ================= 二人 =================
+  // ================= 二人（2026-10-10 から新しい流れ）=================
   const host = await mk(), guest = await mk();
   const H = host.page, G = guest.page;
   const shown = pg => pg.evaluate(() => (document.getElementById("battle-q-id").textContent || "").replace(/^No\./, ""));
   const counter = pg => pg.$eval("#battle-counter", e => e.textContent.replace(/\s/g, ""));
   let step = "";
-  // ゲストの判定: 判定の列が出た瞬間に押す（直す前の版はゲストの判定1秒で自動〇になるため、待ってから押すと間に合わない）
-  const guestJudgeWhenShown = (ok, ms) => G.waitForFunction(ok => { const r = document.getElementById("judge-row");
-    if (getComputedStyle(r).display === "none") return false; document.getElementById(ok ? "judge-ok" : "judge-ng").click(); return true; }, ok, { timeout: ms || 40000, polling: 50 });
   const aOpen = pg => pg.evaluate(() => document.getElementById("battle-a-block").classList.contains("show"));
+  const nextShown = () => H.evaluate(() => document.getElementById("next-btn").classList.contains("show"));
+  // 問題 id が両方の画面に同時に出るのを待つ（ホストの「わかった！」は無い）
+  const bothShow = async (id, ms) => {
+    await H.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i, id, { timeout: ms || 20000 });
+    await G.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: ms || 20000 });
+    return Date.now();
+  };
+  const guestJudge = async ok => { await waitVis(G, "#judge-row", 30000); await tap(G, ok ? "#judge-ok" : "#judge-ng"); };
   try {
+    // ★ホストの考える時間（headStartSec 3 → 一問一答3秒・小問6秒）。ゲストの判定の帯も同じ長さ
     const S = await H.evaluate(SEED, { isHost: true, answer: 4, judge: 2 });
     await G.evaluate(SEED, { isHost: false, answer: 1, judge: 1 });
     await H.reload(); await G.reload(); await H.waitForTimeout(800); await G.waitForTimeout(800);
@@ -190,104 +201,84 @@ async function run(label, src) {
     await tap(G, "#go-join"); await G.fill("#join-code-input", code); await tap(G, "#join-btn");
     await waitVis(H, "#start-together-btn", 60000);
     await tap(H, "#start-together-btn"); await tap(G, "#join-start-together-btn");
-    const guestSeen = new Set();
-    const noteGuest = async () => { const v = await G.evaluate(() => getComputedStyle(document.getElementById("battle-view")).display !== "none"); if (v) guestSeen.add(await shown(G)); };
     step = "手1";
-    // ---- 手1: 一問一答 x ----
-    await waitVis(H, "#advance-btn"); await tap(H, "#advance-btn");
-    await G.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", x, { timeout: 20000 });
-    let t0 = Date.now();
-    await G.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 20000 });
-    const gOpenX = Date.now() - t0;
-    check("B1 ④ 一問一答はこれまでどおり: ゲストは自分の1秒で開く（3秒未満）", gOpenX < 3000, gOpenX + "ms");
-    // ★ゲストは自分の判定1秒で自動〇になっているので、出ていれば押す
-    await waitVis(H, "#judge-row"); await tap(H, "#judge-ok");
-    if (await vis(G, "#judge-row")) await tap(G, "#judge-ok");
+    // ---- 手1: 一問一答 x。両方に同時に出る。ゲストには最初から答えと〇✕ ----
+    let t0 = await bothShow(x);
+    await G.waitForTimeout(300);
+    check("B1 ④ 一問一答: ゲストは最初から答えが開き〇✕が出ている・ホストに「わかった！」は出ない（ゲストの「こたえを見る」も無い）",
+      (await aOpen(G)) && (await vis(G, "#judge-row")) && !(await vis(H, "#advance-btn")) && !(await vis(G, "#answer-reveal-btn")),
+      JSON.stringify({ gOpen: await aOpen(G), gJ: await vis(G, "#judge-row"), hAdv: await vis(H, "#advance-btn") }));
+    await tap(G, "#judge-ok");
     await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 20000 });
+    check("B1 ④ ゲストの〇でホストの答えが開く（ホストに〇✕は出ない）", (await aOpen(H)) && !(await vis(H, "#judge-row")));
     await tap(H, "#next-btn");
     step = "手2";
     // ---- 手2: 小問(1) → スキップ ----
-    await waitVis(H, "#advance-btn");
+    await bothShow(d1);
     check("B2 （下じき）ホストの手2は(1)", (await shown(H)) === d1, await shown(H));
     const skipVis = await vis(H, "#skip-btn");
     check("★B2 ⑤ ホストの小問にスキップが出る", skipVis);
     if (skipVis) {
-      await tap(H, "#skip-btn"); await H.waitForTimeout(150);
+      await tap(H, "#skip-btn"); await H.waitForTimeout(250);
       const hs = await stats(H);
       check("★B2 ⑤ スキップ: ホストの記録は✕（wrong1）・こたえが出る", hs[d1] && hs[d1].wrong === 1 && await aOpen(H), JSON.stringify(hs[d1]));
-      await noteGuest();
+      // ★新しい流れでは、ゲストはその小問を一度は見ている（同時に出る）。スキップのあとは〇✕が引っこみ「スキップしました」になる
+      await G.waitForFunction(() => getComputedStyle(document.getElementById("judge-row")).display === "none" && /スキップ/.test(document.getElementById("guest-wait-status").textContent), null, { timeout: 10000 }).catch(() => {});
+      check("★B2 ⑤ ゲストは〇✕が引っこみ「スキップしました」になる（スキップした小問(1)を採点させない）",
+        !(await vis(G, "#judge-row")) && /スキップ/.test(await G.$eval("#guest-wait-status", e => e.textContent)), await G.$eval("#guest-wait-status", e => e.textContent));
       await tap(H, "#skip-continue-btn");
     } else {
-      await tap(H, "#advance-btn");   // 直す前の版: スキップが無いので、ふつうに進めて(1)を両方〇にする
-      await waitVis(H, "#judge-row", 40000); await tap(H, "#judge-ok");
-      if (await vis(G, "#judge-row")) await tap(G, "#judge-ok");
-      await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 20000 });
-      await tap(H, "#next-btn");
+      throw new Error("スキップが出ないので手2を進められません");
     }
     step = "手3";
     // ---- 手3: 小問(2)（時間・見えるか）----
-    await waitVis(H, "#advance-btn");
+    t0 = await bothShow(d2);
     // ★2026-10-05 小問のスキップは「あとでもう一度」（(1) は大問の残りのうしろへ回り、同じ番目に (2) が来る）
     check("★B2 ⑤ スキップのあとは(2)で「2 / 4」（(1)は大問の残りのうしろへ）", (await shown(H)) === d2 && (await counter(H)) === "2/4", (await shown(H)) + " " + (await counter(H)));
-    check("★B4 ④ ホスト: 小問の「わかった！」が画面の中", await inView(H, "#advance-btn"));
-    await tap(H, "#advance-btn");
-    await G.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", d2, { timeout: 20000 });
-    await noteGuest();
-    t0 = Date.now();
     await G.waitForTimeout(300);
-    // ★2026-10-08 から二人のときのホストには「こたえを見る」が出ない（ゲストの〇✕で開く）
-    check("★B4 ④ ホスト: 「こたえを見る」は出ない（ゲストの〇✕で開く）", !(await H.evaluate(() => { const e = document.getElementById("answer-reveal-btn"); return getComputedStyle(e).display !== "none" && e.offsetParent !== null; })));
-    check("★B4 ④ ゲスト: 「こたえを見る」が画面の中", await inView(G, "#answer-reveal-btn"));
-    check("B4 ④ ホスト・ゲスト: 時計（チーズ）が画面の中", (await inView(H, "#answer-countdown")) && (await inView(G, "#answer-countdown")));
+    check("★B4 ④ ホスト: 「わかった！」は出ない・「こたえを見る」も出ない（ゲストの〇✕で開く）・チーズも出ない",
+      !(await vis(H, "#advance-btn")) && !(await vis(H, "#answer-reveal-btn")) && !(await vis(H, "#answer-countdown")),
+      JSON.stringify({ adv: await vis(H, "#advance-btn"), rev: await vis(H, "#answer-reveal-btn"), cd: await vis(H, "#answer-countdown") }));
+    check("★B4 ④ ホスト: 考える時間の帯とスキップが画面の中", (await inView(H, "#think-timer")) && (await inView(H, "#skip-btn")),
+      JSON.stringify({ think: await inView(H, "#think-timer"), skip: await inView(H, "#skip-btn") }));
+    check("★B4 ④ ゲスト: 最初から答えが開き、「こたえを見る」は出ない", (await aOpen(G)) && !(await vis(G, "#answer-reveal-btn")));
+    check("★B4 ④ ゲスト: 〇✕のボタンが画面の中", (await inView(G, "#judge-row")) && (await inView(G, "#judge-ok")) && (await inView(G, "#judge-ng")));
     await H.screenshot({ path: path.join(SHOTS, label + "_host_daimon_answering.png") });
-    await G.screenshot({ path: path.join(SHOTS, label + "_guest_daimon_answering.png") });
-    await G.waitForFunction(() => document.getElementById("battle-a-block").classList.contains("show"), null, { timeout: 30000 });
-    const gOpenD = Date.now() - t0;
-    check("★B3 ④ 小問: ゲストもホストの秒数×2（8秒）で開く（7秒以上）", gOpenD >= 7000, gOpenD + "ms");
-    await waitVis(G, "#judge-row");
-    const tj = Date.now();
-    const gJudgeIn = await inView(G, "#judge-row");
     await G.screenshot({ path: path.join(SHOTS, label + "_guest_daimon_judge.png") });
-    // だれも押さない → ゲストの判定の時間切れ（自動〇）までの時間
-    await G.waitForFunction(() => getComputedStyle(document.getElementById("judge-row")).display === "none", null, { timeout: 30000 });
-    const gJudge = Date.now() - tj;
-    check("★B3 ④ 小問の判定の時間切れは ホストの判定2秒×2（3.5秒以上）", gJudge >= 3500, gJudge + "ms");
-    // ★2026-10-08 ホストの判定ボタンは、ゲストの判定（ここでは時間切れの自動〇）が届いて答えが開いてから出る
-    await waitVis(H, "#judge-row");
-    check("★B4 ④ 判定ボタンが画面の中（ホスト・ゲスト）", (await inView(H, "#judge-row")) && gJudgeIn);
-    await H.screenshot({ path: path.join(SHOTS, label + "_host_daimon_judge.png") });
-    await H.waitForFunction(() => getComputedStyle(document.getElementById("judge-row")).display === "none", null, { timeout: 30000 }).catch(() => {});
-    await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 30000 });
+    // ★B3: ゲストの判定の帯は考える時間ぶん（小問は一問一答の2倍＝6秒）。切れると「〇か✕を押してください」。自動〇にはならない
+    await waitVis(G, "#guest-judge-prompt", 30000);
+    const gThink = Date.now() - t0;
+    check("★B3 ④ 小問: ゲストの判定の帯は 考える時間×2（6秒）で切れる（5秒以上・9秒未満）", gThink >= 5000 && gThink < 9000, gThink + "ms");
+    // ★考える時間が切れても、ホストでは何も起きない（答えは開かず、後ろにも回らない）。判定は親が押すまで待つ
+    check("★B3 ④ 切れてもホストの答えは開かない・同じ問題のまま・〇✕は出ない", !(await aOpen(H)) && (await shown(H)) === d2 && !(await vis(H, "#judge-row")) && !(await nextShown()),
+      JSON.stringify({ hOpen: await aOpen(H), q: await shown(H), hJ: await vis(H, "#judge-row") }));
+    check("★B3 ④ 切れても自動〇にならない（ゲストの〇✕は残る）", await vis(G, "#judge-row"));
+    await tap(G, "#judge-ok");
+    await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 20000 });
+    check("★B4 ④ ゲストの〇のあとホストの答えが開き、ホストに判定ボタンは出ない", (await aOpen(H)) && !(await vis(H, "#judge-row")));
+    await H.screenshot({ path: path.join(SHOTS, label + "_host_daimon_opened.png") });
     await tap(H, "#next-btn");
     step = "手4";
-    // ---- 手4: 小問(3): ゲストはホストを✕、ホストはゲストを〇 ----
-    await waitVis(H, "#advance-btn");
-    const gNg = guestJudgeWhenShown(false);
-    await tap(H, "#advance-btn");
-    await G.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", d3, { timeout: 20000 });
-    await noteGuest();
-    await gNg;
-    await waitVis(H, "#judge-row", 40000); await tap(H, "#judge-ok");
+    // ---- 手4: 小問(3): ゲストはホストを✕ ----
+    await bothShow(d3);
+    await guestJudge(false);
     await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 20000 });
+    const hMid = (await stats(H))[d3];
+    check("B5 （下じき）1回目: ホストは(3)を✕で記録（wrong1）", hMid && hMid.wrong === 1 && !(hMid.correct > 0), JSON.stringify(hMid));
     await tap(H, "#next-btn");
-    if (skipVis) check("★B2 ⑤ ゲストにはスキップした小問(1)を出していない", !guestSeen.has(d1), [...guestSeen].join(","));
-    const gBefore = (await stats(G))[d3];
-    check("B5 （下じき）1回目: ゲストは(3)を〇で記録", gBefore && (gBefore.wrong || 0) === 0 && gBefore.correct === 1, JSON.stringify(gBefore));
     step = "正解するまで";
-    // ---- ★2026-10-06 正解するまでぐるぐる（同じラウンドの続き）: 回ってきた手はぜんぶ両方〇 ----
-    for (let k = 0; k < 6; k++) {
-      const got = await H.waitForFunction(() => { const a = document.querySelector(".screen.active"); return a && a.id === "screen-battle" && getComputedStyle(document.getElementById("advance-btn")).display !== "none"; }, null, { timeout: 15000 }).then(() => true).catch(() => false);
-      if (!got) break;
-      const gOk = guestJudgeWhenShown(true).catch(() => {});
-      await tap(H, "#advance-btn");
-      await gOk;
-      await waitVis(H, "#judge-row", 40000); await tap(H, "#judge-ok");
+    // ---- ★2026-10-06 正解するまでぐるぐる（同じラウンドの続き）: 回ってきた手はぜんぶ親が〇 ----
+    for (let k = 0; k < 8; k++) {
+      if (await G.evaluate(() => document.getElementById("screen-result").classList.contains("active"))) break;
+      const got = await G.waitForFunction(() => { const r = document.getElementById("judge-row"); return getComputedStyle(r).display !== "none" || document.getElementById("screen-result").classList.contains("active"); }, null, { timeout: 15000 }).then(() => true).catch(() => false);
+      if (!got || await G.evaluate(() => document.getElementById("screen-result").classList.contains("active"))) break;
+      await tap(G, "#judge-ok");
       await H.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 20000 });
       await tap(H, "#next-btn");
       await H.waitForTimeout(300);
     }
     const gAfter = (await stats(G))[d3];
-    check("★B5 ① 回ってきた(3)をゲストが〇にしても、ゲストの記録は1回目の〇だけ（wrong0・correct1）", gAfter && (gAfter.wrong || 0) === 0 && gAfter.correct === 1, JSON.stringify(gAfter));
+    check("★B5 ① ゲストの端末には記録が付かない（新しい流れ。ホストだけが記録する）", !gAfter && Object.keys(await stats(G)).filter(k => k === x || k === d1 || k === d2 || k === d3).length === 0, JSON.stringify(gAfter));
     const hAfter = (await stats(H))[d3];
     check("B5 ① ホストの(3)は1回目の✕だけ（回ってきて〇でも記録しない＝wrong1・correct0）", hAfter && hAfter.wrong === 1 && !(hAfter.correct > 0), JSON.stringify(hAfter));
   } catch (e) { check("二人の手順が最後まで進む", false, step + ": " + String(e).split("\n")[0]); }
@@ -305,7 +296,9 @@ for (const r of runs) {
   console.log("\n==== " + (r === "now" ? "いまの版" : "自己テスト: 直す前の版 " + BASE_COMMIT) + "  " + (res.length - fails.length) + "/" + res.length + " 通過・" + fails.length + "件 鳴った");
   res.forEach(c => console.log((c.ok ? "  ○ " : "  ✕ ") + c.name + (c.ok || !c.extra ? "" : "  … " + c.extra)));
   if (r === "now" && fails.length) bad++;
-  if (r === "base" && fails.filter(c => c.name.startsWith("★")).length < 10) { console.log("  ★自己テストが鳴っていません（★の項目が10件未満）"); bad++; }
+  // ★2026-10-10: 直す前の版(1605b0d)は二人の古い流れ（「わかった！」あり）なので、新しい二人の手順は1手目で止まる（＝鳴る）。
+  //   一人の★(S1〜S3)が 7 件以上鳴り、二人の手順が最後まで進まないことを見る
+  if (r === "base" && (fails.filter(c => c.name.startsWith("★")).length < 7 || !fails.some(c => /二人の手順/.test(c.name)))) { console.log("  ★自己テストが鳴っていません（一人の★が7件未満、または二人の手順が止まっていない）"); bad++; }
 }
 await browser.close(); server.close(); relay.close && relay.close();
 process.exit(bad ? 1 : 0);

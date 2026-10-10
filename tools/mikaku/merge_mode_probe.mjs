@@ -10,6 +10,7 @@
 //   S3 スイッチをオフにもどすと、また分けて（~ の id）
 //   E  画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
+// 2026-10-10 追記: 二人の新しい流れに合わせ、B1 は「わかった！」を押さずに、問題が両方の画面に同時に出るのを待つ形に直した（確かめる中身は同じ）
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
@@ -138,9 +139,8 @@ async function run(label, src) {
       const wv = (p, sel, ms) => p.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 30000 });
       await wv(pg, "#start-together-btn", 60000);
       await pg.$eval("#start-together-btn", e => e.click()); await gp.$eval("#join-start-together-btn", e => e.click());
-      await wv(pg, "#advance-btn", 20000);
+      await wv(pg, "#skip-btn", 30000);   // ★2026-10-10 「わかった！」なし。問題は両方に同時に出る
       const hid = await pg.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-      await pg.$eval("#advance-btn", e => e.click());
       await gp.waitForFunction(() => getComputedStyle(document.getElementById("battle-view")).display !== "none" && /^No\./.test(document.getElementById("battle-q-id").textContent), null, { timeout: 20000 });
       const gid = await gp.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
       const gtag = await txt("#battle-daimon .split-mode-tag", gp);

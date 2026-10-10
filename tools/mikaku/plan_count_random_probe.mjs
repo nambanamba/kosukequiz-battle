@@ -109,9 +109,8 @@ async function run(label, src) {
       const wv = (p, sel, ms) => p.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 30000 });
       await wv(pg, "#start-together-btn", 60000);
       await pg.$eval("#start-together-btn", e => e.click()); await gp.$eval("#join-start-together-btn", e => e.click());
-      await wv(pg, "#advance-btn", 30000); await pg.waitForTimeout(300);
+      await wv(pg, "#skip-btn", 30000); await pg.waitForTimeout(300); // 2026-10-10: 新しい流れ（ホストの #advance-btn は無い。問題は両画面に同時に出る）
       const hc = await txt(pg, "#battle-counter"), hl = await txt(pg, "#battle-left");
-      await pg.$eval("#advance-btn", e => e.click());
       await gp.waitForFunction(() => getComputedStyle(document.getElementById("battle-view")).display !== "none", null, { timeout: 20000 }).catch(() => {});
       await gp.waitForTimeout(500);
       const gc = await txt(gp, "#battle-counter");

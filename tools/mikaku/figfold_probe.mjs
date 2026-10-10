@@ -7,6 +7,7 @@
 //   F4 (solo) いまの小問の見出しが、大問の図の下 40px*たたんだ行数+40px 以内にある（図と問題が遠くならない）
 //   F5 (battle) ホストにもゲストにも たたんだ行・図を見るが出る
 //   F6 (battle guest) 「やっぱり…直す」は判定ボタンの下端から 120px 以上はなれ、高さ 32px 以下・文字 12px 以下。機能は残る
+// 2026-10-10 追記: 二人の流れを新しくした（ホストの「わかった！」・ホストの〇✕を押す所を消した。ゲストの〇だけでホストの答えが開く）。F5・F6 の中身は同じ
 // 自己テスト: 直す前（4363c8a）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -131,11 +132,13 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
+    let prevQ = "";
     for (let k = 0; k < 3; k++) {
-      await waitVis(host.page, "#advance-btn", 30000);
-      await tap(host.page, "#advance-btn");
-      await guest.page.waitForFunction(() => getComputedStyle(document.getElementById("battle-view")).display !== "none" && /^No\./.test(document.getElementById("battle-q-id").textContent), null, { timeout: 20000 });
-      await waitVis(host.page, "#judge-row", 30000); await waitVis(guest.page, "#judge-row", 30000);
+      // 2026-10-10: 「わかった！」はなくした。問題は両方の画面に同時に出る（ホストはスキップが出る・ゲストは最初から〇✕）
+      await host.page.waitForFunction(p => { const e = document.getElementById("skip-btn"); return document.getElementById("battle-q-id").textContent !== p && !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, prevQ, { timeout: 30000 });
+      prevQ = await host.page.$eval("#battle-q-id", e => e.textContent);
+      await guest.page.waitForFunction(prevQ => getComputedStyle(document.getElementById("battle-view")).display !== "none" && document.getElementById("battle-q-id").textContent === prevQ, prevQ, { timeout: 20000 });
+      await waitVis(guest.page, "#judge-row", 30000);
       await guest.page.waitForTimeout(500);
       if (k >= 1) {
         for (const [who, pg] of [["ホスト", host.page], ["ゲスト", guest.page]]) {
@@ -159,7 +162,7 @@ async function run(label, src) {
         const s1 = await host.page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_stats_v1")));
         check("F6 機能は残っている（押すとホストの直前の記録が変わる）", JSON.stringify(s0) !== JSON.stringify(s1));
       }
-      await tap(host.page, "#judge-ok"); await tap(guest.page, "#judge-ok");
+      await tap(guest.page, "#judge-ok");   // ゲストの〇でホストの答えが開く（ホストに〇✕は出ない）
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }).catch(() => {});
       await tap(host.page, "#next-btn").catch(() => {});
     }

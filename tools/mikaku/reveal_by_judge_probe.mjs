@@ -1,15 +1,17 @@
 // 二人対戦: ホスト（子ども）の答えは、ゲスト（親）が〇✕を押したときに開く（2026-10-08・ユーザー）
 //   ユーザー原文「ホストの答えを出すタイミングを、時間や本人が答えを見るを押したときじゃなくて、親がまるばつを付けたタイミングで見れるようにしてほしい」
+//   ★2026-10-10 「わかった！」をなくした（ユーザー「もう親と早押し対決の意味はほとんどない」）。問題は両方に同時に出て、
+//     親には最初から答えと〇✕。子どもに〇✕（親の判定）は出ない。考える時間が切れても何も起きない（親の〇✕を待つ）
 // 本物の Chrome 2枚（390x844）＋まねごとの待ち合わせ先。一問一答（社会）と大問の小問（理科）の両方
 // 使い方: node tools/mikaku/reveal_by_judge_probe.mjs   スクショは tools/mikaku/shots_reveal_by_judge/（コミットしない）
 // 見ること（一問一答・小問それぞれ）:
-//   R1 ホストの画面に「こたえを見る」が出ない（ゲストには出る）
-//   R2 ホストの答える時間（チーズ）が切れても、ホストの答えは開かない
-//   R3 ゲストが〇（✕）を押すと、ホストの答えが開く（ゲストのふだ「あなたの判定で…」）・ホストの判定ボタンも出る
-//   R4 子どもが「スキップ」→ 今までどおり答えを見せる（あとでもう一度）
-//   R5 考える時間の時間切れ → 答えは開かない（あとでもう一度）
+//   R1 ホストの画面に「わかった！」「こたえを見る」が出ない（スキップは出る）。ゲストには同じ問題と、最初から答えと〇✕
+//   R2 考える時間が切れても、ホストの答えは開かない・後ろにも回らない
+//   R3 ゲストが〇を押すと、ホストの答えが開く（ゲストのふだ「あなたの判定で…」）・ホストに〇✕は出ない・「つぎの問題へ」
+//   R4 子どもが「スキップ」→ 今までどおり答えを見せる（あとでもう一度）・ゲストの〇✕は引っこむ
+//   R5 考える時間が切れても「時間切れ」で後ろに回らない（2026-10-10 から。前は時間切れで後ろへ回した）
 //   R6（2026-10-10）ゲスト（親）の判定の時間が切れても自動の〇にならない＝ホストの答えは開かない・次へ進まない・
-//      ゲストに「〇か✕を押してください」が出る。そのあと押せば R3 のとおり開く
+//      ゲストに「〇か✕を押してください」が出る
 //      ユーザー原文「時間切れになっても、私が正解か不正解を押すまで子供の回答をみせないように変更したい」
 //   R7（2026-10-10 司令塔の念押し「どの時計が切れても次の問題に進まない」）「次の問題へ」・スキップのあとの自動送りを 2秒に縮め、
 //      親が押さないまま長く待っても1問目のまま（ホスト・ゲストとも）。押したあとは時計が効いて自動で2問目へ進む（時計が生きていることの確かめ）
@@ -19,7 +21,7 @@ import { execSync } from "node:child_process"; import { fileURLToPath, pathToFil
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SHOTS = path.join(ROOT, "tools", "mikaku", "shots_reveal_by_judge"); fs.mkdirSync(SHOTS, { recursive: true });
-const BASE_COMMIT = "b3f7f51";
+const BASE_COMMIT = "ce0ce6f";   // ★2026-10-10「わかった！」をなくす前
 const BASE_WAIT = "01728b8";   // ★判定の時間切れで自動〇だった最後（2026-10-10 の直す前）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
@@ -100,24 +102,23 @@ async function run(label, src, kind, opts) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    // ===== 1問目: わかった → 答える時間 =====
-    await waitVis(host.page, "#advance-btn", 30000);
-    await tap(host.page, "#advance-btn");
-    await waitVis(guest.page, "#answer-reveal-btn", 20000);
-    await host.page.waitForTimeout(300);
-    const r1 = { hostBtn: await vis(host.page, "#answer-reveal-btn"), guestBtn: await vis(guest.page, "#answer-reveal-btn"), hostCountdown: await vis(host.page, "#answer-countdown") };
-    check("R1 ホストに「こたえを見る」が出ない（ゲストには出る）", !r1.hostBtn && r1.guestBtn, JSON.stringify(r1));
-    await shot(host.page, "R1_host");
-    // 答える時間（3秒・小問6秒）より長く待つ
+    // ===== 1問目（2026-10-10 から「わかった！」なし: 両方に同時に出る） =====
+    await host.page.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active") && document.getElementById("battle-q-id").textContent, null, { timeout: 30000 });
+    const q0 = await host.page.$eval("#battle-q-id", e => e.textContent);
+    await guest.page.waitForFunction(q => document.getElementById("battle-q-id").textContent === q, q0, { timeout: 3000 }).catch(() => {});
+    await host.page.waitForTimeout(400);
+    const r1 = { hostAdv: await vis(host.page, "#advance-btn"), hostBtn: await vis(host.page, "#answer-reveal-btn"), hostSkip: await vis(host.page, "#skip-btn"), hostCountdown: await vis(host.page, "#answer-countdown"),
+      guestQ: await guest.page.$eval("#battle-q-id", e => e.textContent), guestBtn: await vis(guest.page, "#answer-reveal-btn"), guestOpen: await aOpen(guest.page), guestJudge: await vis(guest.page, "#judge-row") };
+    check("R1 ホストに「わかった！」「こたえを見る」が出ない（スキップは出る）・ゲストには同じ問題と、最初から答えと〇✕", !r1.hostAdv && !r1.hostBtn && r1.hostSkip && r1.guestQ === q0 && !r1.guestBtn && r1.guestOpen && r1.guestJudge, JSON.stringify(r1));
+    await shot(host.page, "R1_host"); await shot(guest.page, "R1_guest");
+    // 考える時間（3秒・小問6秒）より長く待つ
     await host.page.waitForTimeout(3000 * F + 1500);
-    const r2 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), banner: await host.page.$eval("#status-banner", e => e.textContent) };
-    check("R2 答える時間が切れても、ホストの答えは開かない（" + r2.banner + "）", !r2.hostOpen && !r2.hostJudge, JSON.stringify(r2));
+    const r2 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), banner: await host.page.$eval("#status-banner", e => e.textContent),
+      q: await host.page.$eval("#battle-q-id", e => e.textContent), enc: await enc(host.page) };
+    check("R2 考える時間が切れても、ホストの答えは開かない・後ろにも回らない（" + r2.banner + "）", !r2.hostOpen && !r2.hostJudge && r2.q === q0 && !r2.enc && /相手が〇✕をつけると/.test(r2.banner), JSON.stringify(r2));
     await shot(host.page, "R2_host_timeup");
-    // ゲストが答えを見て（いつでも見られる）〇を押す
-    if (await vis(guest.page, "#answer-reveal-btn")) await tap(guest.page, "#answer-reveal-btn");
-    await waitVis(guest.page, "#judge-row", 15000);
-    // ===== R6: ゲストが押さないまま判定の時間（3秒・小問6秒）が切れる =====
-    await guest.page.waitForTimeout(3000 * F + 2000);
+    // ===== R6: ゲストが押さないまま判定の帯（考える時間ぶん）が切れる =====
+    await guest.page.waitForTimeout(1000);
     const r6 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), hostNext: await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")),
       guestJudgeRow: await vis(guest.page, "#judge-row"), guestPrompt: await vis(guest.page, "#guest-judge-prompt"),
       hostBanner: await host.page.$eval("#status-banner", e => e.textContent) };
@@ -125,15 +126,14 @@ async function run(label, src, kind, opts) {
     check("R6 ゲストに〇✕ボタンが残り「〇か✕を押してください」が出る", r6.guestJudgeRow && r6.guestPrompt, JSON.stringify(r6));
     await shot(guest.page, "R6_guest_timeup"); await shot(host.page, "R6_host_waiting");
     if (opts.r7) {
-      const q0 = await host.page.$eval("#battle-q-id", e => e.textContent);
-      await host.page.waitForTimeout(15000 * F);   // 考える・答える・判定・次へ・スキップのあと、どれよりも長く
+      await host.page.waitForTimeout(15000 * F);   // 考える・判定・次へ・スキップのあと、どれよりも長く
       const idxOf = pg => pg.$eval("#battle-q-id", e => e.textContent).then(t => t === q0 ? 0 : t ? 1 : -1);   // 1問目のままなら 0
       const r7 = { hostIdx: await idxOf(host.page), guestIdx: await idxOf(guest.page), q0, q1: await host.page.$eval("#battle-q-id", e => e.textContent),
         hostOpen: await aOpen(host.page), hostNext: await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")),
         guestPrompt: await vis(guest.page, "#guest-judge-prompt") };
       check("R7 親が押さないまま " + (15 * F) + "秒待っても1問目のまま（どの時計でも次へ進まない）", r7.hostIdx === 0 && r7.guestIdx === 0 && r7.q0 === r7.q1 && !r7.hostOpen && !r7.hostNext && r7.guestPrompt, JSON.stringify(r7));
       await tap(guest.page, "#judge-ok");
-      // ホストの判定は時間切れ（3秒）で〇 → 「次の問題へ」2秒で自動 → 2問目
+      // 親の〇 → 「次の問題へ」2秒で自動 → 2問目
       await host.page.waitForFunction(q => { const t = document.getElementById("battle-q-id").textContent; return t && t !== q; }, q0, { timeout: 20000 * F }).catch(() => {});
       const r7b = { hostIdx: await idxOf(host.page), hostOpen0: r7.hostOpen };
       check("R7 親が〇を押したあとは、時計どおり自動で2問目へ進む", r7b.hostIdx === 1, JSON.stringify(r7b));
@@ -142,25 +142,24 @@ async function run(label, src, kind, opts) {
     }
     await tap(guest.page, "#judge-ok");
     await host.page.waitForTimeout(900);
-    const r3 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), badge: await badge(guest.page) };
-    check("R3 ゲストの〇でホストの答えが開く・ホストの判定ボタンも出る（ゲストのふだ「" + r3.badge + "」）", r3.hostOpen && r3.hostJudge && /あなたの判定で/.test(r3.badge), JSON.stringify(r3));
+    const r3 = { hostOpen: await aOpen(host.page), hostJudge: await vis(host.page, "#judge-row"), badge: await badge(guest.page), hostNext: await host.page.evaluate(() => document.getElementById("next-btn").classList.contains("show")) };
+    check("R3 ゲストの〇でホストの答えが開く・ホストに〇✕（親の判定）は出ない・つぎへ（ゲストのふだ「" + r3.badge + "」）", r3.hostOpen && !r3.hostJudge && r3.hostNext && /あなたの判定で/.test(r3.badge), JSON.stringify(r3));
     await shot(host.page, "R3_host_opened");
-    await tap(host.page, "#judge-ok");
-    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     // ===== 2問目: スキップ =====
     await tap(host.page, "#next-btn");
+    await host.page.waitForFunction(q => { const t = document.getElementById("battle-q-id").textContent; return t && t !== q; }, q0, { timeout: 20000 });
     await waitVis(host.page, "#skip-btn", 30000);
     await tap(host.page, "#skip-btn");
     await host.page.waitForTimeout(500);
-    const r4 = { hostOpen: await aOpen(host.page), enc: await enc(host.page) };
-    check("R4 スキップは今までどおり答えを見せる（" + r4.enc + "）", r4.hostOpen && /もう一度/.test(r4.enc), JSON.stringify(r4));
+    const r4 = { hostOpen: await aOpen(host.page), enc: await enc(host.page), guestJudge: await vis(guest.page, "#judge-row") };
+    check("R4 スキップは今までどおり答えを見せる・ゲストの〇✕は引っこむ（" + r4.enc + "）", r4.hostOpen && /もう一度/.test(r4.enc) && !r4.guestJudge, JSON.stringify(r4));
     await shot(host.page, "R4_skip");
     await tap(host.page, "#skip-continue-btn");
-    // ===== 3問目: 考える時間の時間切れ =====
-    await waitVis(host.page, "#advance-btn", 30000);
-    await host.page.waitForFunction(() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" && /時間切れ/.test(e.textContent); }, null, { timeout: 20000 });
-    const r5 = { hostOpen: await aOpen(host.page), enc: await enc(host.page) };
-    check("R5 考える時間の時間切れは答えを開かない（" + r5.enc + "）", !r5.hostOpen && /あとでもう一度/.test(r5.enc), JSON.stringify(r5));
+    // ===== 3問目: 考える時間が切れても「時間切れ」にならない =====
+    await waitVis(host.page, "#skip-btn", 30000);
+    await host.page.waitForTimeout(3000 * F + 1500);
+    const r5 = { hostOpen: await aOpen(host.page), enc: await enc(host.page), skip: await vis(host.page, "#skip-btn"), guestJudge: await vis(guest.page, "#judge-row") };
+    check("R5 考える時間が切れても答えは開かず「時間切れ」で後ろに回らない（スキップ・親の〇✕は残る）", !r5.hostOpen && !r5.enc && r5.skip && r5.guestJudge, JSON.stringify(r5));
     check("画面のエラー 0", host.errs.length + guest.errs.length === 0, host.errs.concat(guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); await shot(host.page, "ERR_host"); await shot(guest.page, "ERR_guest"); }
   finally { await host.ctx.close(); await guest.ctx.close(); }

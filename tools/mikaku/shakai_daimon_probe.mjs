@@ -9,6 +9,8 @@
 //   S3 一覧: 社会・種類「大問」に社会の大問の行が出て、図が出る
 //   S4 二人: 社会の大問の小問がホスト・ゲストに出て、判定でホストの記録が付く
 //   S5 紙で出す: 社会の大問に紙の印を付けた写しで、社会のときだけ紙の一覧に出る（理科の紙の一覧には出ない）
+// 2026-10-10 追記: 「わかった！」と二人の時間切れ（後ろへ回る）をなくした。S4 はゲストの最初から出ている〇でホストの答えが開く形に、
+//   S6 は「考える時間が切れても何も起きない（時間切れの知らせなし・記録なし・後ろへ回らない）」に変えた
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -96,7 +98,9 @@ async function run(label, src) {
     await tap(pg, "#subject-social"); await pg.waitForTimeout(300);
     const u6 = await pg.evaluate(() => { const e = [...document.querySelectorAll("#unit-choices .choice")].find(x => x.textContent.includes("第6回.鎌倉時代")); return e ? e.textContent.replace(/\s+/g, " ") : ""; });
     const qa6 = await pg.evaluate(() => QA_DATA.filter(q => q.subj === "社会" && q.u === "第6回.鎌倉時代" && q.kind !== "daimon").length);
-    check("S1 社会の 第6回.鎌倉時代 の数＝一問一答 " + qa6 + "＋小問 " + ITEM_IDS.length, u6.includes((qa6 + ITEM_IDS.length) + "問"), u6);
+    // ★2026-10-10 組分けロング編（kumi6_*）が別の単元で入ったので、この単元に入る小問だけを数える
+    const item6 = groups.filter(g => /^g6_/.test(g.key)).reduce((a, g) => a + g.items.length, 0);   // 練習問題の大問（第6回.鎌倉時代）の小問。ロング編 long_* は別の単元
+    check("S1 社会の 第6回.鎌倉時代 の数＝一問一答 " + qa6 + "＋小問 " + item6, item6 > 0 && u6.includes((qa6 + item6) + "問"), u6);
     await shot(pg, "S1_units");
     // ===== S2 一人 =====
     await tap(pg, "#solo-start-btn"); await pg.waitForTimeout(600);
@@ -128,35 +132,36 @@ async function run(label, src) {
     await tap(guest.page, "#go-join"); await guest.page.fill("#join-code-input", code); await tap(guest.page, "#join-btn");
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
+    // ★2026-10-10 「わかった！」はなくした。問題は両方の画面に同時に出る（ゲストには最初から答えと〇✕）
+    await waitVis(host.page, "#skip-btn", 30000);
     const b1 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-    await tap(host.page, "#advance-btn");
     await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", b1, { timeout: 20000 });
     const gb = await guest.page.evaluate(() => { const b = document.getElementById("battle-daimon"); return !!b && getComputedStyle(b).display !== "none" && /大問/.test(b.textContent); });
     await shot(guest.page, "S4_guest"); await shot(host.page, "S4_host");
-    // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-    await tap(guest.page, "#answer-reveal-btn");
+    // ★ホストの答えはゲストの〇✕で開く（ゲストの〇✕は最初から出ている・ホストに〇✕は出ない）
     await waitVis(guest.page, "#judge-row", 30000); await tap(guest.page, "#judge-ok");
-    await waitVis(host.page, "#judge-row", 30000); await tap(host.page, "#judge-ok");
     await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
     const hs = await statOf(host.page, b1);
     check("S4 二人: 社会の大問の小問 " + b1 + " がホスト・ゲストに大問の形で出て、ホストの記録が付く", b1 === ITEM_IDS[0] && gb && hs && hs.correct === 1, b1 + " guest=" + gb + " " + JSON.stringify(hs));
-    // ===== S6 二人: 社会の大問の小問で時間切れ → 答えを見せず・記録せず・あとで出し直す =====
+    // ===== S6 二人: 社会の大問の小問で考える時間が切れても何も起きない（2026-10-10 から。前は時間切れで後ろへ回した） =====
     await tap(host.page, "#next-btn");
-    await waitVis(host.page, "#advance-btn", 30000);
+    await host.page.waitForFunction(p => { const e = document.getElementById("skip-btn"); return document.getElementById("battle-q-id").textContent !== "No." + p && !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, b1, { timeout: 30000 });
     const t1 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
     await host.page.waitForTimeout(5000);   // 考える時間 1秒×2 が切れる
     const tmsg = await host.page.evaluate(() => { const e = document.getElementById("skip-encourage"); return e && getComputedStyle(e).display !== "none" ? e.textContent : ""; });
     const tst = await statOf(host.page, t1);
-    if (await host.page.evaluate(() => getComputedStyle(document.getElementById("skip-continue-btn")).display !== "none")) { await tap(host.page, "#skip-continue-btn"); await host.page.waitForTimeout(800); }
-    await waitVis(host.page, "#advance-btn", 15000).catch(() => {});
+    const tstate = await host.page.evaluate(() => ({ id: document.getElementById("battle-q-id").textContent.replace(/^No\./, ""), a: document.getElementById("battle-a-block").classList.contains("show") }));
+    // ゲストの〇で進める
+    await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
+    await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
+    await tap(host.page, "#next-btn");
+    await host.page.waitForFunction(p => document.getElementById("battle-q-id").textContent !== "No." + p, t1, { timeout: 15000 });
     const t2 = await host.page.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
-    await tap(host.page, "#advance-btn").catch(() => {});
     await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i, t2, { timeout: 20000 }).catch(() => {});
     const later = await guest.page.evaluate(() => !!document.querySelector("#battle-daimon .daimon-later"));
     await shot(guest.page, "S6_guest_after_timeup");
-    check("S6 社会の小問 " + t1 + " の時間切れ: 「あとでもう一度」・記録なし・次は " + t2 + "・ゲストの前の小問の欄に「あとでもう一度出ます」",
-      t1 === ITEM_IDS[1] && /あとでもう一度/.test(tmsg) && tst === null && t2 === ITEM_IDS[2] && later, JSON.stringify({ tmsg, tst, t2, later }));
+    check("S6 社会の小問 " + t1 + " の考える時間が切れても何も起きない（時間切れの知らせなし・記録なし・同じ小問のまま・答えは閉じたまま）・ゲストの〇で次は " + t2 + "・「あとでもう一度出ます」は出ない",
+      t1 === ITEM_IDS[1] && tmsg === "" && tst === null && tstate.id === t1 && !tstate.a && t2 === ITEM_IDS[2] && !later, JSON.stringify({ tmsg, tst, tstate, t2, later }));
     // ===== S5 紙で出す =====
     SERVED_D = patchedDaimon(true);
     await pg.reload(); await pg.waitForTimeout(900);
@@ -168,7 +173,7 @@ async function run(label, src) {
     await tap(pg, "#paper-open-btn"); await pg.waitForTimeout(400);
     const keysR = await pg.evaluate(() => [...document.querySelectorAll("#paper-list-body .paper-row")].map(e => e.dataset.key));
     check("S5 紙で出す: 社会のときは社会の紙の大問だけ・理科の紙の一覧には社会が出ない（社会 " + keysS.length + "・理科 " + keysR.length + "）",
-      btnS && keysS.length === groups.length && keysS.every(k => /^g/.test(k)) && keysR.length > 0 && keysR.every(k => /^r/.test(k)), JSON.stringify({ keysS, nR: keysR.length }));
+      btnS && keysS.length === groups.length && keysS.every(k => /^(g|long_)/.test(k)) && keysR.length > 0 && keysR.every(k => /^r/.test(k)), JSON.stringify({ keysS, nR: keysR.length }));
     check("画面のエラー 0", solo.errs.length + host.errs.length + guest.errs.length === 0, [].concat(solo.errs, host.errs, guest.errs).join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }
   finally { await solo.ctx.close(); await host.ctx.close(); await guest.ctx.close(); }

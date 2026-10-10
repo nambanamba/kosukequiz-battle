@@ -160,17 +160,16 @@ async function setup(host, guest) {
 // 1問ぶん: 両方が「答えを見る」→ ゲストがホストを判定（＝ホストの記録）→ ホストがゲストを判定
 // ★2026-10-08 二人のときのホストには「こたえを見る」が無い。ホストの答えと判定ボタンはゲストの〇✕で開く
 async function reveal(host, guest) {
-  await visible(host.page, "#answer-countdown");
-  await visible(guest.page, "#answer-reveal-btn");
-  await tap(guest.page,"#answer-reveal-btn");
+  // 2026-10-10 新しい流れ: 問題は両方に同時に出る。ホストは #skip-btn が出る（#answer-countdown・#advance-btn は出ない）。
+  //   ゲスト（親）は最初から答えと #judge-row が出ているので、「こたえを見る」は押さない
+  await visible(host.page, "#skip-btn");
   await visible(guest.page, "#judge-row");   // 2026-09-16 から判定ボタンは0.3秒遅れて出る。出るのを待ってから押す
 }
 async function guestJudgesHost(guest, hostCorrect) {
   await tap(guest.page,hostCorrect ? "#judge-ok" : "#judge-ng");
 }
 async function hostJudgesGuest(host) {
-  await visible(host.page, "#judge-row");
-  await tap(host.page,"#judge-ok");
+  // 2026-10-10 ホストがゲストを判定する段は無くなった。ゲストの〇✕でホストの答えが開き #next-btn が出る
   await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"));
 }
 async function playQuestion(host, guest, hostCorrect) {
@@ -212,7 +211,7 @@ async function onResult(page) {
     ids.push(await qid(host.page));
     await reloadAndResume(host);                                                               // 3問目の前でリロード
     let reconnected = true;
-    try { await visible(host.page, "#answer-countdown", 5000); } catch { reconnected = false; }
+    try { await visible(host.page, "#skip-btn", 5000); } catch { reconnected = false; }
     ok("[4] ★対戦中にリロードすると、ページを離れる確認が出る", lastReloadAsked);
     ok("[1] 1回目のリロードのあと、ゲストとつながって続きが出る", reconnected);
     if (reconnected) {
@@ -239,7 +238,7 @@ async function onResult(page) {
         const code2 = await host.page.evaluate(() => JSON.parse(localStorage.getItem("kq_battle_host_session_v1") || "{}").code);
         ok("[2] ★保存された部屋のコードが4桁のまま（「----」にならない）", /^\d{4}$/.test(code2 || ""), code2);
         let again = true;
-        try { await visible(host.page, "#answer-countdown", 5000); } catch { again = false; }
+        try { await visible(host.page, "#skip-btn", 5000); } catch { again = false; }
         ok("[2] ★やり直しラウンドの途中で再開して、ゲストとつながる", again);
         if (again) {
           await playQuestion(host, guest, true); await next(host);                            // やり直し2問目 〇（記録は✕のまま）
@@ -292,7 +291,7 @@ async function onResult(page) {
     ok("[3] ★採点ずみの問題に戻らず、次の問題から再開する", (await text(host.page, "#battle-counter")).startsWith("3"), await text(host.page, "#battle-counter"));
     ok("[3] 2問目の〇は1回だけ・得点が保たれる", st[q2]?.correct === 1 && (await text(host.page, "#score-me")) === scoreBefore,
       JSON.stringify(st[q2]) + " score=" + (await text(host.page, "#score-me")));
-    await visible(host.page, "#answer-countdown", 5000);
+    await visible(host.page, "#skip-btn", 5000);
     await playQuestion(host, guest, true); await next(host);
     await onResult(host.page);
     // ★結果画面では「もう一勝負」が3秒後に自動で始まるので、その前にリロードする
@@ -324,7 +323,7 @@ async function onResult(page) {
       return prev;
     });
     await reloadAndResume(host);
-    await visible(host.page, "#answer-countdown", 5000);
+    await visible(host.page, "#skip-btn", 5000);
     await playQuestion(host, guest, false); await next(host);         // 2問目 ✕
     await playQuestion(host, guest, true); await next(host);          // 3問目 〇
     await onResult(host.page);
@@ -352,7 +351,7 @@ async function onResult(page) {
       return nextId;
     });
     await reloadAndResume(host);
-    await visible(host.page, "#answer-countdown", 5000);
+    await visible(host.page, "#skip-btn", 5000);
     const shown = (await host.page.textContent("#battle-q-id") || "").trim();
     ok("[7] ★消えた問を飛ばして、次の問（" + want + "）から続く", shown.endsWith(want), shown);
     await playQuestion(host, guest, true); await next(host);          // 2問目

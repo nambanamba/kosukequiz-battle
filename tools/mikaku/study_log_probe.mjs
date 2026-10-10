@@ -15,6 +15,7 @@
 //   W1 書き込みに失敗しても消さない・ホームに「記録の書き出しをしてください」・書き出しにはその回が入る
 //   D1 大問ごとの記録CSV: 大問の数だけ行があり、小問の記録をまとめた数が合う
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
+// 2026-10-10 追記: 二人の新しい流れに合わせた（B1: 「わかった！」・ホストの〇✕を外した。ゲストの端末では自分の答えの記録は付かない）
 import http from "node:http"; import fs from "node:fs"; import path from "node:path"; import os from "node:os";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
@@ -251,23 +252,22 @@ async function run(label, src) {
     await waitVis(host.page, "#start-together-btn", 60000);
     await tap(host.page, "#start-together-btn"); await tap(guest.page, "#join-start-together-btn");
     for (let k = 0; k < 2; k++) {
-      await waitVis(host.page, "#advance-btn", 30000);
+      // ★2026-10-10 「わかった！」なし。問題は両方に同時に出る。ゲスト（親）には最初から答えと〇✕。ホストへの〇✕は無い
+      await waitVis(host.page, "#skip-btn", 30000);
       const id = await qid(host.page, "battle");
-      await tap(host.page, "#advance-btn");
       await guest.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 });
       await host.page.waitForTimeout(1000);
-      // ★2026-10-08 二人のときのホストの答えはゲストの〇✕で開く（ホストの「こたえを見る」は無い）
-      await tap(guest.page, "#answer-reveal-btn");
       await waitVis(guest.page, "#judge-row", 15000); await tap(guest.page, "#judge-ok");
-      await waitVis(host.page, "#judge-row", 15000); await tap(host.page, "#judge-ok");
       await host.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 });
       await tap(host.page, "#next-btn");
     }
     await host.page.waitForFunction(() => document.getElementById("screen-result").classList.contains("active"), null, { timeout: 20000 });
     await guest.page.waitForFunction(() => document.getElementById("screen-result").classList.contains("active"), null, { timeout: 20000 });
     const hb = await grabRows(host.page, "#export-studylog-link"), gb = await grabRows(guest.page, "#export-studylog-link");
-    const ok1 = r => r && r.length === 1 && r[0]["一人・対戦"] === "対戦" && r[0]["答えた数"] === "2" && r[0]["正解数"] === "2" && r[0]["出した問題数"] === "2" && r[0]["途中でやめた"] === "いいえ" && +r[0]["1問の平均秒"] >= 0.8;
-    check("B1 二人: ホストとゲストの端末それぞれに対戦の1行（ホスト／ゲスト・答えた2・正解2・平均秒）", ok1(hb) && ok1(gb) && hb[0]["自分の役"] === "ホスト" && gb[0]["自分の役"] === "ゲスト", JSON.stringify({ hb, gb }));
+    const okH = r => r && r.length === 1 && r[0]["一人・対戦"] === "対戦" && r[0]["答えた数"] === "2" && r[0]["正解数"] === "2" && r[0]["出した問題数"] === "2" && r[0]["途中でやめた"] === "いいえ" && +r[0]["1問の平均秒"] >= 0.8;
+    // ゲスト（親）は答える側ではない: 対戦の1行はあるが、答えた数・正解数は0（ゲストの端末には自分の答えの記録は付かない）
+    const okG = r => r && r.length === 1 && r[0]["一人・対戦"] === "対戦" && r[0]["答えた数"] === "0" && r[0]["正解数"] === "0" && r[0]["出した問題数"] === "2" && r[0]["途中でやめた"] === "いいえ";
+    check("B1 二人: ホストの端末に対戦の1行（ホスト・答えた2・正解2・平均秒）・ゲストの端末にも対戦の1行（ゲスト・出した2・答えた0）", okH(hb) && okG(gb) && hb[0]["自分の役"] === "ホスト" && gb[0]["自分の役"] === "ゲスト", JSON.stringify({ hb, gb }));
     const errs = all.flatMap(d => d.errs);
     check("画面のエラー 0", errs.length === 0, errs.join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }

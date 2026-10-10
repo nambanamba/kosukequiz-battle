@@ -86,6 +86,9 @@ await new Promise(r => server.listen(0, "127.0.0.1", r));
 const PAGE_URL = "http://127.0.0.1:" + server.address().port + "/index.html";
 const browser = await chromium.launch({ channel: "chrome" });
 
+// ★2026-10-10 追記: 二人の流れが新しくなった（ホストの「わかった！」・ホストが付ける〇✕・ゲストの記録・相手の点の箱は無い）。
+//   1問目は両方の画面に同時に出る → ゲストは最初から答えと〇✕が出ている → ゲストの〇でホストの記録が付く。
+//   点はホストの〇だけ（ゲストの #score-me も scores.host）。ゲスト自身の記録は付かない（＝直しでも動かない）。
 // ---- 1回ぶんの通し（部屋を作る→入る→1問目をゲストが「せいかい」（★2026-10-10 から時間切れの自動〇は無い）→直す→直し戻す）----
 const JUDGE_SEC = 3;
 async function run(label, src) {
@@ -138,8 +141,6 @@ async function run(label, src) {
     await tap(guest.page, "#join-start-together-btn");
 
     // --- 1問目。ホストが「わかった！」を押して、二人の答え合わせに入る ---
-    await host.page.waitForSelector("#advance-btn", { state: "visible", timeout: 20000 });
-    await tap(host.page, "#advance-btn");
     await host.page.waitForFunction(() => /^No\..+/.test(document.getElementById("battle-q-id").textContent), null, { timeout: 20000 });
     const qid0 = await qidOf(host.page);
 
@@ -192,8 +193,8 @@ async function run(label, src) {
       !((a.correct > 0) && (a.wrong > 0)), JSON.stringify(s2[qid0] || null));
     const score2 = await host.page.$eval("#score-me", e => e.textContent);
     check("ホストの得点が 0 に戻った", score2 === "0", "score-me=" + score2);
-    const gScore2 = await guest.page.$eval("#score-opp", e => e.textContent);
-    check("ゲストの画面の「相手の得点」も 0 になった", gScore2 === "0", "score-opp=" + gScore2);
+    const gScore2 = await guest.page.$eval("#score-me", e => e.textContent);
+    check("ゲストの画面の点（子どもの〇の数）も 0 になった", gScore2 === "0", "guest score-me=" + gScore2);
     check("★いま出ている2問目の記録は動いていない", !s2[qid1], JSON.stringify(s2[qid1] || null));
     await shot(guest.page, "3_guest_fixed");
     await shot(host.page, "3_host_fixed");
@@ -210,8 +211,8 @@ async function run(label, src) {
 
     // --- ゲスト自身の記録（＝ホストが下した判定）は動いていないこと（鳴りすぎない側）---
     const gs = await statsOf(guest.page);
-    check("★ゲスト自身の記録は、この直しでは動かない",
-      !!gs[qid0] && gs[qid0].correct === 1 && !(gs[qid0].wrong > 0), JSON.stringify(gs[qid0] || null));
+    check("★ゲスト自身の記録は付かない（新しい流れ。直しでも動かない）",
+      !gs[qid0], JSON.stringify(gs[qid0] || null));
 
     check("画面のエラーが 0（ホスト）", host.errs.length === 0, host.errs.join(" | "));
     check("画面のエラーが 0（ゲスト）", guest.errs.length === 0, guest.errs.join(" | "));
