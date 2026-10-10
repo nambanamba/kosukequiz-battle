@@ -905,7 +905,11 @@ await test("一覧: 押した行だけ描き直す／開いたあと全行そろ
   // ★いちばん問題の多い単元を選び、その直後に絞りこみを変える。古い「続き」が止まらないと、0件のはずの一覧に行が足される
   const bigUnit = await t.page.evaluate(() => {
     const c = {};
-    QA_DATA.filter(q => q.subj === "社会" && q.kind !== "calc").forEach(q => { c[q.u] = (c[q.u] || 0) + 1; });
+    // ★2026-10-10 第7回（118問＋大問）の取り込みで、いちばん多い単元が大問のある単元になった。
+    //   大問のある単元は「◯問」（答える小問の数）と行の数（大問は1行）がもともと合わない（第6回も 82問・64行）ので、
+    //   この検査では大問の無い単元から選ぶ（検査の前提をそろえただけ。アプリは変えていない）
+    const hasDaimon = new Set(DAIMON_DATA.filter(g => g.subj === "社会").map(g => g.kai));
+    QA_DATA.filter(q => q.subj === "社会" && q.kind !== "calc" && !hasDaimon.has(Number((/^第(\d+)回\./.exec(q.u || "") || [])[1]))).forEach(q => { c[q.u] = (c[q.u] || 0) + 1; });
     return Object.entries(c).sort((a, b) => b[1] - a[1])[0][0];
   });
   await t.page.selectOption("#list-unit-select", bigUnit);
