@@ -3723,7 +3723,7 @@ function spShowNow(k){
   const el = document.getElementById(k + "-sp-now");
   if(!el) return;
   const r = spRounds[k];
-  const show = !spOff() && !!r && !(k === "battle" && role !== "host") && !(k === "solo" && reviewMode);
+  const show = !spOff() && !!r && !(k === "battle" && (role !== "host" || !kidFlow())) && !(k === "solo" && reviewMode);
   el.style.display = show ? "" : "none";
   if(show) el.textContent = "⚡" + r.total;
 }
@@ -3747,7 +3747,7 @@ function spRenderResult(k, elId){
   const el = document.getElementById(elId);
   if(!el) return;
   const r = spRounds[k];
-  if(spOff() || !r || (k === "battle" && role !== "host") || (k === "solo" && reviewMode)){ el.style.display = "none"; return; }
+  if(spOff() || !r || (k === "battle" && (role !== "host" || !kidFlow())) || (k === "solo" && reviewMode)){ el.style.display = "none"; return; }
   const st = spStats(), diff = st.today - st.yesterday;
   const rec = st.today > 0 && st.today > st.bestPrev;
   el.innerHTML = '<div class="sp-sum-now">今回 ⚡' + r.total + '</div>'
@@ -9217,9 +9217,11 @@ function choiceOrdersPayload(ids){
 }
 function withChoiceOrders(payload){
   try{ payload.co = choiceOrdersPayload(questionIds); }catch(e){}
+  if(role === "host") payload.fm = fairMode ? 1 : 0;   // ★2026-10-10 ホストの公平モード（こどもどうし）をゲストに知らせる
   return payload;
 }
 function applyChoiceOrders(data){
+  if(data && typeof data.fm === "number") guestFairFromHost = data.fm === 1;   // ★2026-10-10
   if(!data || !data.co || typeof data.co !== "object") return;
   Object.keys(data.co).forEach(k => {
     const p = data.co[k];
@@ -9738,6 +9740,7 @@ function leaveRoom(){
   role = null;
   refreshSpeedRows();   // ★2026-10-10 抜けたら速さのボタンを戻す
   guestMergeFromHost = false;   // ★2026-10-09
+  guestFairFromHost = false;   // ★2026-10-10
   questionIds = [];
   currentIndex = -1;
   scores = {host:0, guest:0};
@@ -9957,7 +9960,7 @@ function setupActions(){
     opponentVerdictOfMe = data.correct;
     // ★⚡2026-10-10 二人のスピードポイント（ホスト＝子どもの端末だけ）。親が〇✕を押したときに決まる。親の反応ぶん2秒を引く
     let spE = null;
-    if(role === "host" && room && hostRecordedIdx !== currentIndex){
+    if(role === "host" && kidFlow() && hostRecordedIdx !== currentIndex){
       spE = spDecide("battle", questionIds[currentIndex], spElapsed("battle") - SP_JUDGE_LAG_SEC);
       if(spE) spBonus("battle", questionIds[currentIndex], data.correct);
     }
@@ -10440,7 +10443,7 @@ function showQuestion(idx, hostPrivate){
 //      who spaces out doesn't stall the game ----
 function hostAdvanceAndArm(idx){
   if(idx >= questionIds.length){ endGame(); return; }
-  if(room){ hostShowTogether(idx); return; }   // ★2026-10-10 二人のときは「わかった！」なし。両方に同時に出す
+  if(kidFlow()){ hostShowTogether(idx); return; }   // ★2026-10-10 二人のときは「わかった！」なし。両方に同時に出す
   if(fairMode || headStartSec <= 0){
     // 公平モード: ホストだけが問題を先読みして考える時間のアドバンテージを
     // 得ないよう、先読み・スキップは行わず即座に両者へ同時配信する
@@ -10477,6 +10480,13 @@ function hostAdvanceAndArm(idx){
 //   ・考える時間は目安の帯だけ。切れても答えは開かず、後ろにも回さない（親の〇✕を待つ）
 //   ・親が答えて子どもが判定する流れ（ホストの〇✕）はなくした。点は子どもの〇の数だけ
 //   ・合図: 1問目（このラウンドでまだ送っていない）は startAction、2問目からは nextAction。どちらにも考える時間（ts）を載せる
+// ★2026-10-10（kids-mode-fix）ユーザー「こどもどうし対戦モード（公平モード）も、正誤が入れられなくなってます」。
+//   親子の流れ（親だけが〇✕・わかったなし）は「公平モードでない二人」だけ。公平モード（こどもどうし）は #39 の前（ce0ce6f）の流れ：
+//   両方が答えて、おたがいに〇✕を付ける。⚡スピードポイントも公平モードでは出さない（数えない）。
+//   ゲストは自分の設定ではなく、ホストの公平モードを合図（start/next/status の fm）で受け取る（guestFairFromHost）
+let guestFairFromHost = false;
+function battleFairNow(){ return role === "guest" ? guestFairFromHost : !!fairMode; }
+function kidFlow(){ return !!room && !battleFairNow(); }
 let roundStartSent = false;   // ホストだけ: このラウンドの startAction をもう送ったか（スキップで同じ添字に次の問題が来ても、送り直さない）
 function hostShowTogether(idx){
   if(idx >= questionIds.length){ endGame(); return; }
@@ -10585,7 +10595,7 @@ function performDaimonSkip(){
   els["advance-btn"].style.display = "none";
   const id = questionIds[currentIndex];
   studyLogAnswer("battle", id, "skip", daimonSkipRecorded.has(id));   // ★学習ログ
-  if(room) spToast(spDecide("battle", id, spElapsed("battle")));   // ★⚡小問のスキップも同じ
+  if(kidFlow()) spToast(spDecide("battle", id, spElapsed("battle")));   // ★⚡小問のスキップも同じ
   // ★2026-10-05 ユーザー「あとで出しましょう」: 小問のスキップも一問一答とそろえて、答えを見せて✕で記録し、あとでもう一度出す。
   //   ✕を付けるのは1回目だけ（出し直しでまたスキップしても、出し直しで答えても、ホストの記録は付けない）
   if(hostRecordedIdx !== currentIndex && !daimonSkipRecorded.has(id)){
@@ -10631,7 +10641,7 @@ function performSkip(){
   stopCountdown();
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
-  if(room) spToast(spDecide("battle", questionIds[currentIndex], spElapsed("battle")));   // ★⚡子どものスキップも速さでつく（2秒は引かない）
+  if(kidFlow()) spToast(spDecide("battle", questionIds[currentIndex], spElapsed("battle")));   // ★⚡子どものスキップも速さでつく（2秒は引かない）
   const skippedId = moveCurrentToEndOfRound();
   studyLogAnswer("battle", skippedId, "skip", hostSkippedIds.has(skippedId));   // ★学習ログ
   // ★hostSkippedIds に入るのは「自分で押した」ときだけ。ここに入った問題は、
@@ -10745,7 +10755,7 @@ function enterKidPhase(){
   }
 }
 function enterAnsweringPhase(){
-  if(room){ enterKidPhase(); return; }   // ★2026-10-10 二人のとき
+  if(kidFlow()){ enterKidPhase(); return; }   // ★2026-10-10 二人のとき
   els["skip-btn"].style.display = "none";
   els["advance-btn"].style.display = "none";
   els["status-banner"].classList.remove("win","lose");
@@ -10949,7 +10959,7 @@ function revealAnswer(){
   const idx = currentIndex;
   clearTimeout(judgeShowTimer);
   // ★2026-10-10 二人のときのホスト（子ども）は親を判定しない（親が答える流れはなくした）。スキップも、もう出さない
-  if(role === "host" && room){ els["skip-btn"].style.display = "none"; stopCountdown(); return; }
+  if(role === "host" && kidFlow()){ els["skip-btn"].style.display = "none"; stopCountdown(); return; }
   judgeShowTimer = setTimeout(()=>{
     // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
     if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
@@ -10977,7 +10987,7 @@ function judgeOpponent(correct){
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
   els["status-banner"].textContent = "相手を「"+(correct ? "せいかい" : "まちがい")+"」と判定しました。";
-  if(role === "guest" && room){ stopCountdown(); els["my-result"].style.display = "none"; }   // ★2026-10-10 親は答えないので、自分の結果は出さない
+  if(role === "guest" && kidFlow()){ stopCountdown(); els["my-result"].style.display = "none"; }   // ★2026-10-10 親は答えないので、自分の結果は出さない
   else updateMyResultUI();
   updateJudgeFixUI();
   maybeFinishQuestion();
@@ -11181,7 +11191,7 @@ function hideBigVerdict(){
 
 function maybeFinishQuestion(){
   // ★2026-10-10 二人のとき（room）は、親（ゲスト）の子ども（ホスト）への判定だけで決まる（ホストの〇✕はなくした）
-  const kid = !!room;
+  const kid = kidFlow();
   if(kid){ if((role === "host" ? opponentVerdictOfMe : myVerdictOfOpponent) === null) return; }
   else if(myVerdictOfOpponent === null || opponentVerdictOfMe === null) return;
   if(scored) return;
@@ -11239,7 +11249,7 @@ els["next-btn"].addEventListener("click", goToNextQuestion);
 
 function updateScoreUI(){
   // ★2026-10-10 二人のとき（room）は、点の欄を子どもの〇の数だけにする（親の点・早押しの勝ち負けはもう無い）
-  const kid = !!room;
+  const kid = kidFlow();
   const my = kid ? scores.host : (role === "host" ? scores.host : scores.guest);
   const opp = role === "host" ? scores.guest : scores.host;
   els["score-me"].textContent = my;
@@ -11267,7 +11277,7 @@ function endGame(){
   els["result-score"].textContent = "あなた："+my+"問正解";
   els["result-sub"].textContent = "相手："+opp+"問正解";
   // ★2026-10-10 二人のとき（room）は子どもの〇の数だけ（親の点は出さない）
-  if(room){
+  if(kidFlow()){
     els["result-score"].textContent = (role === "guest" ? "子ども：" : "あなた：") + scores.host + "問正解";
     els["result-sub"].textContent = "";
   }
