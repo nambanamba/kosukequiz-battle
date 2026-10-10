@@ -11972,11 +11972,10 @@ function sendSession(s){
   }catch(e){ console.error("send session failed", e); }
 }
 // 1日1回: 今の記録CSVと同じ中身
-function sendSnapshotIfDue(force){
+function sendSnapshotIfDue(){
   if(!sendCfg() || sendViewOnly()) return;   // ★見るだけ: 送った日の印もつけない（オフに戻した日に送る）
   const day = sendDay();
-  // ★force … 「今回の分を完了にする」（2026-10-10）。今日もう送っていても、いまの記録で同じ日のファイルを上書きして送る
-  try{ if(!force && window.localStorage.getItem(SEND_SNAP_KEY) === day) return; }catch(e){ return; }
+  try{ if(window.localStorage.getItem(SEND_SNAP_KEY) === day) return; }catch(e){ return; }
   try{
     const rows = recordCsvRows();
     try{ window.localStorage.setItem(SEND_SNAP_KEY, day); }catch(e){}
@@ -12682,7 +12681,7 @@ function planNoteBattleEnd(finished){
 // ★2026-10-10 ユーザー「1問残して子供が放棄or学校に行く時間になってしまったら、やったところまで記録してクラウドにあげたい。
 //   今回の分を完了にするというボタンがあればできると思います。完了にしたら次のセットで画面を出してください」
 //   → セットの下の「今回の分を完了にする」。やった分の記録（〇✕）は答えるたびに端末に付いているので何も変えない。
-//     ・途中の回があれば閉じて送る（学習ログ）・いまの記録を今日のスナップショットに上書きして送る
+//     ・記録（学習ログ・スナップショット）は、これまでの送る契機（回を終えた・やめた・開き直した・1日1回）のまま。ここでは新しく送らない
 //     ・まだ終わっていない行は「できたことにする」（manual）にする。plan_done には closed:true を付ける（司令塔が見分けられる）
 //     ・次のセットがあれば、その場でそちらを「いま進めているセット」にして出す
 const PLAN_CLOSED_KEY = "kq_battle_plan_closed_v2";   // {番号: 完了にした時刻}
@@ -12690,14 +12689,12 @@ function planClosedAt(no){ const d = planLoad(planStoreKey(PLAN_CLOSED_KEY, no))
 function planCloseSet(no){
   if(!planSetOf(no) || sendViewOnly()) return false;
   try{ planCheckSavedSessions(); }catch(e){ console.error("close set: check failed", e); }
-  ["solo", "battle"].forEach(k => { try{ studyLogPause(k); }catch(e){ console.error("close set: pause failed", e); } });
   const all = planLoad(planStoreKey(PLAN_CLOSED_KEY, no)) || {};
   all[no] = Date.now();
   planSave(planStoreKey(PLAN_CLOSED_KEY, no), all);
   const s = planSetOf(no), sk = planSkipOf(no);
   s.items.forEach((it, i) => { const k = planItemKey(it, i); if(!planDoneOf(no)[k] && !sk[k]) planMarkManual(no, k); });
   planSendDone(no);   // ★全部できていた行しか無いときも closed を送る
-  try{ sendSnapshotIfDue(true); sendFlush(); }catch(e){ console.error("close set: send failed", e); }
   const nx = planFirstOpen(planIsAuto(no) ? undefined : no);
   if(nx) planShownNo = nx;   // 次のセットが読めていれば、そちらを出す。無ければ「おわり！」のまま
   return true;

@@ -4,7 +4,7 @@
 // 本物の Chrome・390x844・まねの GitHub API サーバ。使い方: node tools/mikaku/plan_close_probe.mjs
 //   C1 セットの下（行のすぐ下）に「今回の分を完了にする」。全部できたセットには出ない
 //   C2 押すと確認。キャンセルなら何も変わらない・送らない
-//   C3 OK → 残りの行は「できたことにする」・plan_done に closed:true・all:true・今日のスナップショットを上書きして送る
+//   C3 OK → 残りの行は「できたことにする」・plan_done に closed:true・all:true。記録（スナップショット）はボタンでは送らない
 //   C4 記録（plan_／送信以外の localStorage）は変わらない
 //   C5 次のセットが「いま進めているセット」として出る（10/8）。次が無ければ「おわり！」のまま
 //   E  画面のエラー 0
@@ -114,7 +114,7 @@ async function run(label, src) {
     const w1 = sent(1), sp = snapPath();
     check("C3 OK → plan_done(1) に closed:true・all:true・残りの行は done＋manual・最初の行は manual ではない",
       dialogs.length === 1 && w1 && w1.closed === true && /^\d{4}-/.test(w1.closedAt || "") && w1.all === true && w1.items.every(x => x.done) && !w1.items[0].manual && w1.items[1].manual && w1.items[2].manual, JSON.stringify(w1 && { closed: w1.closed, all: w1.all, items: w1.items.map(x => [x.done, x.manual]) }));
-    check("C3b 今日のスナップショットを、いまの記録で上書きして送る（今日もう送ってあっても）", sp && snapPuts0 >= 1 && puts.get(sp) > snapPuts0, JSON.stringify({ sp, before: snapPuts0, after: sp && puts.get(sp) }));
+    check("C3b 記録（スナップショット）は、ボタンでは新しく送らない（これまでの契機だけ）", sp && snapPuts0 >= 1 && puts.get(sp) === snapPuts0, JSON.stringify({ sp, before: snapPuts0, after: sp && puts.get(sp) }));
     check("C4 記録（plan_／送信以外）は変わらない", (await snapRec()) === before && before.length > 50, before.length);
     // C5 次のセット
     const cur = await head("#plan-cur");
