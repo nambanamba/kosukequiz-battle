@@ -5181,7 +5181,8 @@ function saveBattleSession(){
       answered: Array.from(battleAnsweredIds),
       requeuedIdx: hostRequeuedIdx,
       plan: planBattleActive,                    // ★今日やることの行（2026-10-07）
-      timeupIds: Array.from(battleTimeupIds)
+      timeupIds: Array.from(battleTimeupIds),
+      subj: currentSubject                       // ★2026-10-11 「前回の残り」を同じ教科でだけ使う
     }));
   }catch(e){}
 }
@@ -5193,6 +5194,46 @@ function loadBattleSession(){
 }
 function clearBattleSession(){
   try{ window.localStorage.removeItem(BATTLE_SESSION_KEY); }catch(e){}
+}
+// ★2026-10-11 ユーザー「トップの2人で始めるボタンなんですが、途中までやって止めたら、残りができるようにしてほしい。
+//   とめるとまた20問から始まります」。ホームの「二人で始める」で始めた対戦を途中でやめたら、
+//   次に押したとき「1回目をまだ出していない問題」だけで始める（答えた・スキップ・時間切れは1回目に数える。ぐるぐるの戻し分は残りに数えない）。
+//   ・元は保存した対戦（BATTLE_SESSION_KEY）。「おわる」で終えた分は保存が消えるので、別の入れ物（LEFTOVER_KEY）に残りだけ控える
+//   ・今日やることの行（plan）からの対戦、教科がちがうもの、ぐるぐる（もう一勝負）の途中は対象外
+const BATTLE_LEFTOVER_KEY = "kq_battle_leftover_v1";
+function battleLeftoverFrom(st){
+  if(!st || st.plan || st.inMissRetryRound || st.subj !== currentSubject || !Array.isArray(st.questionIds)) return [];
+  const done = new Set([].concat(st.answered || [], st.hostSkippedIds || [], st.timeupIds || []));
+  const known = new Set(QA_DATA.map(d => d.id));
+  DAIMON_ITEM.forEach((v, id) => known.add(id));
+  const seen = new Set();
+  return st.questionIds.filter(id => {
+    if(done.has(id) || seen.has(id) || !known.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+function loadBattleLeftover(){
+  const s = loadBattleSession();
+  if(s && s.code){ const a = battleLeftoverFrom(s); return a.length ? a : []; }   // 保存した対戦があれば、それがいちばん新しい
+  try{
+    const raw = window.localStorage.getItem(BATTLE_LEFTOVER_KEY);
+    return raw ? battleLeftoverFrom(JSON.parse(raw)) : [];
+  }catch(e){ return []; }
+}
+function clearBattleLeftover(){
+  try{ window.localStorage.removeItem(BATTLE_LEFTOVER_KEY); }catch(e){}
+}
+// 「おわる」で途中終了したとき、残りを控える（最後まで終えたら控えを消す）
+function noteBattleLeftoverOnEnd(finished){
+  clearBattleLeftover();
+  if(finished || role !== "host" || planBattleActive) return;
+  const st = {
+    questionIds: questionIds, answered: Array.from(battleAnsweredIds), hostSkippedIds: Array.from(hostSkippedIds),
+    timeupIds: Array.from(battleTimeupIds), inMissRetryRound: inMissRetryRound, subj: currentSubject, plan: null
+  };
+  if(battleLeftoverFrom(st).length === 0) return;
+  try{ window.localStorage.setItem(BATTLE_LEFTOVER_KEY, JSON.stringify(st)); }catch(e){}
 }
 function refreshResumeBattleButton(){
   const session = loadBattleSession();
@@ -6319,8 +6360,10 @@ function refreshCreateButton(){
   //   数え方は weightOf で共通（大問＝答える小問の数）なので、二人の「n」とひとりの数はそろう
   els["solo-start-btn"].disabled = disabled;
   els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
-  els["create-btn"].disabled = disabled;
-  els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+label+"）";
+  const left = loadBattleLeftover();   // ★2026-10-11 途中でやめた二人の残り
+  els["create-btn"].disabled = disabled && left.length === 0;
+  els["create-btn"].textContent = left.length ? "二人で始める（前回の残り"+left.length+"問）"
+    : (disabled ? "問題がありません" : "二人で始める（"+label+"）");
 }
 // ---- units are grouped into 地理/公民/歴史 by their name prefix so the
 //      unit list can be collapsed into an accordion as more units get
@@ -10328,12 +10371,13 @@ function setHomeWaiting(on){
   if(on) window.scrollTo(0, 0);
 }
 els["create-btn"].addEventListener("click", ()=>{
-  const pool = buildFinalPool();
-  if(pool.length === 0) return;
+  const left = loadBattleLeftover();   // ★2026-10-11 途中でやめた分があれば、その残りから（もう開いた小問の並びのまま）
+  const pool = left.length ? [] : buildFinalPool();
+  if(pool.length === 0 && left.length === 0) return;
 
   // ★大問は小問に開いて続けて並べる（並べかえは buildFinalPool の中で済んでいる＝大問はばらけない）
   sessionMerge = false;   // ★今日やることの merge 行ではない（2026-10-09）
-  questionIds = expandDaimonIds(pool.map(i => QA_DATA[i].id));
+  questionIds = left.length ? left : expandDaimonIds(pool.map(i => QA_DATA[i].id));
   planBattlePending = null;   // ★今日やることの行には結びつけない
   hostSkippedIds = new Set();
   inMissRetryRound = false;
@@ -11497,7 +11541,9 @@ const RETRY_COUNTDOWN_SEC = 3;
 
 function endGame(){
   // ★今日やることの「二人で」: 最後まで終えた（最後の問題まで採点ずみ）ならその行を「できた」に。とちゅうで「おわる」なら付けない
-  if(role === "host") planNoteBattleEnd(currentIndex >= questionIds.length - 1 && hostScoredIdx >= questionIds.length - 1);
+  const finishedAll = currentIndex >= questionIds.length - 1 && hostScoredIdx >= questionIds.length - 1;
+  if(role === "host") planNoteBattleEnd(finishedAll);
+  if(role === "host") noteBattleLeftoverOnEnd(finishedAll);   // ★2026-10-11
   clearBattleSession();
   studyLogFinish("battle");   // ★学習ログ（2026-10-05）
   clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
