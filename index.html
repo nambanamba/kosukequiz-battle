@@ -8797,8 +8797,11 @@ document.querySelectorAll("#solo-count-row .count-btn").forEach(btn=>{
 
 // 判定を記録して quizPos を1つ進める（画面は動かさない）。judgeSolo とスキップで共通
 // ★★2026-10-06 正解するまでぐるぐる（ユーザー「間違えた問題をもう一回をやめて、正解するまでぐるぐる回してください」）
-//   ・✕・スキップの問題は、〇になるまで何度でも、このラウンドのうしろへ回す（一問一答は末尾。大問の小問・分けての部分は、
-//     同じ大問／カードの残りのうしろ＝insertDaimonItemLater）。ほかの問題が残っていれば間に1問以上はさまる。全部〇になったら終わり
+//   ・✕・スキップの問題は、〇になるまで何度でも、このラウンドのうしろへ回す（一問一答は末尾。大問の小問は、
+//     同じ大問の残りのうしろ＝insertDaimonItemLater）。ほかの問題が残っていれば間に1問以上はさまる。全部〇になったら終わり
+//   ・★2026-10-11 分けての部分（答えが2つ以上のカードを分けたもの）は、一問一答と同じくラウンドの末尾（ユーザー「スキップの挙動が
+//     おかしい気がします。最後に出てくるのかと思ったらすぐに出てきます」。同じカードの残りのうしろだと1〜2問あとに戻ってしまう）。
+//     本物の大問の小問は問題文を共有しているので今までどおり
 //   ・★記録（stats・部分の記録）は、このラウンドで1回目の答えだけ。2回目からは記録しない（norecord）
 //   ・結果画面の「まちがえた問題をもう一度」はこの動きに置きかえた（ボタンは出さない）
 // ★2026-10-07 ユーザー「間違えた問題が母数にカウントされて21/23ってでて、なんで？って言ってるので、やめてください」
@@ -8824,8 +8827,8 @@ function soloLeftCount(){
 }
 function soloIsRepeat(qid){ return quizResults.some(r => r.id === qid && !r.norecord); }
 function soloRequeue(qid){
-  // quizPos はもう次へ進んでいる
-  if(isDaimonItemId(qid)) insertDaimonItemLater(quizQueue, quizPos, qid);
+  // quizPos はもう次へ進んでいる。★分けての部分は末尾（2026-10-11）
+  if(isDaimonItemId(qid) && !isPartId(qid)) insertDaimonItemLater(quizQueue, quizPos, qid);
   else quizQueue.push(qid);
 }
 function recordSoloAnswer(correct){
@@ -10778,8 +10781,8 @@ let battleAnsweredIds = new Set();   // このラウンドで記録をつけた�
 let battleDoneIds = new Set();       // このラウンドでホスト（子ども）が〇になった問題（「のこり◯問」に使う・2026-10-07）
 let hostRequeuedIdx = -1;            // ホストだけ: ✕でうしろへ回したのはどの添字か（つなぎ直しで二重に回さない）
 function battleRequeue(id){
-  if(isDaimonItemId(id)){
-    // 同じ大問／カードの、いまより後ろに続いている小問のうしろ。続きが無ければ末尾
+  if(isDaimonItemId(id) && !isPartId(id)){   // ★分けての部分は一問一答と同じく末尾（2026-10-11）
+    // 同じ大問の、いまより後ろに続いている小問のうしろ。続きが無ければ末尾
     const g = DAIMON_ITEM.get(id).g;
     let end = currentIndex;
     while(end + 1 < questionIds.length){ const nx = DAIMON_ITEM.get(questionIds[end + 1]); if(!nx || nx.g !== g) break; end++; }
@@ -10924,6 +10927,7 @@ function performTimeUp(){
 // ★小問の時間切れ: 同じ大問の、いまより後ろに続いている小問のうしろへ回す。続きが無ければラウンドの末尾へ
 function moveCurrentDaimonItemLater(){
   const id = questionIds[currentIndex];
+  if(isPartId(id)) return moveCurrentToEndOfRound();   // ★分けての部分は一問一答と同じく末尾（2026-10-11）
   const g = DAIMON_ITEM.get(id).g;
   let end = currentIndex;
   while(end + 1 < questionIds.length){
