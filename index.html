@@ -12440,7 +12440,56 @@ function planSavePick(no, key, pick){
   planSave(planStoreKey(PLAN_PICK_KEY, no), a);
 }
 // 出す問題: 保存した一覧があればそれ、無ければ選ぶ（保存はしない＝今までどおり）
+// ★★2026-10-12 ユーザー「PCでPATを入れて確認したら、実際に出る問題と違う」
+//   一覧はその端末の記録で選ぶ（order:"weak"）。PC には子どもの記録が無い（GitHub の記録は読まない）ので、PC の一覧は ids の並びのまま・状態は「まだ」ばかりになっていた。
+//   → 子どもの端末が、今日やることを出すたびに行ごとの「始めたら出す一覧・状態」を battle/plan_pick/<番号>.json に送る（同じなら送らない）。
+//     見るだけの端末はそれを読み、中身を見る・数・状態をその一覧で出す（見るだけの端末では選び直さない・保存もしない）。
+//   ・子どもの端末の選び方・始め方は何も変えない（送るだけ）
+//   ・ランダムの行（order が無く count がある行）は、子どもの端末でも始めるたびに選び直すので送った一覧は使わない（「ちがうことがあります」と出す）
+const PLAN_PICK_SENT_KEY = "kq_battle_plan_pick_sent_v1";       // {番号: 送った中身（at をのぞく）}
+const PLAN_REMOTE_PICK_KEY = "kq_battle_plan_remote_pick_v1";   // 見るだけ: {番号: {at, items: {行の鍵: {ids, tiers, miss, random}}}}
+function planRowRandom(it){ return !!(it && it.order !== "weak" && parseInt(it.count, 10) > 0); }
+function planRemotePickOf(no, key){
+  const r = planLoad(PLAN_REMOTE_PICK_KEY) || {};
+  const s = r[no];
+  const p = s && s.items && s.items[key];
+  return (p && Array.isArray(p.ids)) ? Object.assign({ at: s.at || "" }, p) : null;
+}
+function planRemotePickSave(no, j){
+  const items = {};
+  if(j && Array.isArray(j.items)) j.items.forEach(o => {
+    if(!o || typeof o !== "object" || !Array.isArray(o.ids)) return;
+    items[planItemKey({ title: o.title }, o.i)] = { ids: o.ids.map(String), tiers: Array.isArray(o.tiers) ? o.tiers.map(String) : [], miss: +o.miss || 0, random: !!o.random };
+  });
+  const all = planLoad(PLAN_REMOTE_PICK_KEY) || {};
+  if(j) all[no] = { at: String(j.at || ""), items: items }; else delete all[no];
+  planSave(PLAN_REMOTE_PICK_KEY, all);
+}
+// 子どもの端末: いまのセットの行ごとの一覧を送る（送り先の鍵が無い・見るだけ・自動のセットなら何もしない）
+function planSendPicks(no){
+  if(!no || planIsAuto(no) || sendViewOnly() || !sendCfg()) return;
+  try{
+    const s = planSetOf(no);
+    if(!s) return;
+    const items = s.items.map((it, i) => withMerge(planRowMerge(it), () => {
+      const p = planRowPick(it, no, i);
+      return { i: i, subj: it.subj || "", title: it.title || "", ids: p.ids, tiers: p.ids.map(planTierLabel), w: planSumWeight(p.ids), miss: p.miss || 0, random: planRowRandom(it) && !p.saved };
+    }));
+    const body = JSON.stringify(items);
+    const sent = planLoad(PLAN_PICK_SENT_KEY) || {};
+    if(sent[no] === body) return;
+    sent[no] = body;
+    planSave(PLAN_PICK_SENT_KEY, sent);
+    sendEnqueue("plan_pick_" + no, "plan_pick", "battle/plan_pick/" + String(no).padStart(4, "0") + ".json",
+      { app: "battle", no: no, label: s.label || "", at: new Date().toISOString(), items: items }, true)
+      .catch(e => console.error("send plan pick failed", e));
+  }catch(e){ console.error("send plan pick failed", e); }
+}
 function planRowPick(it, no, idx){
+  if(sendViewOnly()){   // ★見るだけ: 子どもの端末が送った一覧（2026-10-12）
+    const rp = planRemotePickOf(no, planItemKey(it, idx));
+    if(rp && !rp.random) return { ids: rp.ids.filter(id => QA_DATA.some(d => d.id === id)), miss: rp.miss || 0, saved: true, remote: rp };
+  }
   let sv = planSavedPick(no, planItemKey(it, idx));
   // ★2026-10-09 直す前に保存した一覧（ids の行で count をこえたもの）は使わずに選び直す（こえてよいのは2問まで＝planTakeCount）
   const n = parseInt(it && it.count, 10);
@@ -12470,18 +12519,30 @@ function planPeekAns(parent, text){
   el.textContent = text;
   parent.appendChild(el);
 }
-function renderPlanPeek(panel, ids){
-  if(panel.dataset.merge === "1" && !mergeForce) return withMerge(true, () => renderPlanPeek(panel, ids));
+// src … 見るだけの端末のときの出どころ {remote: 子どもの端末が送った一覧 or null, random}（2026-10-12）。それ以外は undefined＝今までどおり
+function renderPlanPeek(panel, ids, src){
+  if(panel.dataset.merge === "1" && !mergeForce) return withMerge(true, () => renderPlanPeek(panel, ids, src));
   panel.innerHTML = "";
   const showAns = panel.dataset.ans === "1";
   const cnt = document.createElement("div");
   cnt.className = "plan-peek-count";
   cnt.textContent = "答える問題：" + planSumWeight(ids) + "問（" + ids.length + "枚）";
   panel.appendChild(cnt);
+  const rmTiers = src && src.remote && Array.isArray(src.remote.tiers) && src.remote.tiers.length === src.remote.ids.length ? src.remote : null;
+  if(src){
+    const sn = document.createElement("div");
+    sn.className = "plan-peek-src plan-weak-note";
+    const at = src.remote && src.remote.at ? new Date(src.remote.at) : null;
+    const when = at && !isNaN(at) ? "（" + (at.getMonth() + 1) + "/" + at.getDate() + " " + at.getHours() + ":" + String(at.getMinutes()).padStart(2, "0") + " の時点）" : "";
+    sn.textContent = src.remote ? "子どもの端末で選んだ一覧です" + when + "。そのあと子どもの端末で問題を解くと、変わることがあります"
+      : (src.random ? "この行は始めるたびにランダムに選ぶので、子どもの端末で出る問題とはちがいます"
+        : "子どもの端末の一覧がまだ届いていないので、この端末の記録で選んでいます。子どもの端末で出る問題とはちがうことがあります");
+    panel.appendChild(sn);
+  }
   const tg = document.createElement("button");
   tg.type = "button"; tg.className = "plan-peek-ans-btn";
   tg.textContent = showAns ? "答えをかくす" : "答えを見る";
-  tg.addEventListener("click", () => { if(showAns) delete panel.dataset.ans; else panel.dataset.ans = "1"; renderPlanPeek(panel, ids); });
+  tg.addEventListener("click", () => { if(showAns) delete panel.dataset.ans; else panel.dataset.ans = "1"; renderPlanPeek(panel, ids, src); });
   panel.appendChild(tg);
   const ol = document.createElement("ol");
   ol.className = "plan-peek-list";
@@ -12504,7 +12565,8 @@ function renderPlanPeek(panel, ids){
     }
     const meta = document.createElement("div");
     meta.className = "plan-peek-meta";
-    const tier = planTierLabel(id);
+    const rk = rmTiers ? rmTiers.ids.indexOf(id) : -1;
+    const tier = rk >= 0 ? rmTiers.tiers[rk] : planTierLabel(id);   // ★見るだけ: 子どもの端末の記録での状態（2026-10-12）
     meta.textContent = (d.u || "") + "　" + tier;
     meta.dataset.tier = tier;
     li.appendChild(head); li.appendChild(meta);
@@ -13029,6 +13091,14 @@ function renderPlanSet(container, no, prefix, closable){
     b3.addEventListener("click", () => {
       if(panel.style.display !== "none"){ panel.style.display = "none"; delete panel.dataset.ans; panel.innerHTML = ""; b3.textContent = "中身を見る"; return; }
       // ★押した時点で出す問題と順番を決めて保存（すでに保存してあればそれ）
+      // ★見るだけ（2026-10-12）: 子どもの端末が送った一覧があればそれ（保存しない）。無ければ今までどおり
+      if(vonly){
+        const rp = planRowPick(it, no, i);
+        renderPlanPeek(panel, rp.ids, { remote: rp.remote || null, random: planRowRandom(it) });
+        panel.style.display = "";
+        b3.textContent = "中身をとじる";
+        return;
+      }
       let p = planSavedPick(no, key);
       if(!p){ p = planItemPick(it, no, i); planSavePick(no, key, p); }
       renderPlanPeek(panel, p.ids);
@@ -13047,6 +13117,7 @@ function renderPlan(){
   if(!planShownNo){ box.style.display = "none"; cur.innerHTML = ""; nx.innerHTML = ""; return; }
   box.style.display = "";
   renderPlanSet(cur, planShownNo, "今日やること：", true);
+  planSendPicks(planShownNo);   // ★子どもの端末: 行ごとの一覧を送る（同じなら送らない。見るだけの端末の「中身を見る」用・2026-10-12）
   const allDone = planAllDone(planShownNo);
   fin.style.display = allDone ? "" : "none";
   // 全部できたら、すぐ下に次のセット（押せばそのまま進める）
@@ -13089,6 +13160,11 @@ async function fetchPlan(){
       if(vonly && !(sets[no] && planRemoteOf(no) && planAllDone(no))){
         try{ planRemoteSave(no, await planGet(cfg, "battle/plan_done/" + String(no).padStart(4, "0") + ".json")); }
         catch(e){ console.error("read plan_done failed", e); }
+      }
+      // ★見るだけ: 子どもの端末が送った一覧（中身を見る用・2026-10-12）。全部済んだセットは読まない
+      if(vonly && !(sets[no] && planAllDone(no))){
+        try{ planRemotePickSave(no, await planGet(cfg, "battle/plan_pick/" + String(no).padStart(4, "0") + ".json")); }
+        catch(e){ console.error("read plan_pick failed", e); }
       }
       // できた印が全部ついているセットは、写しがあれば読み直さない
       if(sets[no] && planAllDone(no)) continue;
