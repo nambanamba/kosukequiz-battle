@@ -72,8 +72,8 @@ const cut = (src, needle, rep, what) => {
   return src.replace(needle, rep);
 };
 const FAKES = {
-  a: ["大問を小問に開かない", s => cut(s, "  questionIds = left.length ? left : expandDaimonIds(pool.map(i => QA_DATA[i].id));",
-      "  questionIds = left.length ? left : pool.map(i => QA_DATA[i].id);  /* ★偽の実装 */", "create-btn の並び")],
+  a: ["大問を小問に開かない", s => cut(s, "  questionIds = expandDaimonIds(pool.map(i => QA_DATA[i].id));",
+      "  questionIds = pool.map(i => QA_DATA[i].id);  /* ★偽の実装 */", "create-btn の並び")],
   b: ["うしろの小問まで出す", s => cut(s, "  g.items.slice(0, dm.pos).forEach((it, k) => {",
       "  g.items.forEach((it, k) => { if(k === dm.pos) return;  /* ★偽の実装: うしろの小問まで出す */", "前の小問")],
   // ★2026-09-28: b0dadd9 で renderBattleDaimon が renderDaimonBlock(prefix, ids, idx) に一般化され、
