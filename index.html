@@ -2164,6 +2164,11 @@
           <button type="button" class="btn-secondary" id="send-save-btn">保存</button>
           <button type="button" class="btn-secondary" id="send-test-btn">ためしに送る</button>
         </div>
+        <!-- ★2026-10-12 端末を移すとき: 記録の置き場（snapshot・session）から記録を取り戻す。今ある記録は減らさない -->
+        <div class="send-row">
+          <button type="button" class="btn-secondary" id="send-restore-btn">記録の置き場から記録を取り戻す（端末を移したとき）</button>
+        </div>
+        <div class="send-other-warn" id="send-other-warn" style="display:none; font-size:12px; color:#c0392b; margin:4px 0 0;"></div>
         <!-- ★2026-10-09 ユーザー「親のスマホでも子どもと同じ今日やることを見たい。でも親の正誤が子どもの記録にまざるのは困る」 -->
         <label class="send-viewonly"><input type="checkbox" id="send-viewonly"> 見るだけ（この端末の記録は送らない）</label>
         <div class="send-status" id="send-status"></div>
@@ -7453,6 +7458,84 @@ els["export-edits-link"].addEventListener("click", ()=>{
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
 });
 
+// ★記録の取り込み本体（CSVの取り込みと、記録の置き場から取り戻すボタンで同じものを使う。2026-10-12）。
+//   今ある記録は減らさない（回数は多いほう・日付は新しいほうを採る）。戻り値 { format:false } か { matched, unmatched, updated }
+function importRecordRows(parsed){
+  const header = parsed[0];
+  const idIdx = header.indexOf("ID");
+  const unitIdx = header.indexOf("単元");
+  const qIdx = header.indexOf("問題");
+  const correctIdx = header.indexOf("正解した回数");
+  const wrongIdx = header.indexOf("まちがえた回数");
+  const lastCorrectIdx = header.indexOf("最終正答日");
+  const lastAnsweredIdx = header.indexOf("最終回答日");
+  const statusIdx = header.indexOf("状態");
+  const streakIdx = header.indexOf("連続正解数");   // 2026-09-13 に足した列。古いファイルには無い
+  if(qIdx === -1 || correctIdx === -1 || wrongIdx === -1) return { format: false };
+  const byId = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[d.id, d]));
+  DAIMON_ITEM.forEach((v, id) => { if(!v.split) byId.set(id, v.view); });   // ★分けての部分は取り込まない（2026-10-06）   // ★小問の行は id で合わせる（2026-09-27）
+  const byQuestion = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[(d.u||"")+"||"+(d.q||""), d]));
+  let matched = 0, unmatched = 0, updated = 0;
+  for(let i=1;i<parsed.length;i++){
+    const row = parsed[i];
+    if(row.length < 2) continue;
+    let d = null;
+    if(idIdx !== -1 && row[idIdx] && byId.has(row[idIdx])){
+      d = byId.get(row[idIdx]);
+    }else if(unitIdx !== -1){
+      d = byQuestion.get((row[unitIdx]||"")+"||"+(row[qIdx]||""));
+    }
+    if(!d){ unmatched++; continue; }
+    matched++;
+    const importedCorrect = parseInt(row[correctIdx], 10) || 0;
+    const importedWrong = parseInt(row[wrongIdx], 10) || 0;
+    const cur = stats[d.id] || {correct:0, wrong:0};
+    // merge by taking the higher count on each side, rather than replacing
+    // outright, so records already in this app are never lost or shrunk
+    const mergedCorrect = Math.max(cur.correct||0, importedCorrect);
+    const mergedWrong = Math.max(cur.wrong||0, importedWrong);
+    // CSVに無い項目（間隔反復のbox/nextDue、日付）は今ある記録をそのまま残す。
+    // 以前は{correct,wrong}で置きかえていたため、取り込むたびに復習の
+    // スケジュールがリセットされ、日付での絞りこみからも消えていた
+    const next = Object.assign({}, cur, {correct: mergedCorrect, wrong: mergedWrong});
+    const mergeDate = (field, colIdx)=>{
+      if(colIdx === -1 || !row[colIdx]) return;
+      const ts = new Date(row[colIdx]+"T00:00:00").getTime();
+      if(isNaN(ts)) return;
+      // ★最終正答日は、正解した日の一覧（2026-10-08）にも足す（重ならない。今ある日は消さない）
+      if(field === "lastCorrectAt") addCorrectDay(next, ts);
+      if(!next[field] || ts > next[field]) next[field] = ts; // 新しいほうを採る
+    };
+    mergeDate("lastCorrectAt", lastCorrectIdx);
+    mergeDate("lastAnswered", lastAnsweredIdx);
+    // 取り込みで初めてできた記録には間隔反復の箱が無い。「状態」列があれば
+    // それに合わせ（苦手→0、正解ずみ→1）、無ければ正誤の回数から決める。
+    // 箱は「直近の連続正解数」を兼ねるので、苦手判定にもそのまま効く
+    // ★2026-09-13 から box は画面の「正解数」そのもの。すでに記録がある問題の box は、これまでどおり触らない
+    //   （古いファイルを読んで連続正解数が上がり、苦手が消えてしまわないように）。
+    //   初めてできる記録だけ、「連続正解数」の列があればその値を使う
+    const importedStreak = streakIdx !== -1 ? parseInt(row[streakIdx], 10) : NaN;
+    if(next.box === undefined && !isNaN(importedStreak)){
+      next.box = Math.min(BOX_INTERVAL_DAYS.length - 1, Math.max(0, importedStreak));
+    }
+    if(next.box === undefined){
+      const status = statusIdx !== -1 ? row[statusIdx] : "";
+      // ★ 2026-09-26 に状態の語を3段に揃えた。
+      //   ★旧い語（苦手／正解ずみ）のファイルも読めるように残してある。
+      //   （新しい形で書きながら、古い形も読めるように残す、という考え方）
+      if(status === TIER_NAMES[1] || status === "苦手") next.box = 0;
+      else if(status === TIER_NAMES[2] || status === "正解ずみ") next.box = 1;
+      else if(status === TIER_NAMES[0]) next.box = 0;
+      else next.box = (mergedCorrect > 0 && mergedWrong === 0) ? 1 : 0;
+    }
+    const changed = mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0)
+      || next.lastCorrectAt !== cur.lastCorrectAt || next.lastAnswered !== cur.lastAnswered;
+    if(changed) updated++;
+    if(mergedCorrect > 0 || mergedWrong > 0) stats[d.id] = next;
+  }
+  if(matched > 0) saveStats();
+  return { format: true, matched: matched, unmatched: unmatched, updated: updated };
+}
 els["import-file"].addEventListener("change", (e)=>{
   const file = e.target.files[0];
   els["import-file"].value = "";
@@ -7465,90 +7548,19 @@ els["import-file"].addEventListener("change", (e)=>{
         alert("CSVの中身が読み取れませんでした。");
         return;
       }
-      const header = parsed[0];
-      const idIdx = header.indexOf("ID");
-      const unitIdx = header.indexOf("単元");
-      const qIdx = header.indexOf("問題");
-      const correctIdx = header.indexOf("正解した回数");
-      const wrongIdx = header.indexOf("まちがえた回数");
-      const lastCorrectIdx = header.indexOf("最終正答日");
-      const lastAnsweredIdx = header.indexOf("最終回答日");
-      const statusIdx = header.indexOf("状態");
-      const streakIdx = header.indexOf("連続正解数");   // 2026-09-13 に足した列。古いファイルには無い
-      if(qIdx === -1 || correctIdx === -1 || wrongIdx === -1){
+      const r = importRecordRows(parsed);
+      if(!r.format){
         alert("このCSVの形式を読み取れませんでした。kosukequiz（元のアプリ）またはこの対戦アプリからエクスポートしたファイルを選んでください。");
         return;
       }
-      const byId = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[d.id, d]));
-      DAIMON_ITEM.forEach((v, id) => { if(!v.split) byId.set(id, v.view); });   // ★分けての部分は取り込まない（2026-10-06）   // ★小問の行は id で合わせる（2026-09-27）
-      const byQuestion = new Map(QA_DATA.filter(d => !isDaimonEntry(d)).map(d=>[(d.u||"")+"||"+(d.q||""), d]));
-      let matched = 0, unmatched = 0, updated = 0;
-      for(let i=1;i<parsed.length;i++){
-        const row = parsed[i];
-        if(row.length < 2) continue;
-        let d = null;
-        if(idIdx !== -1 && row[idIdx] && byId.has(row[idIdx])){
-          d = byId.get(row[idIdx]);
-        }else if(unitIdx !== -1){
-          d = byQuestion.get((row[unitIdx]||"")+"||"+(row[qIdx]||""));
-        }
-        if(!d){ unmatched++; continue; }
-        matched++;
-        const importedCorrect = parseInt(row[correctIdx], 10) || 0;
-        const importedWrong = parseInt(row[wrongIdx], 10) || 0;
-        const cur = stats[d.id] || {correct:0, wrong:0};
-        // merge by taking the higher count on each side, rather than replacing
-        // outright, so records already in this app are never lost or shrunk
-        const mergedCorrect = Math.max(cur.correct||0, importedCorrect);
-        const mergedWrong = Math.max(cur.wrong||0, importedWrong);
-        // CSVに無い項目（間隔反復のbox/nextDue、日付）は今ある記録をそのまま残す。
-        // 以前は{correct,wrong}で置きかえていたため、取り込むたびに復習の
-        // スケジュールがリセットされ、日付での絞りこみからも消えていた
-        const next = Object.assign({}, cur, {correct: mergedCorrect, wrong: mergedWrong});
-        const mergeDate = (field, colIdx)=>{
-          if(colIdx === -1 || !row[colIdx]) return;
-          const ts = new Date(row[colIdx]+"T00:00:00").getTime();
-          if(isNaN(ts)) return;
-          // ★最終正答日は、正解した日の一覧（2026-10-08）にも足す（重ならない。今ある日は消さない）
-          if(field === "lastCorrectAt") addCorrectDay(next, ts);
-          if(!next[field] || ts > next[field]) next[field] = ts; // 新しいほうを採る
-        };
-        mergeDate("lastCorrectAt", lastCorrectIdx);
-        mergeDate("lastAnswered", lastAnsweredIdx);
-        // 取り込みで初めてできた記録には間隔反復の箱が無い。「状態」列があれば
-        // それに合わせ（苦手→0、正解ずみ→1）、無ければ正誤の回数から決める。
-        // 箱は「直近の連続正解数」を兼ねるので、苦手判定にもそのまま効く
-        // ★2026-09-13 から box は画面の「正解数」そのもの。すでに記録がある問題の box は、これまでどおり触らない
-        //   （古いファイルを読んで連続正解数が上がり、苦手が消えてしまわないように）。
-        //   初めてできる記録だけ、「連続正解数」の列があればその値を使う
-        const importedStreak = streakIdx !== -1 ? parseInt(row[streakIdx], 10) : NaN;
-        if(next.box === undefined && !isNaN(importedStreak)){
-          next.box = Math.min(BOX_INTERVAL_DAYS.length - 1, Math.max(0, importedStreak));
-        }
-        if(next.box === undefined){
-          const status = statusIdx !== -1 ? row[statusIdx] : "";
-          // ★ 2026-09-26 に状態の語を3段に揃えた。
-          //   ★旧い語（苦手／正解ずみ）のファイルも読めるように残してある。
-          //   （新しい形で書きながら、古い形も読めるように残す、という考え方）
-          if(status === TIER_NAMES[1] || status === "苦手") next.box = 0;
-          else if(status === TIER_NAMES[2] || status === "正解ずみ") next.box = 1;
-          else if(status === TIER_NAMES[0]) next.box = 0;
-          else next.box = (mergedCorrect > 0 && mergedWrong === 0) ? 1 : 0;
-        }
-        const changed = mergedCorrect !== (cur.correct||0) || mergedWrong !== (cur.wrong||0)
-          || next.lastCorrectAt !== cur.lastCorrectAt || next.lastAnswered !== cur.lastAnswered;
-        if(changed) updated++;
-        if(mergedCorrect > 0 || mergedWrong > 0) stats[d.id] = next;
-      }
-      if(matched === 0){
+      if(r.matched === 0){
         alert("一致する問題が見つかりませんでした。");
         return;
       }
-      saveStats();
       renderHome();
       if(els["screen-list"].classList.contains("active")) renderListItems();
-      let msg = matched+"問分の記録を読み込み、"+updated+"問を更新しました。";
-      if(unmatched > 0) msg += "\n（"+unmatched+"行は問題が一致せず読み飛ばされました）";
+      let msg = r.matched+"問分の記録を読み込み、"+r.updated+"問を更新しました。";
+      if(r.unmatched > 0) msg += "\n（"+r.unmatched+"行は問題が一致せず読み飛ばされました）";
       alert(msg);
     }catch(err){
       console.error(err);
@@ -11957,6 +11969,51 @@ function sendAuthWarn(on){
   const el = document.getElementById("send-auth-warn");
   if(el) el.style.display = on ? "block" : "none";
 }
+// ★2026-10-12 端末の目印（この端末だけ・初めて送るときに作る）。送るファイルの中に device として入れ、
+//   ほかの端末が送ったものを上書きしそうなときに画面で知らせる（止めはしない）
+const SEND_DEVICE_KEY = "kq_battle_device_v1", SEND_OTHER_KEY = "kq_battle_other_device_v1";
+function sendDeviceId(){
+  try{
+    let d = window.localStorage.getItem(SEND_DEVICE_KEY);
+    if(!d){ d = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); window.localStorage.setItem(SEND_DEVICE_KEY, d); }
+    return d;
+  }catch(e){ return ""; }
+}
+function sendB64Decode(b64){
+  const bin = atob(String(b64 || "").replace(/\s/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+// いま置き場にあるファイルの持ち主を見る（上書きの前に sha を取るついで）。ほかの端末が最近（3日以内）送ったものなら印をつける
+function sendNoteOtherDevice(content){
+  try{
+    const old = JSON.parse(sendB64Decode(content)), me = sendDeviceId();
+    if(!old || !me) return;
+    if(old.device && old.device !== me && old.at && Date.now() - Date.parse(old.at) < 3 * 86400000){
+      window.localStorage.setItem(SEND_OTHER_KEY, JSON.stringify({ at: old.at, device: old.device }));
+    }else if(old.device === me){ window.localStorage.removeItem(SEND_OTHER_KEY); }
+    sendShowOther();
+    return old;
+  }catch(e){ return null; }
+}
+// snapshot の「正解・不正解」の合計（ほかの端末のより少ない中身で上書きしないための見くらべ）
+function sendSnapTotal(d){
+  let t = 0;
+  try{ (d.rows || []).forEach(r => { t += (parseInt(r[4], 10) || 0) + (parseInt(r[5], 10) || 0); }); }catch(e){}
+  return t;
+}
+function sendShowOther(){
+  const el = document.getElementById("send-other-warn");
+  if(!el) return;
+  let o = null;
+  try{ o = JSON.parse(window.localStorage.getItem(SEND_OTHER_KEY) || "null"); }catch(e){}
+  if(o && o.at && !sendViewOnly()){
+    const d = new Date(o.at), p = n => String(n).padStart(2, "0");
+    el.textContent = "ほかの端末が " + (d.getMonth() + 1) + "/" + d.getDate() + " " + p(d.getHours()) + ":" + p(d.getMinutes()) + " に記録を送っています。古い端末が残っているなら、その端末の「見るだけ」にチェックを入れるか、鍵を消してください（送るのは止めていません）。";
+    el.style.display = "";
+  }else el.style.display = "none";
+}
 // 1件を GitHub に書く。戻り値 "ok" / "auth"（401・403）/ "retry"（そのほか・電波なし）
 async function sendOne(cfg, it){
   // ★検査用の差しかえ（cfg.api）は、この端末の中（http://127.0.0.1 / http://localhost）のときだけ効く。
@@ -11971,7 +12028,12 @@ async function sendOne(cfg, it){
       // 同じ日の snapshot は上書き: いまのファイルの sha を取る（無ければ 404 で新しく作る）
       const g = await fetch(url + "?ref=main", { headers: headers, cache: "no-store" });
       if(g.status === 401 || g.status === 403) return "auth";
-      if(g.ok){ const j = await g.json(); if(j && j.sha) body.sha = j.sha; }
+      if(g.ok){
+        const j = await g.json(); if(j && j.sha) body.sha = j.sha;
+        const old = j && j.content ? sendNoteOtherDevice(j.content) : null;
+        // ★ほかの端末の snapshot より記録が少ないとき（移したばかりの端末など）は、上書きしない＝取り戻せる記録を守る（2026-10-12）
+        if(it.kind === "snapshot" && old && old.device && old.device !== sendDeviceId() && sendSnapTotal(old) > sendSnapTotal(it.data)) return "ok";
+      }
       else if(g.status !== 404){ sendLastErr = "GitHub の返事が " + g.status; return "retry"; }
     }
     const r = await fetch(url, { method: "PUT", headers: Object.assign({ "Content-Type": "application/json" }, headers), body: JSON.stringify(body) });
@@ -11985,6 +12047,7 @@ async function sendOne(cfg, it){
 // ためる（鍵が無いときは何もしない）→ すぐ送ってみる
 async function sendEnqueue(id, kind, path, data, overwrite){
   if(!sendCfg() || sendViewOnly()) return false;   // ★見るだけ: ためもしない
+  if(data && typeof data === "object" && !data.device){ const dv = sendDeviceId(); if(dv) data.device = dv; }   // ★どの端末から送ったか（2026-10-12）
   await outboxPut({ id: id, kind: kind, path: path, overwrite: !!overwrite, at: Date.now(), data: data });
   sendFlush();
   return true;
@@ -12031,26 +12094,30 @@ function sendSession(s){
     if(typeof s.sp === "number"){ body.sp = s.sp; body.spq = s.spq || {}; }
     // ★途中でやめて送った回（sentPartial）は、そのあとも同じファイルを上書きする（続きをやって終えたら、終えた中身に）
     sendEnqueue("session_" + s.id, "session", "battle/session/" + sendDay(s.st) + "/" + s.id + ".json", body, !!s.sentPartial);
-    sendSnapshotIfDue();
+    sendSnapshotIfDue(true);
   }catch(e){ console.error("send session failed", e); }
 }
 // 1日1回: 今の記録CSVと同じ中身
-function sendSnapshotIfDue(){
+function sendSnapshotIfDue(force){
   if(!sendCfg() || sendViewOnly()) return;   // ★見るだけ: 送った日の印もつけない（オフに戻した日に送る）
   const day = sendDay();
-  try{ if(window.localStorage.getItem(SEND_SNAP_KEY) === day) return; }catch(e){ return; }
+  try{ if(!force && window.localStorage.getItem(SEND_SNAP_KEY) === day) return; }catch(e){ return; }   // ★force＝1回終えるたびに同じ日のファイルを新しくする（端末を移すとき、取り戻せる記録が古くならないように。2026-10-12）
   try{
     const rows = recordCsvRows();
+    if(!rows.slice(1).some(r => (parseInt(r[4], 10) || 0) || (parseInt(r[5], 10) || 0))) return;   // ★記録がまだ空の端末は送らない（移したばかりの端末が、置き場の記録を空で上書きしないため。2026-10-12）
     try{ window.localStorage.setItem(SEND_SNAP_KEY, day); }catch(e){}
     // ★2026-10-08 正解した日（定着＝ちがう日に3回正解）は、header/rows の形を変えずに別の欄 correctDays に { ID: ["YYYY-MM-DD", …] }
     const correctDays = {};
-    correctDayRows().slice(1).forEach(r => { if(r[1]) correctDays[r[0]] = r[1].split(" "); });
-    sendEnqueue("snapshot_" + day, "snapshot", "battle/snapshot/" + day + ".json", { app: "battle", day: day, at: new Date().toISOString(), header: rows[0], rows: rows.slice(1), correctDays: correctDays }, true);
+    const manual = [];
+    correctDayRows().slice(1).forEach(r => { if(r[1]) correctDays[r[0]] = r[1].split(" "); if(r[2]) manual.push(r[0]); });
+    // ★2026-10-12 端末を移すとき取り戻せるように、分けての部分の記録（parts）と手で定着した印（manual）も足す（header/rows の形は変えない）
+    sendEnqueue("snapshot_" + day, "snapshot", "battle/snapshot/" + day + ".json", { app: "battle", day: day, at: new Date().toISOString(), header: rows[0], rows: rows.slice(1), correctDays: correctDays, manual: manual, parts: partRows() }, true);
   }catch(e){ console.error("send snapshot failed", e); }
 }
 // ★2026-10-06 いちばん新しい知らせを覚えておく（うしろで送り終わったときの数の書きかえで、「送れました」などが消えないように）
 let sendStatusMsg = "";
 async function sendShowStatus(msg){
+  sendShowOther();
   const el = document.getElementById("send-status");
   if(!el) return;
   if(msg) sendStatusMsg = msg;
@@ -12085,6 +12152,71 @@ function sendSaveFromInput(){
   return "ok";
 }
 const SEND_WHY = { auth: "鍵がちがうか、期限が切れています（鍵を作り直してください）。", retry: "つながらないか、GitHub が返事をしませんでした。あとで自動でもう一度送ります。" };
+// ★2026-10-12 端末を移したとき: 記録の置き場（kosuke-records）の いちばん新しい snapshot から、記録を取り戻す。
+//   ・今ある記録は減らさない（回数は多いほう・日は足す・分けての部分は新しいほう。CSVの引越しと同じ取り込み）
+//   ・snapshot のあとに送られた回（session）は、分けての部分の記録だけ足す（1問ごとの〇✕は足さない＝二重に数えないため）
+//   ・見るだけの端末では使えない（親の端末の記録を、子どもの記録にまぜないため）
+function planList(cfg, p){
+  const testApi = typeof cfg.api === "string" && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(cfg.api) ? cfg.api : "";
+  const api = (testApi || SEND_API).replace(/\/+$/, ""), repo = testApi && cfg.repo ? cfg.repo : SEND_REPO;
+  return fetch(api + "/repos/" + repo + "/contents/" + p + "?ref=main", { cache: "no-store",
+    headers: { "Authorization": "Bearer " + cleanToken(cfg.token), "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } })
+    .then(r => { if(r.status === 404) return []; if(!r.ok) throw new Error("GitHub " + r.status); return r.json(); })
+    .then(j => Array.isArray(j) ? j.map(e => e.name) : []);
+}
+async function sendRestoreRecords(){
+  const cfg = sendCfg();
+  if(!cfg){ alert("先に記録の送り先の鍵を入れて「保存」してください。"); return; }
+  if(sendViewOnly()){ alert("見るだけの端末では取り戻せません（親の端末の記録を、子どもの記録にまぜないため）。"); return; }
+  try{
+    const names = (await planList(cfg, "battle/snapshot")).filter(n => /^\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort();
+    if(!names.length){ alert("記録の置き場に、取り戻せる記録（snapshot）がまだありません。"); return; }
+    const day = names[names.length - 1].replace(".json", "");
+    const snap = await planGet(cfg, "battle/snapshot/" + names[names.length - 1]);
+    if(!snap || !Array.isArray(snap.rows) || !Array.isArray(snap.header)){ alert("記録の置き場のファイルが読み取れませんでした。"); return; }
+    if(!confirm(day + " の記録（" + snap.rows.length + "行）を取り戻します。この端末にいまある記録は減らしません。よいですか？")) return;
+    const r = importRecordRows([snap.header].concat(snap.rows));
+    if(!r.format){ alert("記録の置き場のファイルの形が読み取れませんでした。"); return; }
+    const dayRows = [DAYS_HEADER.slice()];
+    const man = new Set(Array.isArray(snap.manual) ? snap.manual : []);
+    const cd = snap.correctDays || {};
+    Object.keys(cd).forEach(id => dayRows.push([id, (cd[id] || []).join(" "), man.has(id) ? "1" : ""]));
+    man.forEach(id => { if(!cd[id]) dayRows.push([id, "", "1"]); });
+    const dr = correctDayImportRows(dayRows) || { merged: 0 };
+    let pr = { added: 0, replaced: 0 };
+    if(Array.isArray(snap.parts) && snap.parts.length > 1) pr = partImportRows(snap.parts) || pr;
+    // snapshot の日から後に送られた回の「分けての部分」（新しいほうを採る）
+    let sess = 0;
+    try{
+      const days = (await planList(cfg, "battle/session")).filter(n => /^\d{4}-\d{2}-\d{2}$/.test(n) && n >= day).sort();
+      let dirty = false;
+      for(const dd of days){
+        const files = (await planList(cfg, "battle/session/" + dd)).filter(n => /\.json$/.test(n)).sort();
+        for(const f of files){
+          const b = await planGet(cfg, "battle/session/" + dd + "/" + f);
+          if(!b || !b.parts) continue;
+          sess++;
+          Object.keys(b.parts).forEach(id => {
+            const ps = b.parts[id], have = partStats[id];
+            if(!isPartId(id) || !ps) return;
+            if(!have || (have.lastAnswered || 0) < (ps.lastAnswered || 0)){ partStats[id] = ps; dirty = true; pr.added++; }
+          });
+        }
+      }
+      if(dirty) savePartStats();
+    }catch(e){ console.error("restore sessions failed", e); }
+    renderHome();
+    if(els["screen-list"].classList.contains("active")) renderListItems();
+    const nl = String.fromCharCode(10);
+    alert(["記録を取り戻しました（" + day + " の snapshot）。", "記録を戻した（足した）問題: " + r.updated + "問",
+      "正解した日を足したカード: " + dr.merged, "分けての部分を入れた数: " + (pr.added + pr.replaced) + "（あとの回 " + sess + "回ぶんを見ました）"]
+      .concat(r.unmatched ? ["問題が一致せず読み飛ばした行: " + r.unmatched] : [])
+      .concat(["※ " + day + " の snapshot のあとの回の〇✕は入りません（次に子どもが使った日から、この端末で増えます）。"]).join(nl));
+  }catch(e){
+    console.error("restore failed", e);
+    alert("取り戻せませんでした（" + String((e && e.message) || e).slice(0, 80) + "）。通信と鍵をたしかめて、もう一度押してください。この端末の記録は何も変えていません。");
+  }
+}
 function setupAutoSend(){
   const c = sendCfg();
   document.getElementById("send-token").value = c ? c.token : "";
@@ -12125,6 +12257,7 @@ function setupAutoSend(){
     else sendShowStatus("送れませんでした: " + (res === "auth" ? SEND_WHY.auth : (sendLastErr ? sendLastErr + "。あとで自動でもう一度送ります。" : SEND_WHY.retry)));
   });
   window.addEventListener("online", () => { sendFlush(); });
+  document.getElementById("send-restore-btn").addEventListener("click", sendRestoreRecords);
   sendShowStatus("");
   // 起動したら: 1日1回の snapshot と、ためていた分を送る（画面が出たあと、うしろで）
   setTimeout(() => { sendSnapshotIfDue(); sendFlush().then(() => sendShowStatus("")); }, 1500);

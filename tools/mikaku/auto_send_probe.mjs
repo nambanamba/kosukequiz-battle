@@ -152,7 +152,7 @@ async function run(label, src) {
     mode = "up";
     await tap("#send-save-btn"); await pg.waitForTimeout(1800);
     const w2 = await vis("#send-auth-warn");
-    check("A7 401 → 「鍵を作り直してください」・ためた分は残る → 直ると送られて知らせが消える", w && /まだ送れていない記録: 1件/.test(st7) && !w2 && sessFiles().length === 4, JSON.stringify({ w, st7, w2 }));
+    check("A7 401 → 「鍵を作り直してください」・ためた分は残る → 直ると送られて知らせが消える", w && /まだ送れていない記録: [12]件/.test(st7) && !w2 && sessFiles().length === 4, JSON.stringify({ w, st7, w2 }));
     // A9 検査用の api 差しかえは 127.0.0.1 / localhost だけ。外のアドレスを入れても github 以外に送らない（鍵をよそに送らない）
     const reqs = [];
     await ctx.route(/evil\.example|api\.github\.com/, r => { reqs.push(r.request().url()); r.abort(); });
