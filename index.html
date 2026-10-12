@@ -651,6 +651,13 @@
     color:var(--navy-deep);
     white-space:pre-wrap;
   }
+  /* ★2026-10-13 答えの読みがな（data の "yomi"）。答えを開いたあとだけ、答えの下に小さく */
+  .yomi-text{
+    font-size:13px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
   .sol-block{
     margin-top:14px;
     padding-top:12px;
@@ -2376,6 +2383,7 @@
         <div class="a-block" id="solo-a-block">
           <div class="a-label">こたえ</div>
           <div class="a-text" id="solo-a"></div>
+          <div class="yomi-text" id="solo-yomi" style="display:none;"></div>
           <div id="solo-daimon-afig"></div>
           <div class="sol-block" id="solo-sol-block" style="display:none;">
             <div class="sol-label">解説</div>
@@ -2575,6 +2583,7 @@
         <div class="a-block" id="battle-a-block">
           <div class="a-label">こたえ</div>
           <div class="a-text" id="battle-a"></div>
+          <div class="yomi-text" id="battle-yomi" style="display:none;"></div>
           <div id="battle-daimon-afig"></div>
           <div class="sol-block" id="battle-sol-block" style="display:none;">
             <div class="sol-label">解説</div>
@@ -3688,14 +3697,14 @@ const els = {};
  "list-date-from","list-date-to","list-date-clear",
  "selection-bar","selection-count","selection-solo-btn","selection-battle-btn","selection-clear",
  "solo-back","solo-undo-row","solo-undo-link","solo-forward-link","solo-review-jump-row","solo-review-jump-input","solo-review-jump-total","solo-review-jump-btn","solo-counter","solo-progress-fill","solo-unit-tag","solo-q-id","solo-source-tag",
- "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a","solo-sol-block","solo-sol",
+ "solo-img-wrap","solo-img","solo-view","solo-q","solo-a-block","solo-a","solo-yomi","solo-sol-block","solo-sol",
  "solo-edit-link","solo-edit-form","solo-edit-q","solo-edit-a","solo-edit-cancel","solo-edit-save","solo-edit-report",
  "solo-count-row","solo-count-correct","solo-count-wrong",
  "solo-reveal-btn","solo-judge-row","solo-judge-ng","solo-judge-ok","solo-review-next-btn","solo-retry-note","solo-skip-btn","solo-skip-next-btn",
  "solo-result-score","solo-miss-title","solo-miss-list","solo-perfect-note","solo-retry-miss-btn","solo-result-home-btn",
  "battle-pause-btn","battle-end-btn","battle-counter","score-me","score-opp","battle-unit-tag","battle-q-id","battle-source-tag","guest-wait-status",
  "battle-avatars","host-avatar-box","host-avatar","host-avatar-level","host-avatar-label","guest-avatar-box","guest-avatar","guest-avatar-level","guest-avatar-label",
- "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a","battle-sol-block","battle-sol",
+ "battle-img-wrap","battle-img","battle-view","battle-q","battle-a-block","battle-a","battle-yomi","battle-sol-block","battle-sol",
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
@@ -7025,6 +7034,7 @@ function buildListRow(i){
       (d.img ? '<div class="list-img-wrap"><img class="'+(isTallImg(d.img)?'tall':'')+'" src="images/'+escapeHtml(d.img)+'" alt="資料"'+(IMG_SIZES[d.img] ? ' width="'+IMG_SIZES[d.img][0]+'" height="'+IMG_SIZES[d.img][1]+'"' : '')+'></div>' : '')+
       '<div class="list-q">'+escapeHtml(displayQ(d.q, base.id, d.a, true))+'</div>'+
       '<div class="list-a">こたえ：'+escapeHtml(displayA(d.q, d.a, base.id, true))+'</div>'+
+      (yomiText(d) ? '<div class="yomi-text">'+escapeHtml(yomiText(d))+'</div>' : '')+
       (d.sol ? '<div class="list-sol">解説：'+escapeHtml(displayNote(d.sol, base.id, d.q, d.a, true))+'</div>' : '')+
       listStatControlsHtml(base.id, tier)+
       '<div class="list-item-footer">'+
@@ -8685,6 +8695,7 @@ function startSoloCard(){
   els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
   els["solo-q"].textContent = displayQ(d.q, id, d.a);
   els["solo-a"].textContent = displayA(d.q, d.a, id);
+  showYomi("solo", d);
   els["solo-sol"].textContent = displayNote(d.sol || "", id, d.q, d.a);
   els["solo-sol-block"].style.display = d.sol ? "block" : "none";
   els["solo-view"].style.display = "block";
@@ -9041,7 +9052,8 @@ function finishSoloQuiz(){
       const d = getQById(m.id);
       const div = document.createElement("div");
       div.className = "miss-item";
-      div.innerHTML = '<div class="q">'+escapeHtml(displayQ(d.q, m.id, d.a))+'</div><div class="a">'+escapeHtml(displayA(d.q, d.a, m.id))+'</div>';
+      div.innerHTML = '<div class="q">'+escapeHtml(displayQ(d.q, m.id, d.a))+'</div><div class="a">'+escapeHtml(displayA(d.q, d.a, m.id))+'</div>'+
+        (yomiText(d) ? '<div class="yomi-text">'+escapeHtml(yomiText(d))+'</div>' : '');
       els["solo-miss-list"].appendChild(div);
     });
   }
@@ -9456,6 +9468,22 @@ function displayLead(g, fixed){
   if(!L) return g.lead;
   const p = fixed ? L.choices.map((_, i) => i) : choicePermOf(L);
   return L.stem + "\n" + csChoiceLines(L, p).join("\n");
+}
+// ★2026-10-13 答えの読みがな（社会 第6回・第7回から。依頼書 = 司令塔\回答\社会_語呂と読みがなを暗記カードに_依頼_2026-10-13.md）
+//   data の "yomi" は「問屋＝といや　土倉＝どそう」（語＝読み を全角空白でつなぐ）。画面では「よみ：問屋（といや）　土倉（どそう）」
+//   ★答えの欄（a）は変えない（記録・修正報告・「分けて」の切り方が a の文字を見ているため）。出すのは答えを開いたあとだけ
+function yomiText(d){
+  const y = String((d && d.yomi) || "").trim();
+  if(!y) return "";
+  return "よみ：" + y.split(/[\s　]+/).filter(Boolean).map(w => {
+    const k = w.indexOf("＝");
+    return k > 0 ? w.slice(0, k) + "（" + w.slice(k + 1) + "）" : w;
+  }).join("　");
+}
+function showYomi(prefix, d){
+  const t = yomiText(d), el = els[prefix + "-yomi"];
+  el.textContent = t;
+  el.style.display = t ? "" : "none";
 }
 function displayA(q, a, id, fixed){
   let s = String(a == null ? "" : a);
@@ -10588,6 +10616,7 @@ function showQuestion(idx, hostPrivate){
   });
   els["battle-q"].textContent = displayQ(d.q, d.id, d.a);
   els["battle-a"].textContent = displayA(d.q, d.a, d.id);
+  showYomi("battle", d);
   els["battle-sol"].textContent = displayNote(d.sol || "", d.id, d.q, d.a);
   els["battle-sol-block"].style.display = d.sol ? "block" : "none";
   els["battle-view"].style.display = "block";
@@ -10886,6 +10915,7 @@ function performSkip(){
   const skipped = getQById(skippedId);
   els["battle-q"].textContent = displayQ(skipped.q, skippedId, skipped.a);
   els["battle-a"].textContent = displayA(skipped.q, skipped.a, skippedId);
+  showYomi("battle", skipped);
   els["battle-sol"].textContent = displayNote(skipped.sol || "", skippedId, skipped.q, skipped.a);
   els["battle-sol-block"].style.display = skipped.sol ? "block" : "none";
   els["battle-a-block"].classList.add("show");
