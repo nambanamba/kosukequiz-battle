@@ -2,7 +2,7 @@
 // 使い方: node tools/mikaku/kai7_screen_probe.mjs   スクショは tools/mikaku/shots_kai7/（コミットしない）
 // 見ること:
 //   S1 社会の単元えらびに「第7回.室町時代」（一問一答118＋大問の小問27）
-//   S2 理科の単元えらびに「第7回.物の燃焼」（一問一答53＋アプリに出る大問の小問43）
+//   S2 理科の単元えらびに「第7回.物の燃焼」（一問一答54＋アプリに出る大問の小問43）
 //   S3 ★練習3の分割（daimon_data.js の形）: 「3」＝問1〜4 は紙の印なし・紙の印は「3（問5・6）」と「発展」だけ
 //   S4 ★第7回の理科を全部、一人で実際に解く（?subj=理科&unit=）: 紙の7問は1問も出ない・「3」の問1〜4は出る
 //   S5 大問の一覧から「3」を開くと 問1〜4 だけが出る
@@ -49,7 +49,7 @@ try {
   const rExp = await page.evaluate(R => QA_DATA.filter(q => q.subj === "理科" && q.u === R && q.kind !== "daimon").length + DAIMON_DATA.filter(g => g.kai === 7 && g.subj !== "社会" && !g.paper).reduce((a, g) => a + g.items.length, 0), R);
   const rRow = (await unitText()).find(t => t.includes(R));
   // ★単元の数は「答える数」（答えが複数の理科カードは部分の数で数える）なので 96 より多い。紙の7問が入っていないことは S4 で実際に解いて見る
-  check("S2 理科の単元に " + R + "（カード53＋大問の小問43。数は部分で数えた答える数）", rExp === 96 && rRow && /\d+問/.test(rRow), rRow);
+  check("S2 理科の単元に " + R + "（カード54＋大問の小問43。数は部分で数えた答える数）", rExp === 97 && rRow && /\d+問/.test(rRow), rRow);
   await shot("S2_science_units");
   // S3 データの形（daimon_data.js）。アプリの中身は module で外から見えないので、出るかどうかは S5〜S7 で画面から見る
   const sp = await page.evaluate(([K3, K3P, KH]) => {
@@ -82,7 +82,7 @@ try {
   const paperSeen = ids.filter(id => /^r7r(305|306|50\d)$/.test(id));
   const r3seen = ["r7r301", "r7r302", "r7r303", "r7r304"].filter(id => all.has(id));
   const dmSeen = ids.filter(id => /^r7[ykr]\d/.test(id)).length, cardSeen = new Set(ids.filter(id => /^r7m/.test(id)).map(id => id.replace(/~\d+$/, ""))).size;
-  check("S4 第7回の理科を全部解く: 紙の7問は1問も出ない・「3」の問1〜4は全部出る", paperSeen.length === 0 && r3seen.length === 4 && dmSeen === 43 && cardSeen === 53,
+  check("S4 第7回の理科を全部解く: 紙の7問は1問も出ない・「3」の問1〜4は全部出る", paperSeen.length === 0 && r3seen.length === 4 && dmSeen === 43 && cardSeen === 54,
     steps + "手・出た id " + ids.length + "（カード" + cardSeen + "・大問の小問" + dmSeen + "）／紙: " + (paperSeen.join(",") || "なし") + "／3: " + r3seen.join(",") + "／最後の画面 " + (await active()));
   // S6 一人で「3」を実際に解く
   await fresh("?ids=" + encodeURIComponent(K3) + "," + encodeURIComponent(K3P));
