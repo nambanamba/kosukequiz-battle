@@ -12537,7 +12537,9 @@ function planMissSetFor(no, idx){
 }
 function planRankWeak(ids, missSet){
   return ids.map((id, k) => Object.assign({ id: id, k: k }, planWeakRank(id, missSet)))
-    .sort((a, b) => (a.o - b.o) || (a.r === 3 ? a.at - b.at : 0) || (a.k - b.k));
+    // ★2026-10-15 どの段の中も「最後に正解した日が古い順」（正解なし＝0＝先頭）。同じ日・同点は元の並び（k）。段（o）の順は変えない
+    //   前は定着(3)の中だけ古い順で、おぼえかけ・苦手・まだは id 順のまま → 同じ先頭の問題が毎朝出ていた
+    .sort((a, b) => (a.o - b.o) || (a.at - b.at) || (a.k - b.k));
 }
 // ★2026-10-09 行の欄 "fill_ids":[…]（前の回をまぜる用）。count がある行で、候補の「まだ・苦手・その日✕」（答える回数）が count に足りないときだけ、
 //   足りない分を fill_ids から order:"weak" の順で選ぶ（候補と重なる id はのぞく）。欄が無い・足りている行は [] ＝今のまま
