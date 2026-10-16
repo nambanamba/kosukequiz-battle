@@ -13063,7 +13063,9 @@ function planGroupRef(no, s, grp){
 // まとめた行の問題: 元の行ごとに選んで（中身を見るで保存した一覧があればそれ）、行の順につなぐ（同じ問題は1回）
 function planGroupIds(no, s, grp){
   const seen = new Set(), out = [];
-  grp.idx.forEach(i => planRowPick(s.items[i], no, i).ids.forEach(id => { if(!seen.has(id)){ seen.add(id); out.push(id); } }));
+  // ★2026-10-17 グループに merge の行があれば、各行の選びも「1枚＝1問」で数える（表示・出題と数えかたをそろえる。片方だけ merge だと20問が19問になった）
+  const gm = grp.idx.some(i => planRowMerge(s.items[i]));
+  grp.idx.forEach(i => withMerge(gm, () => planRowPick(s.items[i], no, i)).ids.forEach(id => { if(!seen.has(id)){ seen.add(id); out.push(id); } }));
   return out;
 }
 // 「完了」: いまのぶんを終わりにする。まだの行は「できたことにする」（記録＝〇✕は何も変えない）。最後のぶんならセットも完了・次のセットへ
