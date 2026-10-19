@@ -11401,9 +11401,12 @@ function applyJudgeFixOnHost(data){
     updateScoreUI();
   }
   // ⑤ いま出ている問を直したときは、画面の結果も直す（一個前なら、画面はもう次の問なので触らない）
+  //   ★2026-10-20 ユーザー「やっぱりバツにするでバツにしたのを子供に通知しないように」。
+  //   ✕に直したときは、子どもの端末に ✕ の大きな表示・不正解の音・「不正解でした」の文を出さない（記録は✕で残る）。
+  //   〇に直したときは今までどおり出す（喜ぶ知らせなので）
   if(r.idx === currentIndex){
     opponentVerdictOfMe = data.correct;
-    updateMyResultUI(r.forcedWrong);
+    if(data.correct) updateMyResultUI(r.forcedWrong);
   }
   r.rawCorrect = data.correct;
   saveBattleSession();   // まちがいリストと得点が変わったので保存し直す
