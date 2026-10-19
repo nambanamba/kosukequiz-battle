@@ -44,7 +44,7 @@ try {
   await tap("#subject-social"); await page.waitForTimeout(300);
   const gExp = await page.evaluate(G => QA_DATA.filter(q => q.subj === "社会" && q.u === G && q.kind !== "daimon").length + DAIMON_DATA.filter(g => g.kai === 8 && g.subj === "社会" && !g.paper).reduce((a, g) => a + g.items.length, 0), G);
   const gRow = (await unitText()).find(t => t.includes(G));
-  check("S1 社会の単元に " + G + "（113＋26=139問）", gExp === 139 && gRow && gRow.includes("139"), gRow);
+  check("S1 社会の単元に " + G + "（128＋26=154問）", gExp === 154 && gRow && gRow.includes("154"), gRow);
   for (const [id, img] of [["g8r52", "kai8_01.jpg"], ["g8r45", "kai8_02.jpg"], ["g8r95", "kai8_09.jpg"], ["g8r101", "kai8_11.jpg"], ["g8r76", "kai8_05.jpg"]]) {
     await fresh("?ids=" + id);
     await tap("#today-start-btn"); await page.waitForTimeout(1300);
@@ -57,13 +57,24 @@ try {
   const imgs = await page.evaluate(() => [...new Set([...QA_DATA.filter(q => /^g8r/.test(q.id) && q.img).map(q => q.img), ...DAIMON_DATA.filter(g => g.kai === 8 && g.subj === "社会").flatMap(g => [g.file, ...g.items.map(i => i.file)]).filter(Boolean)])]);
   const st = await page.evaluate(async list => { const r = []; for (const n of list) { const x = await fetch("images/" + n); r.push(n + ":" + x.status); } return r; }, imgs);
   const bad = st.filter(s => !s.endsWith(":200"));
-  check("S9 第8回社会の画像 " + imgs.length + "枚 すべて 200・kai8_10 は無い", bad.length === 0 && imgs.length === 10 && !imgs.includes("kai8_10.jpg"), bad.join(" ") + " n=" + imgs.length);
+  check("S9 第8回社会の画像 " + imgs.length + "枚 すべて 200・kai8_10 は無い", bad.length === 0 && imgs.length === 12 && !imgs.includes("kai8_10.jpg") && !imgs.includes("kai8_12.jpg"), bad.join(" ") + " n=" + imgs.length);
   const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   const tl = { miss: [], n: 0 };
   for (let i = 52; i <= 67; i++) { const mm = html.match(new RegExp('^  "g8r' + i + '": (\\[.*\\]),\\s*$', "m")); if (!mm) tl.miss.push("g8r" + i); else tl.n += JSON.parse(mm[1]).length; }
   check("S10 年表 g8r52〜67 の16問すべてに枠・合計29枠", tl.miss.length === 0 && tl.n === 29, JSON.stringify(tl));
   const low = await page.evaluate(() => ({ g: QA_DATA.filter(q => /^g8r/.test(q.id) && q.priority === "低").length, n: QA_DATA.filter(q => /^g8r/.test(q.id) && q.priority !== "低").length }));
-  check("S10 優先度 低54・普通59", low.g === 54 && low.n === 59, JSON.stringify(low));
+  check("S10 優先度 低55・普通73", low.g === 55 && low.n === 73, JSON.stringify(low));
+  // S12 10-19 追加の15問: 地図（kai8_14: 114〜120 / kai8_13: 121・122）が出る・記述（123〜127）の問いと答えと解説が横にはみ出さない
+  for (const [id, img] of [["g8r114", "kai8_14.jpg"], ["g8r120", "kai8_14.jpg"], ["g8r121", "kai8_13.jpg"], ["g8r122", "kai8_13.jpg"], ["g8r123", ""], ["g8r124", ""], ["g8r125", ""], ["g8r126", ""], ["g8r127", ""], ["g8r128", ""]]) {
+    await fresh("?ids=" + id);
+    await tap("#today-start-btn"); await page.waitForTimeout(1300);
+    await page.evaluate(() => { const b = document.getElementById("solo-reveal-btn"); if (b && b.offsetParent) b.click(); }); await page.waitForTimeout(300);
+    const st = await page.evaluate(() => { const im = document.getElementById("solo-img"); const de = document.documentElement; const sc = document.getElementById("screen-solo");
+      const wide = [...sc.querySelectorAll("*")].filter(e => e.offsetParent && e.getBoundingClientRect().right > innerWidth + 1).map(e => e.id || e.className).slice(0, 5);
+      return { id: document.getElementById("solo-q-id").textContent, src: im.getAttribute("src") || "", ok: im.complete && im.naturalWidth > 0, shown: !!document.getElementById("solo-img-wrap").offsetParent, pageOver: de.scrollWidth > de.clientWidth, wide }; });
+    check("S12 " + id + (img ? " に " + img + " が出る" : "（画像なし）") + "・横にはみ出さない", st.id.replace(/~\d+$/, "") === "No." + id && (img ? st.src.endsWith(img) && st.ok && st.shown : true) && !st.pageOver && st.wide.length === 0, JSON.stringify(st));
+    await shot("S12_card_" + id, false);
+  }
   // S11 第8回の社会を全部一人で解く
   await fresh("?subj=" + encodeURIComponent("社会") + "&unit=" + encodeURIComponent(G));
   await tap("#today-start-btn"); await page.waitForTimeout(1200);
@@ -74,7 +85,7 @@ try {
     await page.evaluate(() => { const b = document.getElementById("solo-judge-ok"); if (b && b.offsetParent) b.click(); }); await page.waitForTimeout(180);
   }
   const g8 = [...all].filter(id => /^g8r/.test(id)).length, d8 = [...all].filter(id => /^g8d/.test(id)).length;
-  check("S11 第8回の社会を全部解く: 一問一答113＋大問26が出て、最後は結果画面", g8 === 113 && d8 === 26, steps + "手・g8r " + g8 + "・g8d " + d8 + "・最後 " + (await active()));
+  check("S11 第8回の社会を全部解く: 一問一答128＋大問26が出て、最後は結果画面", g8 === 128 && d8 === 26, steps + "手・g8r " + g8 + "・g8d " + d8 + "・最後 " + (await active()));
   check("画面のエラー 0", errs.length === 0, errs.join(" | "));
 } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
 let ng = 0; for (const c of out) { console.log((c.ok ? "  ✔ " : "  ✘ ") + c.n + (c.x ? " … " + c.x : "")); if (!c.ok) ng++; }
