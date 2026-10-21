@@ -9,6 +9,9 @@
      本当のエラーが埋もれる（検査の邪魔になるものは検査の価値を下げる）。
      空のデータURLを指せば、取りに行かなくなる。画像ファイルは増やさない。 -->
 <link rel="icon" href="data:,">
+<!-- ★2026-10-21 ネットなしで使う（sw.js）。display は "browser"（ホーム画面に置いてもブラウザで開く）。
+     ★"standalone" にすると iPad ではホーム画面のアプリがブラウザと別の入れ物になり、今までの記録が見えなくなるため -->
+<link rel="manifest" href="manifest.webmanifest">
 <title>恒介クイズ - 早押し対戦</title>
 <style>
   :root{
@@ -94,6 +97,13 @@
     background:var(--paper-line);
   }
 
+  /* ★2026-10-21 機内用・ネットなし */
+  .offline-note{background:#fff4d6; border:1px solid #e0b84a; border-radius:10px; padding:10px 12px; margin:10px 0 0; font-size:13px; line-height:1.6;}
+  .kinai-open{display:block; width:100%; margin:12px 0 0; padding:12px; border-radius:12px; border:2px solid #3a7bd5; background:#eef5ff; color:#1d4f91; font-size:16px; font-weight:700; cursor:pointer;}
+  .kinai-panel{border:2px solid #3a7bd5; border-top:none; border-radius:0 0 12px 12px; padding:10px; background:#fff; margin-bottom:6px;}
+  .kinai-lead{font-size:13px; line-height:1.6; margin-bottom:8px;}
+  .kinai-save{font-size:12px; color:#555; margin-top:8px; line-height:1.6;}
+  .kinai-toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%); max-width:min(92vw,420px); background:#333; color:#fff; padding:12px 16px; border-radius:10px; font-size:14px; line-height:1.6; z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.25);}
   .choice-grid{
     display:flex;
     flex-direction:column;
@@ -1932,6 +1942,17 @@
 
     <!-- ★2026-10-10 ⚡スピードポイント: 今日の合計を小さく -->
     <div class="sp-home" id="sp-home" style="display:none;"></div>
+
+    <!-- ★2026-10-21 ネットなし（機内）。ユーザー「ペルー旅行の機内で、こうすけが暗記カードで勉強できるように」 -->
+    <div class="offline-note" id="offline-note" style="display:none;">いまはネットにつながっていません。<b>一人で解く</b>・<b>機内用</b>は使えます（記録は端末に残り、ネットが戻ったら送られます）。二人の対戦は、ネットが戻ってから。</div>
+    <button type="button" class="kinai-open" id="kinai-open" aria-expanded="false" aria-controls="kinai-panel">✈️ 機内用：組分け対策（ネットなしでも） ▾</button>
+    <div class="kinai-panel" id="kinai-panel" hidden>
+      <div class="kinai-lead">第6〜9回の社会・理科から、<b>1回20問</b>ずつ出します。まだ正解していない問題と苦手な問題が先に出ます（優先度「低」は出しません）。</div>
+      <div class="choice-grid" id="kinai-units"></div>
+      <button class="start-btn" id="kinai-start-btn" style="margin-top:10px;">20問ではじめる</button>
+      <div class="kinai-save" id="kinai-save"></div>
+      <button type="button" class="btn-secondary" id="kinai-cache-all-btn" style="display:none; margin-top:8px;">ほかの単元の図も全部この端末に保存する</button>
+    </div>
     <!-- ★2026-10-10 ユーザー「社会・理科の選択はその箱（今日やること）の下にあるべき。今日やることは理科も社会も混ざってるので」
          → 教科のえらびは「今日やること」の下へ。ここから下（数・単元・始めるボタン）が、選んだ教科に効く -->
     <div class="section-title" style="margin-top:14px;">自由に出す教科（この下に効きます）</div>
@@ -2461,6 +2482,7 @@
     <div class="empty-note" id="solo-perfect-note" style="display:none;">全問正解です。すばらしい！</div>
     <div class="result-actions">
       <button class="start-btn" id="solo-retry-miss-btn">まちがえた問題だけもう一度</button>
+      <button class="start-btn" id="kinai-next-btn" style="display:none;">✈️ つぎの20問</button>
       <button class="btn-secondary" id="solo-result-home-btn">はじめの画面にもどる</button>
     </div>
   </section>
@@ -6567,6 +6589,7 @@ function shuffleArray(arr){
 
 // ---- navigation ----
 els["go-join"].addEventListener("click", ()=>{
+  if(offlineBattleBlock()) return;   // ★ネットなしでは対戦できない（2026-10-21）
   els["join-setup"].style.display = "block";
   els["join-waiting"].style.display = "none";
   els["join-error"].classList.remove("show");
@@ -8634,6 +8657,7 @@ let quizResults = []; // { id, correct（実際の正誤）, recorded（記録�
 //      永続的な正誤記録は「まちがえた」のままにする（元々まちがえた問題なので、
 //      ここで正解しても正解ずみにはしない）。二人対戦の inMissRetryRound と同じ扱い ----
 let inSoloRetryRound = false;
+let kinaiActive = false;   // ★2026-10-21 機内用の「20問ではじめる」から始めた回（おわりに「つぎの20問」を出す）
 // ★2026-10-05 一人の考える時間・一問一答のスキップ
 let soloThinkTimer = null, soloThinkInterval = null;
 let soloSkippedIds = new Set();   // スキップして答えを見た一問一答（あとでもう一度出る。そのときは記録しない＝✕のまま）
@@ -8686,6 +8710,7 @@ function soloTimeUp(){
 }
 
 els["solo-start-btn"].addEventListener("click", ()=>{
+  kinaiActive = false;
   // ★ひとりで解くときも、二人と同じように大問が小問に開いて混ざる（2026-09-28）。
   //   並べかえ（buildFinalPool の中）のあとに開くので、大問はばらけない
   const pool = buildFinalPool();
@@ -9085,6 +9110,7 @@ function finishSoloQuiz(){
     startSoloCard();
     showScreen("screen-solo");
   };
+  document.getElementById("kinai-next-btn").style.display = (kinaiActive && !reviewMode) ? "" : "none";   // ★機内用（2026-10-21）
   showScreen("screen-solo-result");
 }
 
@@ -9094,6 +9120,7 @@ els["solo-result-home-btn"].addEventListener("click", ()=>{
 });
 
 els["retry-last-miss-btn"].addEventListener("click", ()=>{
+  kinaiActive = false;
   // ★データから消えた問題を除いてから開き直す（isKnownId。大問の小問の id もここに含む）
   sessionMerge = false;
   const ids = expandMissIdsKeepingDaimon(lastMissIds.filter(id => isKnownId(id)));
@@ -10387,6 +10414,7 @@ function setHomeWaiting(on){
   if(on) window.scrollTo(0, 0);
 }
 els["create-btn"].addEventListener("click", ()=>{
+  if(offlineBattleBlock()) return;   // ★ネットなしでは対戦できない（2026-10-21）
   const pool = buildFinalPool();
   if(pool.length === 0) return;
 
@@ -10419,6 +10447,7 @@ els["room-code-change"].addEventListener("click", ()=>{
 });
 
 els["resume-battle-btn"].addEventListener("click", async ()=>{
+  if(offlineBattleBlock()) return;   // ★ネットなしでは対戦できない（2026-10-21）
   const session = loadBattleSession();
   if(!session) return;
   if(!Array.isArray(session.questionIds) || session.currentIndex >= session.questionIds.length){
@@ -12843,6 +12872,7 @@ function kidMsgSyncBtn(name){
 // 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
 let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
 function startSoloWithIds(ids, planRef){
+  kinaiActive = false;   // ★機内用から始めるときは、呼んだあとで true にする
   if(!ids || ids.length === 0) return false;
   const mg = !!(planRef && planRef.merge);   // ★2026-10-09 行の印 merge＝分けずにまとめて
   const q = withMerge(mg, () => expandDaimonIds(ids));
@@ -13005,6 +13035,7 @@ function planBattleResume(ref){
 }
 let planBattleCarry = null;   // 続きから始めるときに引きつぐ1回目の答え（startBattleNow で入れる）
 function startBattleWithIds(ids, planRef){
+  if(offlineBattleBlock()) return false;   // ★ネットなしでは対戦できない（2026-10-21）
   const carry = planRef ? planBattleResume(planRef) : null;   // ★2026-10-11 今日やることの続き
   if(!carry && (!ids || ids.length === 0)) return false;
   const mg = !!(planRef && planRef.merge);   // ★2026-10-09 行の印 merge＝分けずにまとめて
@@ -13383,6 +13414,173 @@ function setupTodayPlan(){
   fetchPlan();
 }
 
+// ============================================================
+// ★★機内用：組分け対策・ネットなしで使う（2026-10-21）
+// ============================================================
+// ユーザー（10-21）「10/31〜11/10 ペルー旅行。往復の機内（片道18〜21時間・ネットなし）で、こうすけが暗記カードで勉強できるように。
+//   11/8 の第7回組分けテスト対策（範囲は第6〜10回。第10回は総合回なのでカードは第6〜9回の社会・理科）。おまけにペルーの問題」
+//   ・★いちばん大事なのはネットなしで動くこと・記録もネットなしで残ること（sw.js。記録の入れ物は今までどおり）
+//   ・機内用の範囲 … ★tools/build_sw.mjs と同じ規則（あちらは保存する図を決める）。変えるときは両方
+//   ・1回20問。まだ正解していない → 苦手 → おぼえかけ → 定着 の順に取り、段の中はランダム。取ったあと混ぜる（社会と理科がまざる）
+//   ・優先度「低」・計算（calc）は出さない。大問は小問に開く（ふだんの一人と同じ。数え方も weightOf）
+//   ・えらんだ単元は端末に覚える（外した単元だけ覚える＝あとで入る第9回・ペルーは、はじめから入る）
+//   ・二人の対戦は、ネットなしのときは押しても始めず「ネットが戻ってから」と出す（落ちない・止まらない）
+const KINAI_UNIT_RE = /^第[6-9]回\./;
+const KINAI_EXTRA_UNITS = ["おまけ.ペルー"];
+const KINAI_COUNT = 20;
+const KINAI_KEY = "kq_battle_kinai_v1";   // { off: [外した単元], open: true/false }
+function kinaiIsUnit(d){ return !!d && ((KINAI_UNIT_RE.test(d.u || "") && (d.subj === "社会" || d.subj === "理科")) || KINAI_EXTRA_UNITS.includes(d.u)); }
+function kinaiLoad(){ try{ const o = JSON.parse(window.localStorage.getItem(KINAI_KEY) || "null"); return o && typeof o === "object" ? o : {}; }catch(e){ return {}; } }
+function kinaiSave(o){ try{ window.localStorage.setItem(KINAI_KEY, JSON.stringify(o)); }catch(e){} }
+// 単元の一覧（科目|単元）。社会→理科、回の順。ペルーはまだ無くても出す（「あとで入ります」）
+function kinaiUnits(){
+  const seen = new Map();
+  QA_DATA.forEach(d => { if(kinaiIsUnit(d)){ const k = d.subj + "|" + d.u; if(!seen.has(k)) seen.set(k, { key: k, subj: d.subj, u: d.u }); } });
+  const kaiOf = u => { const m = /^第(\d+)回\./.exec(u); return m ? +m[1] : 99; };
+  const list = Array.from(seen.values()).sort((a, b) =>
+    (a.subj === b.subj ? 0 : a.subj === "社会" ? -1 : 1) || kaiOf(a.u) - kaiOf(b.u) || (a.u < b.u ? -1 : a.u > b.u ? 1 : 0));
+  KINAI_EXTRA_UNITS.forEach(u => { if(!list.some(x => x.u === u)) list.push({ key: "?|" + u, subj: "", u: u, empty: true }); });
+  return list;
+}
+// その単元で出せる問題（QA_DATA の位置）。優先度「低」・計算・答える小問が0の大問は除く
+function kinaiCands(keys){
+  const ks = new Set(keys), out = [];
+  QA_DATA.forEach((d, i) => {
+    if(!kinaiIsUnit(d) || !ks.has(d.subj + "|" + d.u)) return;
+    if(d.kind === "calc" || prioOf(d) === "低") return;
+    if(weightOf(i) <= 0) return;
+    out.push(i);
+  });
+  return out;
+}
+function kinaiSelectedKeys(){
+  const off = new Set(kinaiLoad().off || []);
+  return kinaiUnits().filter(x => !x.empty && !off.has(x.key)).map(x => x.key);
+}
+// 20問を選ぶ（QA_DATA の id。大問は大問の id のまま）
+function kinaiPick(){
+  const rank = { 0: 0, 1: 1, 3: 2, 2: 3 };   // まだ → 苦手 → おぼえかけ → 定着
+  const groups = [[], [], [], []];
+  kinaiCands(kinaiSelectedKeys()).forEach(i => { const r = rank[tierOf(i)]; groups[r === undefined ? 3 : r].push(i); });
+  const ordered = groups.reduce((a, g) => a.concat(shuffleArray(g)), []);
+  const r = takeByWeight(ordered, KINAI_COUNT);
+  const picked = Array.isArray(r) ? r : (r && r.out) || [];
+  return shuffleArray(picked).map(i => QA_DATA[i].id);
+}
+function kinaiStart(){
+  const ids = kinaiPick();
+  if(ids.length === 0){ showKinaiToast("えらんだ単元に、いま出せる問題がありません。"); return; }
+  if(startSoloWithIds(ids)) kinaiActive = true;
+}
+function renderKinai(){
+  const box = document.getElementById("kinai-units");
+  if(!box) return;
+  const off = new Set(kinaiLoad().off || []);
+  box.innerHTML = "";
+  kinaiUnits().forEach(x => {
+    const cands = x.empty ? [] : kinaiCands([x.key]);
+    const n = sumWeight(cands), notyet = sumWeight(cands.filter(i => tierOf(i) !== 2));
+    const on = !x.empty && !off.has(x.key);
+    const div = document.createElement("div");
+    div.className = "choice" + (on ? " selected" : "");
+    div.dataset.kinaiUnit = x.key;
+    div.innerHTML = '<span class="choice-left"><span class="choice-check"><input type="checkbox" tabindex="-1"' + (on ? " checked" : "") + (x.empty ? " disabled" : "") + '></span><span class="name">'
+      + escapeHtml((x.subj ? x.subj + " " : "") + x.u) + '</span></span><span class="count">'
+      + (x.empty ? "あとで入ります" : n + "問" + (n ? "（まだ定着していない " + notyet + "）" : "")) + '</span>';
+    if(!x.empty) div.addEventListener("click", () => {
+      const o = kinaiLoad(), s = new Set(o.off || []);
+      if(s.has(x.key)) s.delete(x.key); else s.add(x.key);
+      o.off = Array.from(s); kinaiSave(o); renderKinai();
+    });
+    box.appendChild(div);
+  });
+  const total = sumWeight(kinaiCands(kinaiSelectedKeys()));
+  const btn = document.getElementById("kinai-start-btn");
+  btn.disabled = total === 0;
+  btn.textContent = total === 0 ? "えらんだ単元に問題がありません" : (total <= KINAI_COUNT ? total + "問ではじめる" : KINAI_COUNT + "問ではじめる（えらんだ単元は全部で " + total + "問）");
+}
+let kinaiToastTimer = null;
+function showKinaiToast(text){
+  let el = document.getElementById("kinai-toast");
+  if(!el){ el = document.createElement("div"); el.id = "kinai-toast"; el.className = "kinai-toast"; document.body.appendChild(el); }
+  el.textContent = text; el.style.display = "";
+  clearTimeout(kinaiToastTimer);
+  kinaiToastTimer = setTimeout(() => { el.style.display = "none"; }, 4000);
+}
+// ---- ネットなし ----
+function isOfflineNow(){ return typeof navigator !== "undefined" && navigator.onLine === false; }
+function offlineBattleBlock(){
+  if(!isOfflineNow()) return false;
+  showKinaiToast("いまはネットにつながっていないので、二人の対戦はできません。一人で解く・機内用を使ってください（記録は残ります）。");
+  refreshOfflineNote();
+  return true;
+}
+function refreshOfflineNote(){
+  const el = document.getElementById("offline-note");
+  if(el) el.style.display = isOfflineNow() ? "" : "none";
+}
+// ---- 端末への保存（sw.js）----
+// ★本番（https）だけで動かす。この PC の中の検査（127.0.0.1 / localhost）では、
+//   localStorage に kq_battle_sw_test=1 を入れた検査（tools/mikaku/offline_probe.mjs）のときだけ動かす
+//   （ほかの検査は同じ画面の中で中身を差しかえるので、保存が残ると検査がくるう）
+function swWanted(){
+  if(!("serviceWorker" in navigator) || !window.isSecureContext) return false;
+  const local = /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
+  if(!local) return location.protocol === "https:";
+  try{ return window.localStorage.getItem("kq_battle_sw_test") === "1"; }catch(e){ return false; }
+}
+function swAsk(msg, onMsg){
+  return new Promise(resolve => {
+    const ctl = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if(!ctl){ resolve(null); return; }
+    const ch = new MessageChannel();
+    let done = false;
+    ch.port1.onmessage = e => { if(onMsg) onMsg(e.data); if(!onMsg || (e.data && e.data.type !== "progress")){ done = true; resolve(e.data); } };
+    ctl.postMessage(msg, [ch.port2]);
+    if(!onMsg) setTimeout(() => { if(!done) resolve(null); }, 8000);
+  });
+}
+async function refreshKinaiSave(){
+  const el = document.getElementById("kinai-save"), allBtn = document.getElementById("kinai-cache-all-btn");
+  if(!el) return;
+  if(!swWanted()){ el.textContent = "（この開き方では、端末への保存は使いません）"; allBtn.style.display = "none"; return; }
+  const st = await swAsk({ type: "status" });
+  if(!st){ el.textContent = "端末に保存しています…（ネットにつながったまま、少し待ってから開き直してください）"; allBtn.style.display = "none"; return; }
+  const ok = st.shell === st.shellTotal && st.kinai === st.kinaiTotal;
+  el.innerHTML = (ok ? "✅ ネットなしで使えます" : "⏳ 保存のとちゅうです") + "（この端末に保存：アプリ " + st.shell + "/" + st.shellTotal + "・機内用の図 " + st.kinai + "/" + st.kinaiTotal
+    + "・図ぜんぶ " + st.all + "/" + st.allTotal + "）<br>版 " + escapeHtml(String(st.version));
+  el.dataset.ok = ok ? "1" : "0";
+  allBtn.style.display = st.all < st.allTotal ? "" : "none";
+}
+function setupKinai(){
+  const open = document.getElementById("kinai-open"), panel = document.getElementById("kinai-panel");
+  const setOpen = on => { panel.hidden = !on; open.setAttribute("aria-expanded", on ? "true" : "false"); open.textContent = "✈️ 機内用：組分け対策（ネットなしでも） " + (on ? "▴" : "▾"); };
+  setOpen(!!kinaiLoad().open);
+  open.addEventListener("click", () => { const on = panel.hidden; setOpen(on); const o = kinaiLoad(); o.open = on; kinaiSave(o); if(on){ renderKinai(); refreshKinaiSave(); } });
+  document.getElementById("kinai-start-btn").addEventListener("click", kinaiStart);
+  document.getElementById("kinai-next-btn").addEventListener("click", kinaiStart);
+  document.getElementById("kinai-cache-all-btn").addEventListener("click", async () => {
+    const el = document.getElementById("kinai-save"), btn = document.getElementById("kinai-cache-all-btn");
+    if(isOfflineNow()){ showKinaiToast("ネットにつながっているときに押してください。"); return; }
+    btn.disabled = true;
+    const r = await swAsk({ type: "cacheAll" }, m => { if(m && m.type === "progress") el.textContent = "保存中… " + m.done + "/" + m.total; });
+    btn.disabled = false;
+    if(r && r.fail) showKinaiToast("保存できなかった図が " + r.fail + "枚あります。もう一度押してください。");
+    refreshKinaiSave();
+  });
+  renderKinai();
+  refreshOfflineNote();
+  window.addEventListener("online", refreshOfflineNote);
+  window.addEventListener("offline", refreshOfflineNote);
+  if(swWanted()){
+    navigator.serviceWorker.register("sw.js").then(() => navigator.serviceWorker.ready).then(() => {
+      if(!panel.hidden) refreshKinaiSave();
+    }).catch(e => { console.warn("sw register failed", e); });
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if(!panel.hidden) refreshKinaiSave(); });
+  }
+  if(!panel.hidden) refreshKinaiSave();
+}
+
 loadStats();
 mergeOldDaimonStats();   // ★loadStats のすぐあと。runStatsMigrations には入れない（理由は関数の上）
 loadEdits();
@@ -13397,6 +13595,7 @@ showMigrationNoteOnce();
 setupTodayLink();
 setupSpeedPointsToggle();   // ★⚡スピードポイントの「出さない」スイッチ（2026-10-10）
 setupTodayPlan();   // ★今日やること（kosuke-records の plan。2026-10-07）
+setupKinai();   // ★機内用：組分け対策・ネットなしで使う（2026-10-21）
 setupAutoSend();   // ★記録の自動送信（送り先が入っているときだけ送る。2026-10-06）   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>

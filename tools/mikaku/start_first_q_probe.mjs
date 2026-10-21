@@ -59,6 +59,7 @@ const api = http.createServer((req, res) => {
 await new Promise(r => api.listen(0, "127.0.0.1", r));
 const API_URL = "http://127.0.0.1:" + api.address().port;
 const browser = await chromium.launch({ channel: "chrome" });
+const SWON = {};
 
 // seed: { mig, settings: "pre4"|"old", tiers, stats: "mastered", plan }
 const SEED = (o) => {
@@ -95,7 +96,14 @@ async function run(name, hostSeed, guestSeed, how) {
     const rv = who === "host" ? process.env.HOSTREV : process.env.GUESTREV;
     const tv = who === "host" ? process.env.HOSTTR : process.env.GUESTTR;
     const qs = [rv ? "rev=" + rv : "", tv ? "tr=" + tv : ""].filter(Boolean).join("&");
+    // SW=1 … ネットなし用の sw.js を動かした状態で試す（本番と同じ。2026-10-21）。開き直して sw.js が受け持つ画面にしてから始める
+    if (process.env.SW) await page.addInitScript(() => { try { localStorage.setItem("kq_battle_sw_test", "1"); } catch (e) {} });
     await page.goto(PAGE_URL + (qs ? "?" + qs : "")); await page.waitForTimeout(400);
+    if (process.env.SW) {
+      await page.evaluate(() => navigator.serviceWorker.ready); await page.reload(); await page.waitForTimeout(400);
+      const on = await page.evaluate(() => !!navigator.serviceWorker.controller);
+      if (!on) errs.push(who + " SW=1 なのに sw.js が受け持っていない"); else SWON[who] = true;
+    }
     return { ctx, page, errs };
   };
   const host = await mk("host"), guest = await mk("guest");
@@ -177,5 +185,6 @@ for (const [n, h, g, how] of S) {
   if (!r) ng++;
   console.log("     ↑ " + n);
 }
+if (process.env.SW) console.log("■ sw.js が受け持った画面: " + JSON.stringify(SWON));
 console.log(ng ? "\n✘ " + ng + " 件で始まらない（またはエラー）" : "\n✔ 全部始まった");
 await browser.close(); server.close(); relay.close(); api.close(); process.exit(ng ? 1 : 0);

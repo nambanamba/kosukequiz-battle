@@ -1,0 +1,10 @@
+{
+  "name": "恒介クイズ",
+  "short_name": "恒介クイズ",
+  "start_url": "./",
+  "scope": "./",
+  "display": "browser",
+  "background_color": "#f6f2ea",
+  "theme_color": "#f6f2ea",
+  "lang": "ja"
+}

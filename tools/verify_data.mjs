@@ -150,5 +150,15 @@ if (byImg.size === 0) {
   }
 }
 
+// ★2026-10-21 ネットなしで使うための保存の一覧（sw.js）が最新か。
+//   図や機内用の範囲（第6〜9回・おまけ.ペルー）の問題を足したのに回し忘れると、機内で図が出ない
+console.log("\n===== ネットなし用の保存の一覧（sw.js）が最新か =====");
+{
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync(process.execPath, [path.join(ROOT, "tools", "build_sw.mjs"), "--check"], { encoding: "utf8" });
+  if (r.status === 0) console.log("  ✅ " + (r.stdout || "").trim());
+  else { ng++; console.log("  ★ " + ((r.stderr || "") + (r.stdout || "")).trim() + "\n     → node tools/build_sw.mjs を回してからコミットしてください"); }
+}
+
 console.log("\n===== 合計: " + (ng ? "★" + ng + " 件の問題あり" : "問題なし") + " =====");
 process.exit(ng ? 1 : 0);
