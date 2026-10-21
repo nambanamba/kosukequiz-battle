@@ -98,6 +98,10 @@ check("O2 ネットなしで開き直しても画面が出る・「ネットに�
 const unitsTxt = await page.$$eval("#kinai-units .choice .name", els => els.map(e => e.textContent));
 check("O2b 機内用の単元に第6〜8回の社会・理科とおまけ.ペルー", unitsTxt.some(t => /社会 第6回/.test(t)) && unitsTxt.some(t => /理科 第8回/.test(t)) && unitsTxt.some(t => /おまけ.ペルー/.test(t)) && !unitsTxt.some(t => /第[1-5]回\./.test(t)), unitsTxt.join(" / "));
 
+const peruCount = await page.$$eval("#kinai-units .choice", els => { const e = els.find(x => /おまけ.ペルー/.test(x.textContent)); return e ? e.querySelector(".count").textContent : ""; });
+const peruN = await page.evaluate(() => (typeof QA_DATA !== "undefined" ? QA_DATA : []).filter(d => d.u === "おまけ.ペルー").length);
+check("O2c おまけ.ペルーの数が出る（取り込みずみなら問題数・まだなら「あとで入ります」）", peruN ? new RegExp("^" + peruN + "問").test(peruCount) : /あとで入ります/.test(peruCount), "data.js に " + peruN + "問・表示「" + peruCount + "」");
+
 // ---- O3 対戦は始まらない ----
 await page.click("#create-btn");
 await page.waitForTimeout(500);
