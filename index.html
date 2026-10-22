@@ -12480,8 +12480,20 @@ function planUnskip(no, key){
   planSendDone(no);
 }
 // まだ全部できていない、いちばん小さい番号（中身が読めているセットだけ）
-function planFirstOpen(after){
-  return planIndex().find(no => (after === undefined || no > after) && planSetOf(no) && !planAllDone(no));
+// ★2026-10-23 date が今日（日本時間）より先のセットは、本体には出さず「つぎ」にだけ出す
+//   （土曜用のセットが金曜の朝に出た。調査: 司令塔\回答\今日の社会が縄文ばかり_調査_2026-10-23.md 案C）
+//   ・date の無い／読めないセットは今までどおり（先とはみなさない）。過ぎた日の未完セットも今までどおり出る
+//   ・includeFuture を true にすると先の日付のセットも数える（「つぎ（明日のぶん）」用）
+function planTodayJst(){
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+}
+function planIsFuture(no){
+  const s = planIsAuto(no) ? null : planSets()[no];
+  return !!(s && typeof s.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.date) && s.date > planTodayJst());
+}
+function planFirstOpen(after, includeFuture){
+  return planIndex().find(no => (after === undefined || no > after) && planSetOf(no) && !planAllDone(no) && (includeFuture || !planIsFuture(no)));
 }
 let planShownNo = null;   // 開いたときに決めた「いま進めているセット」
 // ★自動のセット（2026-10-09。上の planIsAuto の説明）
@@ -13332,7 +13344,19 @@ function renderPlanSet(container, no, prefix, closable){
 function renderPlan(){
   const box = document.getElementById("plan-box");
   if(!box) return;
-  if(planShownNo === null || !planSetOf(planShownNo)) planShownNo = planFirstOpen() || planAutoCurrent() || null;   // ★セットが無いときだけ自動のセット
+  if(planShownNo === null || !planSetOf(planShownNo)){
+    planShownNo = planFirstOpen() || null;
+    if(planShownNo === null){
+      // ★先の日付のセットしか残っていない: 今日のぶんが全部済んだ日。済んだ最後のセットを「おわり！」で出し、先のセットは「つぎ」に出す
+      //   （今日のセットがそもそも無いときは、今までどおり先のセットを出す）
+      const fut = planFirstOpen(undefined, true);
+      if(fut !== undefined){
+        const done = planIndex().filter(no => no < fut && planSetOf(no) && planAllDone(no));
+        planShownNo = done.length ? done[done.length - 1] : fut;
+      }
+    }
+    if(planShownNo === null) planShownNo = planAutoCurrent() || null;   // ★セットが無いときだけ自動のセット
+  }
   const cur = document.getElementById("plan-cur"), nx = document.getElementById("plan-next"), fin = document.getElementById("plan-done");
   if(!planShownNo){ box.style.display = "none"; cur.innerHTML = ""; nx.innerHTML = ""; return; }
   box.style.display = "";
@@ -13341,7 +13365,7 @@ function renderPlan(){
   const allDone = planAllDone(planShownNo);
   fin.style.display = allDone ? "" : "none";
   // 全部できたら、すぐ下に次のセット（押せばそのまま進める）
-  let nextNo = allDone ? planFirstOpen(planIsAuto(planShownNo) ? undefined : planShownNo) : null;
+  let nextNo = allDone ? planFirstOpen(planIsAuto(planShownNo) ? undefined : planShownNo, true) : null;   // ★先の日付のセットも「つぎ」には出す
   // ★つぎのセットが無いときだけ、自動のセット（いまが自動ならその次の番号）
   if(allDone && !nextNo) nextNo = planIsAuto(planShownNo) ? (planAutoOff() ? null : "A" + (parseInt(planShownNo.slice(1), 10) + 1)) : planAutoCurrent();
   if(nextNo && !planSetOf(nextNo)) nextNo = null;
