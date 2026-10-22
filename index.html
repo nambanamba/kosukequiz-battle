@@ -1947,9 +1947,9 @@
     <div class="offline-note" id="offline-note" style="display:none;">いまはネットにつながっていません。<b>一人で解く</b>・<b>機内用</b>は使えます（記録は端末に残り、ネットが戻ったら送られます）。二人の対戦は、ネットが戻ってから。</div>
     <button type="button" class="kinai-open" id="kinai-open" aria-expanded="false" aria-controls="kinai-panel">✈️ 機内用：組分け対策（ネットなしでも） ▾</button>
     <div class="kinai-panel" id="kinai-panel" hidden>
-      <div class="kinai-lead">第6〜9回の社会・理科から、<b>1回20問</b>ずつ出します。まだ正解していない問題と苦手な問題が先に出ます（優先度「低」は出しません）。</div>
+      <div class="kinai-lead">第6〜9回の社会・理科から、<b>1回＝理科20問＋社会15問</b>（まぜて35問）ずつ出します。ペルーのおまけは社会の15問の中に1回2問まで。まだ正解していない問題と苦手な問題が先に出ます（優先度「低」は出しません）。</div>
       <div class="choice-grid" id="kinai-units"></div>
-      <button class="start-btn" id="kinai-start-btn" style="margin-top:10px;">20問ではじめる</button>
+      <button class="start-btn" id="kinai-start-btn" style="margin-top:10px;">35問ではじめる</button>
       <div class="kinai-save" id="kinai-save"></div>
       <button type="button" class="btn-secondary" id="kinai-cache-all-btn" style="display:none; margin-top:8px;">ほかの単元の図も全部この端末に保存する</button>
     </div>
@@ -2482,7 +2482,7 @@
     <div class="empty-note" id="solo-perfect-note" style="display:none;">全問正解です。すばらしい！</div>
     <div class="result-actions">
       <button class="start-btn" id="solo-retry-miss-btn">まちがえた問題だけもう一度</button>
-      <button class="start-btn" id="kinai-next-btn" style="display:none;">✈️ つぎの20問</button>
+      <button class="start-btn" id="kinai-next-btn" style="display:none;">✈️ つぎの35問</button>
       <button class="btn-secondary" id="solo-result-home-btn">はじめの画面にもどる</button>
     </div>
   </section>
@@ -8657,7 +8657,7 @@ let quizResults = []; // { id, correct（実際の正誤）, recorded（記録�
 //      永続的な正誤記録は「まちがえた」のままにする（元々まちがえた問題なので、
 //      ここで正解しても正解ずみにはしない）。二人対戦の inMissRetryRound と同じ扱い ----
 let inSoloRetryRound = false;
-let kinaiActive = false;   // ★2026-10-21 機内用の「20問ではじめる」から始めた回（おわりに「つぎの20問」を出す）
+let kinaiActive = false;   // ★2026-10-21 機内用の「はじめる」から始めた回（おわりに「つぎの◯問」を出す）
 // ★2026-10-05 一人の考える時間・一問一答のスキップ
 let soloThinkTimer = null, soloThinkInterval = null;
 let soloSkippedIds = new Set();   // スキップして答えを見た一問一答（あとでもう一度出る。そのときは記録しない＝✕のまま）
@@ -9110,6 +9110,7 @@ function finishSoloQuiz(){
     startSoloCard();
     showScreen("screen-solo");
   };
+  if(kinaiActive) renderKinai();   // 「つぎの◯問（理科・社会）」の数を、この回の記録のあとで数え直す
   document.getElementById("kinai-next-btn").style.display = (kinaiActive && !reviewMode) ? "" : "none";   // ★機内用（2026-10-21）
   showScreen("screen-solo-result");
 }
@@ -13421,13 +13422,15 @@ function setupTodayPlan(){
 //   11/8 の第7回組分けテスト対策（範囲は第6〜10回。第10回は総合回なのでカードは第6〜9回の社会・理科）。おまけにペルーの問題」
 //   ・★いちばん大事なのはネットなしで動くこと・記録もネットなしで残ること（sw.js。記録の入れ物は今までどおり）
 //   ・機内用の範囲 … ★tools/build_sw.mjs と同じ規則（あちらは保存する図を決める）。変えるときは両方
-//   ・1回20問。まだ正解していない → 苦手 → おぼえかけ → 定着 の順に取り、段の中はランダム。取ったあと混ぜる（社会と理科がまざる）
+//   ・★2026-10-22 1回＝理科20問＋社会15問（ユーザー「ちゃんと理科と社会が20問と15問になりますか？」）。
+//     ペルー（おまけ.ペルー）は社会の15問の中に1回2問まで、残りは第6〜9回の社会。足りないときはある分だけ。
+//   ・（もとは1回20問）まだ正解していない → 苦手 → おぼえかけ → 定着 の順に取り、段の中はランダム。取ったあと混ぜる（社会と理科がまざる）
 //   ・優先度「低」・計算（calc）は出さない。大問は小問に開く（ふだんの一人と同じ。数え方も weightOf）
 //   ・えらんだ単元は端末に覚える（外した単元だけ覚える＝あとで入る第9回・ペルーは、はじめから入る）
 //   ・二人の対戦は、ネットなしのときは押しても始めず「ネットが戻ってから」と出す（落ちない・止まらない）
 const KINAI_UNIT_RE = /^第[6-9]回\./;
 const KINAI_EXTRA_UNITS = ["おまけ.ペルー"];
-const KINAI_COUNT = 20;
+const KINAI_RIKA = 20, KINAI_SHAKAI = 15, KINAI_PERU_MAX = 2;   // ★2026-10-22 1回の数（理科・社会・社会のうちペルーの上限）
 const KINAI_KEY = "kq_battle_kinai_v1";   // { off: [外した単元], open: true/false }
 function kinaiIsUnit(d){ return !!d && ((KINAI_UNIT_RE.test(d.u || "") && (d.subj === "社会" || d.subj === "理科")) || KINAI_EXTRA_UNITS.includes(d.u)); }
 function kinaiLoad(){ try{ const o = JSON.parse(window.localStorage.getItem(KINAI_KEY) || "null"); return o && typeof o === "object" ? o : {}; }catch(e){ return {}; } }
@@ -13457,15 +13460,36 @@ function kinaiSelectedKeys(){
   const off = new Set(kinaiLoad().off || []);
   return kinaiUnits().filter(x => !x.empty && !off.has(x.key)).map(x => x.key);
 }
-// 20問を選ぶ（QA_DATA の id。大問は大問の id のまま）
-function kinaiPick(){
+// 1回分を選ぶ（QA_DATA の id。大問は大問の id のまま）。理科20＋社会15（うちペルー2まで）を混ぜる
+function kinaiOrdered(list){
   const rank = { 0: 0, 1: 1, 3: 2, 2: 3 };   // まだ → 苦手 → おぼえかけ → 定着
   const groups = [[], [], [], []];
-  kinaiCands(kinaiSelectedKeys()).forEach(i => { const r = rank[tierOf(i)]; groups[r === undefined ? 3 : r].push(i); });
-  const ordered = groups.reduce((a, g) => a.concat(shuffleArray(g)), []);
-  const r = takeByWeight(ordered, KINAI_COUNT);
-  const picked = Array.isArray(r) ? r : (r && r.out) || [];
-  return shuffleArray(picked).map(i => QA_DATA[i].id);
+  list.forEach(i => { const r = rank[tierOf(i)]; groups[r === undefined ? 3 : r].push(i); });
+  return groups.reduce((a, g) => a.concat(shuffleArray(g)), []);
+}
+function kinaiSplit(){
+  const c = kinaiCands(kinaiSelectedKeys());
+  const isPeru = i => KINAI_EXTRA_UNITS.includes(QA_DATA[i].u);
+  return {
+    rika: c.filter(i => QA_DATA[i].subj === "理科" && !isPeru(i)),
+    peru: c.filter(isPeru),
+    shakai: c.filter(i => QA_DATA[i].subj === "社会" && !isPeru(i))
+  };
+}
+function kinaiPick(){
+  const sp = kinaiSplit();
+  const rika = takeByWeight(kinaiOrdered(sp.rika), KINAI_RIKA);
+  const peru = takeByWeight(kinaiOrdered(sp.peru), KINAI_PERU_MAX);
+  const shakai = takeByWeight(kinaiOrdered(sp.shakai), KINAI_SHAKAI - sumWeight(peru));
+  return shuffleArray([].concat(rika, peru, shakai)).map(i => QA_DATA[i].id);
+}
+// 1回に出る数のめやす（ボタンの文字）
+function kinaiPlanCounts(){
+  const sp = kinaiSplit();
+  const r = Math.min(KINAI_RIKA, sumWeight(sp.rika));
+  const p = Math.min(KINAI_PERU_MAX, sumWeight(sp.peru));
+  const g = p + Math.min(KINAI_SHAKAI - p, sumWeight(sp.shakai));
+  return { rika: r, shakai: g, total: r + g };
 }
 function kinaiStart(){
   const ids = kinaiPick();
@@ -13494,10 +13518,11 @@ function renderKinai(){
     });
     box.appendChild(div);
   });
-  const total = sumWeight(kinaiCands(kinaiSelectedKeys()));
+  const pc = kinaiPlanCounts();
   const btn = document.getElementById("kinai-start-btn");
-  btn.disabled = total === 0;
-  btn.textContent = total === 0 ? "えらんだ単元に問題がありません" : (total <= KINAI_COUNT ? total + "問ではじめる" : KINAI_COUNT + "問ではじめる（えらんだ単元は全部で " + total + "問）");
+  btn.disabled = pc.total === 0;
+  btn.textContent = pc.total === 0 ? "えらんだ単元に問題がありません" : pc.total + "問ではじめる（理科" + pc.rika + "・社会" + pc.shakai + "）";
+  document.getElementById("kinai-next-btn").textContent = "✈️ つぎの" + pc.total + "問（理科" + pc.rika + "・社会" + pc.shakai + "）";
 }
 let kinaiToastTimer = null;
 function showKinaiToast(text){

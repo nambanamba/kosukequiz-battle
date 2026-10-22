@@ -118,10 +118,14 @@ const statsBefore = await statsCount();
 await page.click("#kinai-start-btn");
 await page.waitForSelector("#screen-solo.active", { timeout: 5000 });
 const counter0 = await page.textContent("#solo-counter");
+// ★2026-10-22 1回＝理科20＋社会15（ペルーは社会の中に2まで）。出たカードを番号ごとに1回だけ、単元から科目を数える
+const unitSubj = await page.evaluate(() => { const m = {}; QA_DATA.forEach(d => { m[d.u] = d.subj; }); return m; });
+const firstSeen = new Map();
 let answered = 0, imgsSeen = 0, imgsBroken = [], guard = 0;
 while (guard++ < 200) {
   if (await page.evaluate(() => document.getElementById("screen-solo-result").classList.contains("active"))) break;
   const qid = (await page.textContent("#solo-q-id")).trim();
+  if (!firstSeen.has(qid)) firstSeen.set(qid, (await page.textContent("#solo-unit-tag")).trim());
   const imgVis = await page.isVisible("#solo-img");
   if (imgVis) {
     await page.waitForFunction(() => { const i = document.getElementById("solo-img"); return i.complete; }, null, { timeout: 5000 }).catch(() => {});
@@ -139,9 +143,16 @@ while (guard++ < 200) {
   await page.waitForTimeout(80);
 }
 const resultOn = await page.evaluate(() => document.getElementById("screen-solo-result").classList.contains("active"));
-check("O4 機内用の20問を最後まで解ける", resultOn && /\/\s*20$/.test(counter0.trim()), "最初の表示 " + counter0.trim() + "・答えた回数 " + answered + "・結果 " + (resultOn ? await page.textContent("#solo-result-score") : "出ない"));
+const mix = { 理科: 0, 社会: 0, ペルー: 0, 不明: 0 };
+firstSeen.forEach(u => { const sj = unitSubj[u]; if (u === "おまけ.ペルー") mix.ペルー++; if (sj === "理科" || sj === "社会") mix[sj]++; else mix.不明++; });
+const seq = [...firstSeen.values()].map(u => u === "おまけ.ペルー" ? "ペ" : unitSubj[u] === "理科" ? "理" : "社");
+const switches = seq.reduce((n, x, i) => n + (i && x !== seq[i - 1] ? 1 : 0), 0);
+check("O4a2 理科と社会がまざって出る（科目の切りかわり2回以上）", switches >= 2, seq.join(""));
+check("O4a 1回＝理科20問＋社会15問（ペルーは2問まで）・まざっている", mix.理科 === 20 && mix.社会 === 15 && mix.ペルー <= 2, JSON.stringify(mix));
+check("O4 機内用の35問を最後まで解ける", resultOn && /\/\s*35$/.test(counter0.trim()), "最初の表示 " + counter0.trim() + "・答えた回数 " + answered + "・結果 " + (resultOn ? await page.textContent("#solo-result-score") : "出ない"));
 check("O4b 出た図はネットなしでも全部表示される", imgsSeen > 0 && imgsBroken.length === 0, "図 " + imgsSeen + "枚・出ない " + imgsBroken.length + (imgsBroken.length ? " " + imgsBroken.slice(0, 5).join(" ") : ""));
-check("O4c おわりに「つぎの20問」が出る", await page.isVisible("#kinai-next-btn"));
+const nextTxt = await page.textContent("#kinai-next-btn");
+check("O4c おわりに「つぎの35問（理科20・社会15）」が出る", await page.isVisible("#kinai-next-btn") && /つぎの35問（理科20・社会15）/.test(nextTxt), nextTxt);
 
 // ---- O5 記録 ----
 const statsAfter = await statsCount();
