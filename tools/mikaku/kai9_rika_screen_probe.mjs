@@ -6,7 +6,7 @@
 //   R5 大問の一覧に第9回の9題
 //   R4 ★第9回の理科を全部、一人で実際に解く: 紙の3問は1問も出ない・練習4の問1・2は出る・大問の小問33・カード65
 //   R7 紙で出すの一覧に 練習4（問3・4）と発展だけ。問題の紙に問3・問4だけ
-//   R8 表・図のカードに画像が出る／R9 第9回の画像 20枚が全部 200／R10 優先度 高25・普通34・低6／calc は入っていない
+//   R8 表・図のカードに画像が出る／R9 第9回の画像 20枚が全部 200／R10 優先度 高25・普通33・低7／calc は入っていない
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -89,7 +89,7 @@ try {
   const unused = [];
   check("R9 第9回の理科の画像 " + imgs.length + "枚 すべて 200", bad.length === 0 && unused.length === 0 && imgs.length === 20, bad.join(" ") + " n=" + imgs.length + " " + unused.join(","));
   const low = await page.evaluate(() => { const c = {}; QA_DATA.filter(q => /^r9m/.test(q.id)).forEach(q => c[q.priority] = (c[q.priority] || 0) + 1); return c; });
-  check("R10 優先度 高25・普通34・低6", low["高"] === 25 && low["普通"] === 34 && low["低"] === 6, JSON.stringify(low));
+  check("R10 優先度 高25・普通33・低7", low["高"] === 25 && low["普通"] === 33 && low["低"] === 7, JSON.stringify(low));
   check("calc は入っていない", await page.evaluate(() => !QA_DATA.some(q => /^r9[cd]/.test(q.id) || q.kind === "calc" && q.u && q.u.startsWith("第9回"))), "");
   check("画面のエラー 0", errs.length === 0, errs.join(" | "));
 } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
