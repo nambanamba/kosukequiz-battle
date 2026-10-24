@@ -7785,6 +7785,7 @@ function studyLogStart(k, ids, opt){
   if(old && !old.done){
     studyLogClose(old, old.seg ? (old.la || now) : (old.en || old.la || now), true, true);
     studyLogPending.add(old.id);
+    hurriedSweep();   // ★しめた回が急いだ回なら〇を外す（2026-10-24）
   }
   opt = opt || {};
   const uniq = Array.from(new Set(ids || []));
@@ -7839,6 +7840,7 @@ function studyLogFinish(k){
   studyLogClose(s, Date.now(), false, true);
   delete studyLog.cur[k];
   studyLogSave(s);
+  hurriedSweep();   // ★急いだ回なら〇を外す（送る snapshot に間に合うように、送る前に。2026-10-24）
   sendSession(s);   // ★記録の自動送信（送り先があるときだけ。2026-10-06）
 }
 // 問題が画面に出た（同じ問題がもう出ているときは、出た時刻を変えない＝つなぎ直し・描き直しで秒が0に戻らない）
@@ -7919,6 +7921,91 @@ function studyLogPaper(groups){
   sendSession(s);   // ★記録の自動送信（2026-10-06）
 }
 
+// ============================================================
+// ★★急いだ回の〇は数えない（2026-10-24 ユーザー）
+// ============================================================
+//   ユーザー「全部を74秒で終わらせた日（10/19 夜の一人の回。社会15問を74秒、見るまでの秒の中央1.4秒）は、カウントしないようにしましょう」
+//   ・急いだ回 ＝ 一人（ソロ）の一問一答の回（やり直しの回・チェックのみ・紙・大問だけ・対戦はのぞく）で、
+//     こたえを見るまでの秒の中央値（学習ログの「1問の中央値秒」と同じ数え方）が HURRIED_MED_SEC 未満の回
+//   ・急いだ回の〇は数えない（その問題は「まだ／苦手」の扱いに戻り、また出る）。✕・スキップは数える
+//   ・学習ログ（1問ごとの記録）・送った記録（kosuke-records の battle/session）は消さない・書きかえない。
+//     学習ログの回には印 hz（中央値）を付けるだけ。カードの記録（stats・分けての部分）から、その回の〇の分だけ外す
+//   ・外す前と後のカードの記録は kq_battle_hurried_v1 に回ごとに残す（あとで見直せるように）
+//   ・終わった回（done）だけを見る。1回見た回には hz が付くので、二度は外さない。起動したときにも見る＝前の回（10/19）にも効く
+//   ・子どもには何も出さない（責めない）。親が見る学習ログの書き出し・送る記録の summary に「急いだ回」の欄
+const HURRIED_MED_SEC = 2;
+const HURRIED_KEY = "kq_battle_hurried_v1";
+function isHurriedSession(s){
+  if(!s || s.k !== "solo" || s.retry || s.paper) return false;
+  if(!/^一問一答/.test(s.m || "")) return false;
+  if(!Array.isArray(s.q) || s.q.length === 0) return false;
+  const med = studyLogSummary(s).med;
+  return med !== "" && med < HURRIED_MED_SEC;
+}
+// 回 s の〇を、カードの記録から外す。later … s よりあとの回（学習ログの並び）、others … s 以外の回
+function hurriedDiscount(s, later, others){
+  const per = new Map();   // id → {o: その回の〇の数, tail: 最後の✕よりあとの〇の数}
+  s.q.forEach(e => {
+    if(e[3]) return;   // 出し直し（記録しない回）
+    const r = e[2];
+    if(r !== "o" && r !== "x" && r !== "skip") return;
+    const p = per.get(e[0]) || { o: 0, tail: 0 };
+    if(r === "o"){ p.o++; p.tail++; } else p.tail = 0;
+    per.set(e[0], p);
+  });
+  const day = dateToYMD(s.st), en = Math.max(s.en || 0, s.la || 0, s.st);
+  const oIn = (t, id) => !t.retry && !isHurriedSession(t) && (t.q || []).some(e => e[0] === id && !e[3] && e[2] === "o");
+  const cards = {};
+  per.forEach((p, id) => {
+    if(!p.o) return;
+    const part = isPartId(id), st = part ? partStats : stats;
+    if(!st[id]) return;
+    const before = JSON.stringify(st[id]);
+    const r = JSON.parse(before);
+    // 連続正解数: あとの回で✕（やり直しの回は〇も✕で記録される）が無ければ、この回で積んだ分を引く
+    const reset = later.some(t => (t.q || []).some(e => e[0] === id && !e[3] && (e[2] === "x" || e[2] === "skip" || (t.retry && e[2] === "o"))));
+    if(!reset) r.box = Math.max(0, (r.box || 0) - p.tail);
+    r.correct = Math.max(0, (r.correct || 0) - p.o);
+    // 正解した日: 同じ日にほかの回で〇が無ければ、その日を外す
+    if(!part){
+      const keep = others.some(t => dateToYMD(t.st) === day && oIn(t, id));
+      r.correctDays = keep ? correctDaysOf(r).slice() : correctDaysOf(r).filter(k => k !== day);
+    }
+    // 最後に正解した日: この回の〇だったら、前の回の〇（学習ログ）か、残った正解した日に戻す。どちらも無ければ消す
+    if(r.lastCorrectAt && r.lastCorrectAt >= s.st && r.lastCorrectAt <= en + 1000){
+      const prev = others.filter(t => t.st < s.st && oIn(t, id)).reduce((m, t) => Math.max(m, t.en || t.la || t.st), 0);
+      const ds = part ? [] : r.correctDays;
+      if(prev) r.lastCorrectAt = prev;
+      else if(ds.length) r.lastCorrectAt = new Date(ds[ds.length - 1] + "T12:00:00").getTime();
+      else delete r.lastCorrectAt;
+    }
+    r.nextDue = (r.lastAnswered || Date.now()) + BOX_INTERVAL_DAYS[Math.min(r.box || 0, BOX_INTERVAL_DAYS.length - 1)] * 24 * 60 * 60 * 1000;
+    st[id] = r;
+    cards[id] = { before: before, after: JSON.stringify(r) };
+  });
+  return cards;
+}
+// 終わった回のうち、まだ見ていない急いだ回を外す。外したら true
+function hurriedSweep(){
+  const all = studyLog.sessions.slice().sort((a, b) => a.st - b.st);
+  let changed = false, audit = null;
+  all.forEach((s, i) => {
+    if(!s || !s.done || s.hz !== undefined || !isHurriedSession(s)) return;
+    const cards = hurriedDiscount(s, all.slice(i + 1), all.filter(t => t !== s));
+    s.hz = studyLogSummary(s).med;
+    studyLogPending.add(s.id);
+    if(!audit){ try{ audit = JSON.parse(window.localStorage.getItem(HURRIED_KEY) || "{}") || {}; }catch(e){ audit = {}; } }
+    audit[s.id] = { at: Date.now(), med: s.hz, day: dateToYMD(s.st), cards: cards };
+    changed = true;
+  });
+  if(!changed) return false;
+  try{ window.localStorage.setItem(HURRIED_KEY, JSON.stringify(audit)); }catch(e){ console.error("save hurried failed", e); }
+  saveStats();
+  savePartStats();
+  studyLogSave();
+  return true;
+}
+
 // ---- 書き出し（CSV）。★今の「正解・不正解の記録」のCSVとは別のファイル ----
 function fmtDateTime(ts){
   if(!ts) return "";
@@ -7940,7 +8027,7 @@ function downloadCsv(rows, baseName){
 }
 const STUDY_LOG_HEADER = ["回のID","開始日時","終了日時","全体の分","解いていた分","一人・対戦","自分の役","形式","教科","単元","やり直し",
   "予定の問題数","出した問題数","答えた数","正解数","まちがい数","スキップ数","時間切れ数","出し直しで答えた数","途中でやめた","再開した回数",
-  "1問の平均秒","1問の中央値秒","1問の最長秒","何周"];   // ★何周: 2026-10-06（正解するまでぐるぐる）
+  "1問の平均秒","1問の中央値秒","1問の最長秒","何周","急いだ回"];   // ★何周: 2026-10-06（正解するまでぐるぐる）★急いだ回: 2026-10-24（〇を数えない回）
 function studyLogRows(){
   const rows = [STUDY_LOG_HEADER.slice()];
   const min1 = ms => Math.round(ms / 6000) / 10;
@@ -7953,7 +8040,7 @@ function studyLogRows(){
     rows.push([s.id, fmtDateTime(s.st), fmtDateTime(en), min1(en - s.st), min1(act), s.k === "battle" ? "対戦" : "一人", role, s.m, s.subj,
       (s.u || []).join("／"), s.retry ? "はい" : "いいえ",
       s.plan || 0, sm.shown, sm.ans, sm.ok, sm.ng, sm.skip, sm.to, sm.re, (s.done && !s.quit) ? "いいえ" : "はい", s.res || 0,
-      sm.avg, sm.med, sm.max, sm.laps === undefined ? "" : sm.laps]);
+      sm.avg, sm.med, sm.max, sm.laps === undefined ? "" : sm.laps, isHurriedSession(s) ? "はい" : ""]);
   });
   return rows;
 }
@@ -13645,6 +13732,8 @@ setupTodayLink();
 setupSpeedPointsToggle();   // ★⚡スピードポイントの「出さない」スイッチ（2026-10-10）
 setupTodayPlan();   // ★今日やること（kosuke-records の plan。2026-10-07）
 setupKinai();   // ★機内用：組分け対策・ネットなしで使う（2026-10-21）
+// ★急いだ回（2026-10-24）: 起動したとき、学習ログを読み終えたら、まだ見ていない急いだ回の〇を外す（前の回にも効く）。外したら画面と送る記録を新しく
+studyLogReady.then(() => { if(hurriedSweep()){ try{ renderHome(); }catch(e){ console.error(e); } sendSnapshotIfDue(true); } }).catch(e => console.error("hurried sweep failed", e));
 setupAutoSend();   // ★記録の自動送信（送り先が入っているときだけ送る。2026-10-06）   // ★リンクで開いたときの「今日やるカード」（2026-10-06）。記録を読んだあと（数え方に記録を使う）
 preloadJoinRoom(); // 対戦の通信ライブラリを、画面が出たあとの空き時間に裏で読み込む
 </script>
