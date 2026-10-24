@@ -100,6 +100,8 @@ FILES = {
     ("要点チェック", 8): "要点チェック_第8回.json",   # 2026-10-17 追加（週テスト第8回は無い）
     ("基本問題", 8): "基本問題_第8回.json",
     ("練習問題", 8): "練習問題_第8回.json",
+    ("基本問題", 9): "基本問題_第9回.json",   # 2026-10-24 追加（★要点チェック第9回は全部一問一答なので大問のファイルが無い・週テスト第9回も無い）
+    ("練習問題", 9): "練習問題_第9回.json",
     ("週テスト", 3): "週テスト_第3回_bc.json",
     ("週テスト", 4): "週テスト_第4回_bc.json",
 }
@@ -134,6 +136,10 @@ def sha(path):
         return hashlib.sha256(f.read()).hexdigest()
 
 
+# ★2026-10-24 大問にする問が1つも無く、ファイルを作っていない本（回ごと）。ここに無いものが欠けていたら止まる
+NO_BOOK = {("要点チェック", 9)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true")
@@ -153,9 +159,11 @@ def main():
     groups, seen_ids, images, srcinfo = [], set(), {}, []
     # ★読むもの（科目, 本, 回, ファイル, 画像の場所）。理科を先に、社会をあとに（並びがそのまま一覧の並び）
     jobs = []
-    for kai in (3, 4, 6, 7, 8):
+    for kai in (3, 4, 6, 7, 8, 9):
         for book in BOOKS:
             if book == "週テスト" and kai not in args.weekly:
+                continue
+            if (book, kai) in NO_BOOK:   # ★2026-10-24 大問のファイルがもともと無い本（要点チェック第9回は全部一問一答）
                 continue
             if (book, kai) not in FILES:   # ★第6回は週テストが無い。名指しされても無いものは止める
                 die("元データの登録がありません: %s 第%d回" % (book, kai))
