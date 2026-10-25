@@ -66,7 +66,7 @@ const FAKES = {
       "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));",
       "  if(dm.it.file) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.file));\n  if(dm.it.aFile) els[prefix+\"-daimon-fig\"].appendChild(daimonImg(dm.it.aFile));  /* ★偽の実装 */", "小問の図")],
   d: ["記録を古い別の入れ物に書く", s => cut(s,
-      "  recordResult(qid, recorded);",
+      "  recordResult(qid, recorded, g);",   // ★2026-10-26 △（ぎりぎり）で引数が1つ増えた
       "  { const o = daimonStats[qid] || {correct:0, wrong:0}; if(recorded) o.correct++; else o.wrong++; daimonStats[qid] = o; saveDaimonStats(); }  /* ★偽の実装 */", "judgeSolo の記録の行")],
   e: ["直前が大問なら「一個前を直す」を出さない（2026-09-28 の版）", s => cut(s,
       "  els[\"solo-undo-row\"].style.display = (reviewMode || quizPos > 0) ? \"block\" : \"none\";",
