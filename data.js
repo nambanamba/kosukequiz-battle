@@ -1681,7 +1681,7 @@ const QA_DATA = [
   "a": "（野尻湖）です。",
   "img": "kai1_24.jpg",
   "priority": "普通",
-  "level": "基礎",
+  "level": "標準"
  },
  {
   "id": "g1r53",
@@ -1692,7 +1692,7 @@ const QA_DATA = [
   "a": "（岩宿遺跡）です。",
   "img": "kai1_29.jpg",
   "priority": "普通",
-  "level": "基礎",
+  "level": "標準"
  },
  {
   "id": "g1r54",
@@ -1703,7 +1703,7 @@ const QA_DATA = [
   "a": "（三内丸山遺跡）です。",
   "img": "kai1_18.jpg",
   "priority": "普通",
-  "level": "基礎",
+  "level": "標準"
  },
  {
   "id": "g1r55",
@@ -1714,7 +1714,7 @@ const QA_DATA = [
   "a": "（吉野ヶ里遺跡）です。",
   "img": "kai1_20.jpg",
   "priority": "普通",
-  "level": "基礎",
+  "level": "標準"
  },
  {
   "id": "g1r56",
@@ -1725,7 +1725,7 @@ const QA_DATA = [
   "a": "（登呂遺跡）です。",
   "img": "kai1_21.jpg",
   "priority": "普通",
-  "level": "基礎",
+  "level": "標準"
  },
  {
   "id": "g1r57",
@@ -3476,7 +3476,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m12",
@@ -3488,7 +3488,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m13",
@@ -3500,7 +3500,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m14",
@@ -3512,7 +3512,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m15",
@@ -3524,7 +3524,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m16",
@@ -3536,7 +3536,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m24",
@@ -3548,7 +3548,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m25",
@@ -3560,7 +3560,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m26",
@@ -3572,7 +3572,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m27",
@@ -3584,7 +3584,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m28",
@@ -3596,7 +3596,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m29",
@@ -3608,7 +3608,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m32",
@@ -3620,7 +3620,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m35",
@@ -3632,7 +3632,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m36",
@@ -3644,7 +3644,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m37",
@@ -3656,7 +3656,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m38",
@@ -3668,7 +3668,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m39",
@@ -3680,7 +3680,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m40",
@@ -3692,7 +3692,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r1m46",
@@ -3988,7 +3988,7 @@ const QA_DATA = [
   "kai": 1,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "r1m92",
@@ -4116,7 +4116,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r2m06",
@@ -4129,7 +4129,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r2m07",
@@ -4142,7 +4142,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r2m08",
@@ -4155,7 +4155,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r2m09",
@@ -4168,7 +4168,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r2m10",
@@ -4194,7 +4194,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r2m14",
@@ -4290,7 +4290,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "左に回すはたらきは 40×30＝1200。右に回すはたらき 20×(BCの長さ) も1200なので、BC＝1200÷20＝60cm。"
  },
  {
@@ -4304,7 +4304,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "上向きの力の合計と下向きの力の合計は同じになる。ばねばかり＝20＋40＝60g。"
  },
  {
@@ -4318,7 +4318,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "Aを引く力はおもりと同じ100g。滑車には、ひも2本分の 100＋100＝200g が下向きにかかり、C点がそれを支える。"
  },
  {
@@ -4332,7 +4332,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "おもり100gを2本のひもで支えるので、Dを引く力は 100÷2＝50g。1本のひもにかかる力はどこも同じなので、E点にも50g。"
  },
  {
@@ -4346,7 +4346,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "おもりといっしょに動く下の滑車を2本のひもで支えるので、180÷2＝90g。おもりの重さ：Gを引く力＝180：90＝2：1。"
  },
  {
@@ -4374,7 +4374,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "回すはたらきは「かかる力×半径」。30×4＝(Bの重さ)×12 より、Bの重さ＝120÷12＝10g。"
  },
  {
@@ -4388,7 +4388,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "小輪の半径：大輪の半径＝4：12＝1：3 なので、Aを引く長さ：Bが上がる長さも 1：3。3×3＝9cm。"
  },
  {
@@ -4402,7 +4402,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "2つのばねばかりで棒を支えているので、120＋80＝200g。"
  },
  {
@@ -4416,7 +4416,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "点Xには、左右のひもにかかる力の合計がかかる。60＋60＝120g。"
  },
  {
@@ -4430,7 +4430,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "上向きの力（D＋E）と下向きの力（C）は同じになる。D＝140−40＝100g。"
  },
  {
@@ -4444,7 +4444,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "Bをつるしたときの値とAをつるしたときの値をたすと、棒の重さ500gになる。500−300＝200g。"
  },
  {
@@ -4528,7 +4528,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "(ア)×40＝20×10＝200 より、(ア)＝200÷40＝5g。"
  },
  {
@@ -4542,7 +4542,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "50×20＝100×(イ) より、(イ)＝1000÷100＝10cm。"
  },
  {
@@ -4556,7 +4556,7 @@ const QA_DATA = [
   "kai": 2,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "発展",
   "sol": "左に回すはたらきは 10×30＋10×10＝400。(ウ)×20＝400 より、(ウ)＝400÷20＝20g。"
  },
  {
@@ -4605,7 +4605,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r3m14",
@@ -4689,7 +4689,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r3m49",
@@ -4701,7 +4701,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r3m50",
@@ -4749,7 +4749,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "r3m80",
@@ -4761,7 +4761,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "中",
-  "level": "標準",
+  "level": "発展",
   "sol": "あまった塩酸は蒸発してしまうので、残る固体は食塩だけ。食塩の結晶は立方体の形をしている。"
  },
  {
@@ -4964,7 +4964,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r3m140",
@@ -5004,7 +5004,7 @@ const QA_DATA = [
   "kai": 3,
   "kind": "memo",
   "priority": "高",
-  "level": "標準",
+  "level": "発展",
   "sol": "表で、塩酸を20cm³以上加えると固体の重さが増えなくなっているので、30cm³加えたときは水酸化ナトリウム水溶液がすべて中和され、塩酸があまっている。最初はアルカリ性で青色、最後は酸性で黄色。"
  },
  {
@@ -5328,7 +5328,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r4m28",
@@ -5340,7 +5340,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r4m29",
@@ -5424,7 +5424,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r4m39",
@@ -5448,7 +5448,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r4m42",
@@ -5472,7 +5472,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "基礎"
+  "level": "標準"
  },
  {
   "id": "r4m67",
@@ -5497,7 +5497,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "基礎"
+  "level": "標準"
  },
  {
   "id": "r4m70",
@@ -5509,7 +5509,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "高",
-  "level": "基礎"
+  "level": "標準"
  },
  {
   "id": "r4m79",
@@ -5521,7 +5521,7 @@ const QA_DATA = [
   "kai": 4,
   "kind": "memo",
   "priority": "中",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "r4m92",
@@ -18127,7 +18127,7 @@ const QA_DATA = [
   "note": "要点チェック、46P、問7-1（1問で2つ答えさせていたため、No.11から分割）",
   "a": "（延暦寺）です。",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "g4r121",
@@ -18137,7 +18137,7 @@ const QA_DATA = [
   "note": "要点チェック、46P、問7-2（1問で2つ答えさせていたため、No.12から分割）",
   "a": "（金剛峯寺）です。",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "g5r30",
@@ -18203,7 +18203,7 @@ const QA_DATA = [
   "a": "⑪（最澄・空海が新仏教を伝える）",
   "img": "kai5_01.jpg",
   "priority": "普通",
-  "level": "標準",
+  "level": "発展",
   "sol": "最澄と空海が唐から帰って新しい仏教を伝えたのは9世紀の初め。年表では11世紀のらんに置かれている。"
  },
  {
@@ -18215,7 +18215,7 @@ const QA_DATA = [
   "a": "㋒→㋓→㋐→㋑（㋒初めてⅡへ使いが送られる→㋓大化の改新が行われる→㋐白村江の戦いが起こる→㋑壬申の乱が起こる）",
   "img": "kai5_01.jpg",
   "priority": "普通",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g5r10",
@@ -18328,7 +18328,7 @@ const QA_DATA = [
   "note": "演習問題集、41P、応用問題2",
   "a": "（『万葉集』→『土佐日記』→『源氏物語』）の順です。",
   "priority": "普通",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g5r21",
@@ -18388,7 +18388,7 @@ const QA_DATA = [
   "note": "演習問題集、41P、応用問題2 2",
   "a": "（8）世紀の後半です。",
   "priority": "普通",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g5r27",
@@ -18398,7 +18398,7 @@ const QA_DATA = [
   "note": "演習問題集、41P、応用問題2 3",
   "a": "（10）世紀の前半です。",
   "priority": "普通",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g5r29",
