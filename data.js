@@ -7548,7 +7548,7 @@ const QA_DATA = [
   "kai": 8,
   "kind": "memo",
   "priority": "普通",
-  "level": "発展",
+  "level": "基礎",
   "sol": "同じばねを半分に切ると、自然長も、同じ力でののびも、半分になる。"
  },
  {
