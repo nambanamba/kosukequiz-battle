@@ -634,6 +634,7 @@
          全1631問に連続スペース・タブ・改行は1つも入っていないことを確認ずみ
          （＝この指定を入れても、いまのデータでは見た目は変わらない）。
          対戦・ひとり練習・問題一覧・結果画面の4か所すべてに付けてある ---- */
+  .neg-word{ color:#d0302a; font-weight:800; }   /* ★2026-10-25 「正しくない」などを赤く太く */
   .q-text{
     font-size:17px;
     line-height:1.85;
@@ -8539,7 +8540,7 @@ function buildPaperQuestionSheet(g){
   if(g.lead){
     const lead = document.createElement("div");
     lead.className = "paper-lead-text";
-    lead.textContent = g.lead;
+    setQText(lead, g.lead);
     qSheet.appendChild(lead);
   }
   if(g.file) qSheet.appendChild(daimonImg(g.file));
@@ -8552,7 +8553,7 @@ function buildPaperQuestionSheet(g){
     card.appendChild(lab);
     const q = document.createElement("div");
     q.className = "paper-item-q";
-    q.textContent = it.q;
+    setQText(q, it.q);
     card.appendChild(q);
     if(it.file) card.appendChild(daimonImg(it.file));
     const box = document.createElement("div");
@@ -8631,7 +8632,7 @@ function startDaimon(gi){
   if(g.lead){
     const t = document.createElement("div");
     t.className = "daimon-lead-text";
-    t.textContent = displayLead(g);
+    setQText(t, displayLead(g));
     lead.appendChild(t);
   }
   if(g.file) lead.appendChild(daimonImg(g.file));
@@ -8657,7 +8658,7 @@ function showDaimonItem(){
   card.appendChild(lab);
   const q = document.createElement("div");
   q.className = "q-text";
-  q.textContent = displayQ(it.q, it.id, it.a);
+  setQText(q, displayQ(it.q, it.id, it.a));
   card.appendChild(q);
   if(it.file) card.appendChild(daimonImg(it.file));
   els["daimon-items"].appendChild(card);
@@ -8753,7 +8754,7 @@ els["daimon-lead-btn"].addEventListener("click", ()=>{
   if(g.lead){
     const t = document.createElement("div");
     t.className = "daimon-lead-text";
-    t.textContent = displayLead(g);
+    setQText(t, displayLead(g));
     body.appendChild(t);
   }
   if(g.file) body.appendChild(daimonImg(g.file));
@@ -8874,7 +8875,7 @@ function startSoloCard(){
   els["solo-unit-tag"].textContent = d.u;
   els["solo-q-id"].textContent = "No."+d.id;
   els["solo-source-tag"].textContent = d.note ? "出典："+d.note : "";
-  els["solo-q"].textContent = displayQ(d.q, id, d.a);
+  setQText(els["solo-q"], displayQ(d.q, id, d.a));
   els["solo-a"].textContent = displayA(d.q, d.a, id);
   showYomi("solo", d);
   els["solo-sol"].textContent = displayNote(d.sol || "", id, d.q, d.a);
@@ -9633,6 +9634,14 @@ function csChoiceLines(info, p){
   if(info.kind === "quote") return p.map((orig, i) => CHOICE_LABELS[i] + "　" + info.choices[orig]);
   return p.map((orig, i) => csLabel(info.style, CS_KANA[i]) + (info.style === "n" ? "　" : " ") + info.choices[orig]);
 }
+// ★2026-10-25 「正しくない／誤っている」などを赤く太く（問いの文の表示だけ。答え・解説・データは変えない）
+//   こうすけが「正しくないものを選べ」で正しい選択肢に飛びつくため（第8回週テスト社会で3問）。
+//   文字はすべて escapeHtml してから、決まった語だけを <span class="neg-word"> で包む（< などがあっても壊れない）
+const NEG_WORDS_RE = /(?:正しく|ただしく)ない|(?:誤|あやま)(?:っている|り)|(?:まちが|間違|間ちが)(?:っている|い)|(?:あて|当て)はまらない|(?:適切|てきせつ)でない|ふさわしくない/g;
+function negMarkHtml(text){
+  return escapeHtml(String(text == null ? "" : text)).replace(NEG_WORDS_RE, m => '<span class="neg-word">' + m + '</span>');
+}
+function setQText(el, text){ el.innerHTML = negMarkHtml(text); }
 // 問いの文（id があれば入れかえ後の並び。fixed: 元の並び＝一覧で使う）
 function displayQ(q, id, a, fixed){
   const s = String(q == null ? "" : q);
@@ -10046,7 +10055,7 @@ function showGuestWaitStatus(data){
     el.textContent = "子どもがこの問題をスキップしました（答えを見ています）。あとでもう一度出てきます。";
   }else if(data.type === "skipped"){
     // 問題文だけは、データに入れた改行をそのまま出す（お知らせの文面のほうは今までどおり）
-    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+escapeHtml(typeof data.qv === "string" ? data.qv : displayQ(data.q))+"</span>";
+    el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+negMarkHtml(typeof data.qv === "string" ? data.qv : displayQ(data.q))+"</span>";
     // ★2026-10-10 問題の図・答え・解説も残す（子どもはスキップで答えを見ている。親が説明できるように）
     const okFig = n => typeof n === "string" && /^[A-Za-z0-9_.-]+\.(png|jpe?g|webp|gif)$/i.test(n);
     [data.fig, data.afig].forEach(n => { if(!okFig(n)) return; const im = document.createElement("img"); im.className = "skip-notice-fig"; im.src = "images/" + n; im.alt = "図"; im.addEventListener("click", () => openLightbox(im.src)); el.appendChild(im); });
@@ -10803,7 +10812,7 @@ function showQuestion(idx, hostPrivate){
   ["battle-unit-tag", "battle-q-id", "battle-source-tag"].forEach(k => {
     els[k].style.display = "";
   });
-  els["battle-q"].textContent = displayQ(d.q, d.id, d.a);
+  setQText(els["battle-q"], displayQ(d.q, d.id, d.a));
   els["battle-a"].textContent = displayA(d.q, d.a, d.id);
   showYomi("battle", d);
   els["battle-sol"].textContent = displayNote(d.sol || "", d.id, d.q, d.a);
@@ -11102,7 +11111,7 @@ function performSkip(){
   hostSkippedIds.add(skippedId);
 
   const skipped = getQById(skippedId);
-  els["battle-q"].textContent = displayQ(skipped.q, skippedId, skipped.a);
+  setQText(els["battle-q"], displayQ(skipped.q, skippedId, skipped.a));
   els["battle-a"].textContent = displayA(skipped.q, skipped.a, skippedId);
   showYomi("battle", skipped);
   els["battle-sol"].textContent = displayNote(skipped.sol || "", skippedId, skipped.q, skipped.a);
@@ -11238,9 +11247,9 @@ let judgeShowTimer = null;
 function addDaimonAnswered(parent, it, pos){
   const wrap = document.createElement("div");
   wrap.className = "battle-daimon-prev";
-  const add = (cls, text) => { const el = document.createElement("div"); el.className = cls; el.textContent = text; wrap.appendChild(el); };
+  const add = (cls, text) => { const el = document.createElement("div"); el.className = cls; el.textContent = text; wrap.appendChild(el); return el; };
   add("daimon-item-label", it.label || ("(" + (pos + 1) + ")"));
-  if(it.q) add("q-text", displayQ(it.q, it.id, it.a));   // ★分けての部分は問題の文を持たない（カードの文が下に出ている）
+  if(it.q) setQText(add("q-text", ""), displayQ(it.q, it.id, it.a));   // ★分けての部分は問題の文を持たない（カードの文が下に出ている）
   if(it.file) wrap.appendChild(daimonImg(it.file));
   add("a-label", "こたえ");
   add("a-text", displayA(it.q, it.a, it.id));   // ★記号の問題は、その回の並びの記号＋中身（2026-10-08）
@@ -11321,7 +11330,7 @@ function renderDaimonBlock(prefix, ids, idx){
     add("battle-daimon-title", "ロング編：" + String(g.unit || "").replace(/^ロング編\./, "") + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
   }else{
     add("battle-daimon-title", "大問：第" + g.kai + "回 " + g.book + " " + daimonName(g) + "（小問 " + (dm.pos + 1) + " / " + g.items.length + "）");
-    if(g.lead) add("daimon-lead-text", displayLead(g));   // ★リード文に選択肢が並ぶ大問は、その回の並び
+    if(g.lead) setQText(add("daimon-lead-text", ""), displayLead(g));   // ★リード文に選択肢が並ぶ大問は、その回の並び
     if(g.file) box.appendChild(daimonImg(g.file));
   }
   // 前の小問: 大問の中で、いまの小問より前の小問は全部こたえつきで出す
@@ -11361,7 +11370,7 @@ function addLongLeadToggle(prefix, g){
   const body = document.createElement("div");
   body.className = "long-lead-body";
   body.style.display = "none";
-  if(g.lead){ const t = document.createElement("div"); t.className = "daimon-lead-text"; t.textContent = displayLead(g); body.appendChild(t); }
+  if(g.lead){ const t = document.createElement("div"); t.className = "daimon-lead-text"; setQText(t, displayLead(g)); body.appendChild(t); }
   if(g.file) body.appendChild(daimonImg(g.file));
   btn.addEventListener("click", () => {
     const open = body.style.display === "none";
