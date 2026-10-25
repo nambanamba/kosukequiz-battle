@@ -737,6 +737,20 @@
     pointer-events:none;
   }
   .skip-btn:active{background:#fbf2e2;}
+  /* ★2026-10-25 一人の一問一答で、問題が出てから 理科15秒・社会8秒 たったらスキップをやさしく光らせる（ユーザー承認）。
+     時間切れにはしない（一人は時間制限なし・10-05）。音も文も出さない。色と、ゆっくりした光の点滅だけ */
+  .skip-btn.skip-glow{
+    border-style:solid;
+    background:#fff6dc;
+    animation:skipGlowPulse 1.8s ease-in-out infinite;
+  }
+  @keyframes skipGlowPulse{
+    0%,100%{ box-shadow:0 0 0 0 rgba(184,134,59,.0); }
+    50%{ box-shadow:0 0 14px 4px rgba(184,134,59,.55); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .skip-btn.skip-glow{ animation:none; box-shadow:0 0 10px 3px rgba(184,134,59,.45); }
+  }
   .think-timer{
     margin-top:14px;
   }
@@ -8762,6 +8776,30 @@ let kinaiActive = false;   // ★2026-10-21 機内用の「はじめる」から
 let soloThinkTimer = null, soloThinkInterval = null;
 let soloSkippedIds = new Set();   // スキップして答えを見た一問一答（あとでもう一度出る。そのときは記録しない＝✕のまま）
 let soloTimeupCount = 0;
+// ★2026-10-25 スキップを光らせる（一人の一問一答だけ。大問・紙・チェックのみ・対戦は対象外）。
+//   問題が出てから SKIP_GLOW_SEC 秒たったら #solo-skip-btn に .skip-glow を付けるだけ。時間切れ・記録・音は何もしない
+const SKIP_GLOW_SEC = {"理科": 15, "社会": 8};
+let soloSkipGlowTimer = null;
+function stopSoloSkipGlow(){
+  clearTimeout(soloSkipGlowTimer); soloSkipGlowTimer = null;
+  els["solo-skip-btn"].classList.remove("skip-glow");
+}
+function startSoloSkipGlow(id){
+  stopSoloSkipGlow();
+  if(reviewMode || isDaimonItemId(id)) return;
+  if(els["solo-skip-btn"].style.display !== "block") return;   // スキップが出ていない問（スキップのあとの出し直し）では光らせない
+  const d = getQById(id) || {};
+  const sec = SKIP_GLOW_SEC[d.subj];
+  if(!sec) return;
+  const pos = quizPos;
+  soloSkipGlowTimer = setTimeout(()=>{
+    soloSkipGlowTimer = null;
+    // 同じ問題がまだ出ていて、スキップがまだ押せるときだけ
+    if(quizPos !== pos || quizQueue[quizPos] !== id) return;
+    if(els["solo-skip-btn"].style.display !== "block") return;
+    els["solo-skip-btn"].classList.add("skip-glow");
+  }, sec * 1000);
+}
 function stopSoloThink(){
   clearTimeout(soloThinkTimer); clearInterval(soloThinkInterval);
   soloThinkTimer = null; soloThinkInterval = null;
@@ -8888,6 +8926,7 @@ function startSoloCard(){
   // ★2026-10-05 ユーザー「一人の時は時間制限なしでいいです」→ 一人では考える時間をはからない（時間切れも起きない）。
   //   時計の関数（startSoloThink / soloTimeUp）は残すが呼ばない。スキップはそのまま
   stopSoloThink();
+  startSoloSkipGlow(id);   // ★2026-10-25 時間がたったらスキップを光らせるだけ（時間切れにはしない）
   els["solo-undo-link"].textContent = reviewMode ? "↩ 前の問題にもどる" : "↩ ひとつ前の判定をやり直す";
   // ★2026-09-30（bug0930 ③・ユーザー判断）: 直前が大問の小問でも「ひとつ前の判定をやり直す」を出す
   //   （2026-09-28 は出さなかった。小問の押しまちがいが直せなかったため変更）。直せるのは直前の小問1つだけ
@@ -8923,6 +8962,7 @@ els["solo-hint-btn"].addEventListener("click", ()=> nextHint("solo"));
 els["battle-hint-btn"].addEventListener("click", ()=> nextHint("battle"));
 els["solo-reveal-btn"].addEventListener("click", ()=>{
   stopSoloThink();
+  stopSoloSkipGlow();
   studyLogReveal("solo");   // ★学習ログ: 考えた秒はここまで（2026-10-05）
   // ★⚡一人は「こたえを見る」で速さが決まる（チェックのみはつけない）。出し直し・やり直しは spDecide が何もしない
   if(!reviewMode) soloSpNew = spDecide("solo", quizQueue[quizPos], spElapsed("solo"));
@@ -9040,6 +9080,7 @@ function judgeSolo(correct){
 els["solo-skip-btn"].addEventListener("click", ()=>{
   if(reviewMode) return;
   stopSoloThink();
+  stopSoloSkipGlow();
   // ★2026-10-05 一問一答のスキップ: 答えを見せて✕で記録し、あとでもう一度出す（ユーザー「答えを見なきゃ何度やっても同じ」）
   if(!isDaimonItemId(quizQueue[quizPos])){
     const id = quizQueue[quizPos];
