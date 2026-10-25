@@ -6154,7 +6154,7 @@ const QA_DATA = [
   "kai": 6,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r6m43",
@@ -6167,7 +6167,7 @@ const QA_DATA = [
   "kai": 6,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r6m44",
@@ -6916,7 +6916,7 @@ const QA_DATA = [
   "kai": 7,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r7m42",
@@ -7462,7 +7462,7 @@ const QA_DATA = [
   "kai": 8,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r8m23",
@@ -7511,7 +7511,7 @@ const QA_DATA = [
   "kai": 8,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r8m27",
@@ -7523,7 +7523,7 @@ const QA_DATA = [
   "kai": 8,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r8m28",
@@ -7559,7 +7559,7 @@ const QA_DATA = [
   "kai": 8,
   "kind": "memo",
   "priority": "低",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r8m31",
@@ -7675,7 +7675,7 @@ const QA_DATA = [
   "kai": 8,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r8m40",
@@ -8302,7 +8302,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r9m36",
@@ -8352,7 +8352,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r9m40",
@@ -8364,7 +8364,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r9m41",
@@ -8376,7 +8376,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "かぎ層には、火山灰の層のほか、特定の化石や物質をふくむ地層が使われることもある。"
  },
  {
@@ -8543,7 +8543,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r9m55",
@@ -8556,7 +8556,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "赤石山脈・木曽山脈・飛騨山脈などは、大規模な断層によってできた山脈。"
  },
  {
@@ -8596,7 +8596,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "r9m59",
@@ -8609,7 +8609,7 @@ const QA_DATA = [
   "kai": 9,
   "kind": "memo",
   "priority": "普通",
-  "level": "標準",
+  "level": "基礎",
   "sol": "汽水域は、淡水と海水が混ざったところ。"
  },
  {
