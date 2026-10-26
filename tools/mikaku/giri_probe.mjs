@@ -6,13 +6,13 @@
 //   G2 △: この回では出し直さない（並びに二度と出ない）・点は〇（結果の〇の数・学習ログの〇の数）
 //   G3 △の記録: 正解の数は+1・連続正解（box）は進まない・正解した日（定着の日）に今日を足さない・lastGiri＝lastAnswered
 //      （correctDays が無い古い記録も、最終正答日の1日は残り、今日は増えない）。何も無いカードは「おぼえかけ」
-//   G4 △を出さない: ✕で回ってきた2回目・大問の小問
+//   G4 △を出さない: ✕で回ってきた2回目／★2026-10-27 から大問の小問には出す（box を動かさない＝次も答える小問のまま）
 //   G5 ひとつ前をやり直す: △の前の記録にまるごと戻る
 //   G6 送る記録: session の q は r:"o" のまま g:1・body.giri・ほかの答えに g は付かない／snapshot の giri
 //   G7 次の日（今日やること）: 前の日に△のカードは、その行の中で苦手より先に選ばれ、その教科のぶんの先頭に来る／今日△のカードはいちばんうしろ（定着より後）
 //      △のあと〇で答えたカードは印が消える（ふつうの並び）／△を知らない行（印なし）は今までと同じ並び
 //   G8 急いだ回の〇を外す: △は正解の数だけ引き、連続正解（box）は引かない（〇は今までどおり引く）
-//   G9 対戦の画面に△は無い・画面のエラー 0
+//   G9 △のボタンは一人の画面と二人の親の判定（2026-10-27・検査は giri_room_probe.mjs）の2つ・画面のエラー 0
 // 自己テスト: 直す前（BASE_COMMIT）で鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -161,7 +161,7 @@ async function run(label, src) {
       const dk = await pg.evaluate(() => DAIMON_DATA.find(h => h.subj !== "理科" || true).key);
       await pg.evaluate(k => window.__t("startSoloWithIds")([k], null), dk); await pg.waitForTimeout(300);
       await tap("#solo-reveal-btn"); await pg.waitForTimeout(150);
-      check("G4 大問の小問（" + (await qid()) + "）には△を出さない", !(await vis("#solo-judge-giri")) && (await vis("#solo-judge-ok")));
+      check("G4 大問の小問（" + (await qid()) + "）にも△を出す（2026-10-27）", (await vis("#solo-judge-giri")) && (await vis("#solo-judge-ok")));
       const before = await statOf(D);
       await pg.evaluate(q => window.__t("startSoloWithIds")(q, null), [D, ids[4]]); await pg.waitForTimeout(300);
       await tap("#solo-reveal-btn"); await pg.waitForTimeout(150);
@@ -221,7 +221,7 @@ async function run(label, src) {
 
     await sec("G9", async () => {
       const g = await pg.evaluate(() => [...document.querySelectorAll(".judge-btn.giri")].map(b => b.closest("section") && b.closest("section").id));
-      check("G9 △のボタンは一人の画面の1つだけ（対戦・大問の画面に無い）", g.length === 1 && g[0] === "screen-solo", JSON.stringify(g));
+      check("G9 △のボタンは一人の画面と対戦の画面（親の判定）の2つ（大問の画面に無い）", g.length === 2 && g[0] === "screen-solo" && g[1] === "screen-battle", JSON.stringify(g));
     });
     check("G9 画面のエラー 0", errs.length === 0, errs.join(" | "));
   } catch (e) { check("最後まで走った", false, String(e && e.message || e).split("\n")[0]); }

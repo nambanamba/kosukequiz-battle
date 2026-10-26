@@ -2687,6 +2687,8 @@
     <div class="host-judge-note" id="host-judge-note" style="display:none;">何もしなければ〇になります。まちがいのときだけ ✕ を押してね</div>
     <div class="judge-row" id="judge-row" style="display:none;">
       <button class="judge-btn ng fill-btn" id="judge-ng" data-label="✕ 相手はまちがい"><span class="fill-label">✕ 相手はまちがい</span></button>
+      <!-- ★2026-10-27 二人（親が〇✕を付ける流れ）の △ ぎりぎり。親の画面だけ・1回目だけ。押すと子どもの端末で一人の△と同じ記録（〇として数える・定着は進めない・あした先に出る） -->
+      <button class="judge-btn giri" id="judge-giri" style="display:none;">△ ぎりぎり<span class="giri-sub">あしたもう一度</span></button>
       <button class="judge-btn ok fill-btn" id="judge-ok" data-label="〇 相手はせいかい"><span class="fill-label">〇 相手はせいかい</span></button>
     </div>
     <!-- ★2026-10-10 ゲスト（親）だけ。判定の時間が切れても自動の〇にせず、押すまで待つ -->
@@ -3788,7 +3790,7 @@ const els = {};
  "battle-edit-link","battle-edit-form","battle-edit-q","battle-edit-a","battle-edit-cancel","battle-edit-save","battle-edit-report",
  "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
- "judge-row","judge-ng","judge-ok","my-result","big-verdict",
+ "judge-row","judge-ng","judge-ok","judge-giri","my-result","big-verdict",
  "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
  "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn","host-seen-badge",
  "solo-think-timer","solo-think-timer-fill","solo-timeup-note","solo-timeup-next-btn","solo-result-skipinfo","result-skipinfo","host-judge-note","guest-judge-prompt",
@@ -4378,6 +4380,13 @@ function giriWhen(id){
   const t = giriPendingAt(id);
   if(!t) return "";
   return dateToYMD(t) === dateToYMD(Date.now()) ? "today" : "before";
+}
+// ★2026-10-27 今日やることの並びの△。大問は答える小問（前回○でない小問）のどれかが前の日に△なら "before"、今日△なら "today"
+function giriWhenEntry(id, d){
+  if(d === undefined) d = QA_DATA.find(x => x.id === id);
+  if(!isDaimonEntry(d)) return giriWhen(id);
+  const w = answerItemIds(d).map(giriWhen);
+  return w.indexOf("before") >= 0 ? "before" : (w.indexOf("today") >= 0 ? "today" : "");
 }
 function recordResult(id, correct, giri){
   // ★2026-10-06 答えが複数のカードの「分けて」の部分は、別の入れ物へ（カードの記録 stats には書かない）
@@ -7974,7 +7983,11 @@ function studyLogFix(k, id, correct){
   const s = studyLogCur(k);
   if(!s || !Array.isArray(s.q)) return;
   for(let i = s.q.length - 1; i >= 0; i--){
-    if(s.q[i][0] === id && (s.q[i][2] === "o" || s.q[i][2] === "x")){ s.q[i][2] = correct ? "o" : "x"; break; }
+    if(s.q[i][0] === id && (s.q[i][2] === "o" || s.q[i][2] === "x")){
+      s.q[i][2] = correct ? "o" : "x";
+      if(s.q[i].length > 6) s.q[i][6] = 0;   // ★△の印は外す（直すのは〇か✕。2026-10-27）
+      break;
+    }
   }
   studyLogSave(s);
 }
@@ -9116,7 +9129,7 @@ function advanceSolo(){
 // ★2026-10-26 △ ぎりぎり（あしたもう一度）を出してよい問題: 一人の一問一答の1回目だけ。
 //   大問の小問・分けての部分・チェックのみ・やり直しの回・出し直し（2回目から＝記録しない）には出さない。対戦には無い
 function soloGiriAllowed(id){
-  return !!id && !reviewMode && !inSoloRetryRound && !isDaimonItemId(id) && !isPartId(id) && !soloIsRepeat(id);
+  return !!id && !reviewMode && !inSoloRetryRound && !isPartId(id) && !soloIsRepeat(id);   // ★2026-10-27 大問の小問にも出す（box を動かさない＝次も答える小問のまま）
 }
 function judgeSolo(correct, giri){
   // ★学習ログ（2026-10-05）。スキップのあとの出し直し（記録しない回）は「出し直し」の印を付ける（recordSoloAnswer と同じ条件）
@@ -9953,8 +9966,24 @@ function guestPeek(){
   els["battle-a-block"].classList.add("show");
   if(myVerdictOfOpponent === null){
     els["judge-row"].style.display = "flex";
+    syncBattleGiriBtn();   // ★△（2026-10-27）
     scrollBattleDaimonTo("judge-row");
   }
+}
+// ★★2026-10-27 二人（親が〇✕を付ける流れ）の △ ぎりぎり（ユーザー「昨日やった、今日は出さないけど明日もだす…のボタン、親の画面に出てないんですが」）
+//   ・出すのは親（ゲスト）の画面だけ・公平モード（こどもどうし）でないときだけ（kidFlow）
+//   ・一人と同じ考えで、そのラウンドの1回目だけ。出し直し（🔁 もう一度）・まちがえた問題のやり直しの回・分けての部分には出さない。
+//     大問の小問には出す（△は box を動かさないので、前回○にならず次も答える小問のまま＝「あしたもう一度」になる）
+//   ・押すと judgeAction に {correct:true, giri:1} を送る。★記録するのは子ども（ホスト）の端末で、ホストがもう一度同じ条件を確かめる
+//     （スキップしたあと・やり直しの回などは〇か✕のまま）。
+//   ・★版がちがっても止まらない: 古い版のホストは giri を見ないので、ふつうの〇で記録する（correct は true のまま送る）。
+//     古い版のゲストからは giri が来ないので、ふつうの〇✕のまま
+function battleGiriAllowed(){
+  const id = questionIds[currentIndex];
+  return role === "guest" && kidFlow() && !!id && !inMissRetryRound && !isPartId(id) && !isRepeatInRound(questionIds, currentIndex);
+}
+function syncBattleGiriBtn(){
+  if(els["judge-giri"]) els["judge-giri"].style.display = battleGiriAllowed() ? "" : "none";
 }
 // ★ホスト（子ども）の画面で答えが開いたか。ゲストにだけ出す。秒は問題が出てから数える
 let hostOpenedIdx = -1;
@@ -10472,8 +10501,12 @@ function setupActions(){
     const finalCorrect = forcedWrong ? false : data.correct;
     // ★学習ログ（2026-10-05）: 自分の答えの〇✕（生の判定）。再開して判定ずみの問題に戻ったときは二重に入れない
     const repeat = battleAnsweredIds.has(qid);   // ★2026-10-06 このラウンドで2回目から（記録しない）
+    // ★2026-10-27 △ ぎりぎり（親の画面から）。子ども（ホスト）の端末でもう一度確かめる: 二人の親子の流れ・〇・1回目・
+    //   スキップのあと／やり直しの回（forcedWrong）・大問のスキップ・分けての部分・出し直しでない。だめなら〇のまま（△を知らない版と同じ）
+    const giri = role === "host" && kidFlow() && data.giri === 1 && data.correct === true && !forcedWrong && !repeat
+                 && !inMissRetryRound && !daimonSkipRecorded.has(qid) && !isPartId(qid) && !isRepeatInRound(questionIds, currentIndex);
     if(!(role === "host" && hostRecordedIdx === currentIndex)){
-      studyLogAnswer("battle", qid, data.correct ? "o" : "x", repeat || (role === "host" && (hostSkippedIds.has(qid) || daimonSkipRecorded.has(qid))));
+      studyLogAnswer("battle", qid, data.correct ? "o" : "x", repeat || (role === "host" && (hostSkippedIds.has(qid) || daimonSkipRecorded.has(qid))), giri);
     }
     // ★ホストがリロードして再開すると、判定ずみの問題に戻ることがある。
     //   記録とまちがいリストは最初の1回だけ入れる（二重に入れない）
@@ -10487,10 +10520,11 @@ function setupActions(){
           qid: qid, idx: currentIndex,
           rawCorrect: data.correct,      // ★得点と「まちがいリスト」は、生の判定で決まる
           forcedWrong: forcedWrong,      // スキップ後・やり直しラウンドは、正解でも記録は誤答
-          statBefore: recSnap(qid)   // ★分けての部分は部分の入れ物から（2026-10-06）
+          statBefore: recSnap(qid),   // ★分けての部分は部分の入れ物から（2026-10-06）
+          giri: giri                 // ★△（2026-10-27）。直すときは statBefore に戻してから〇か✕で入れ直す
         };
       }
-      recordResult(qid, finalCorrect);
+      recordResult(qid, finalCorrect, giri);
       battleAnsweredIds.add(qid);
       if(!data.correct) myMissesThisRound.push(qid);
       if(role === "host"){ hostRecordedIdx = currentIndex; saveBattleSession(); }
@@ -10507,7 +10541,7 @@ function setupActions(){
       if(!data.correct){ battleRequeue(qid); if(lastHostRecord && lastHostRecord.idx === currentIndex) lastHostRecord.requeued = true; }
       saveBattleSession();
     }
-    updateMyResultUI(forcedWrong);
+    updateMyResultUI(forcedWrong, giri);
     // ★2026-10-05 ユーザー「親が正解やバツを押したら開いてください。子供が答えを見るを押さなくても進めたいです」。
     //   ゲスト（親）が判定したら、ホスト（子ども）の画面でもまだ開いていなければ答えを開く（判定ボタンも出る）。
     //   ★2026-10-08 から二人のときは子どもの「答えを見る」を出さない＝ここだけで開く（hostWaitsJudge）。記録は上で付けたとおり（変えない）
@@ -10903,6 +10937,7 @@ function showQuestion(idx, hostPrivate){
   els["guest-wait-status"].classList.remove("show","win","lose","info");
   els["status-banner"].classList.remove("show","win","lose","info");
   els["judge-row"].style.display = "none";
+  if(els["judge-giri"]) els["judge-giri"].style.display = "none";   // ★△（2026-10-27）。答えと〇✕を出すときに出す
   // ★2026-10-05 ホスト（子ども）がゲスト（親）を判定するときは、✕を大きく〇を小さく。何もしなければ〇（判定の時間切れ＝これまでどおり〇）
   els["judge-row"].classList.toggle("host-judge", role === "host" && !!room);
   els["host-judge-note"].style.display = "none";
@@ -11487,21 +11522,25 @@ function revealAnswer(){
     // 0.3秒のあいだに次の問題へ進んだ・もう判定した、ときは出さない
     if(idx !== currentIndex || myVerdictOfOpponent !== null) return;
     els["judge-row"].style.display = "flex";
+    syncBattleGiriBtn();   // ★△（2026-10-27）
     if(role === "host" && room) els["host-judge-note"].style.display = "block";
     scrollBattleDaimonTo("judge-row");   // ★大問の小問だけ。判定ボタンが画面の外に出ないように
     startJudgeCountdown();
   }, JUDGE_SHOW_DELAY_MS);
 }
 
-function judgeOpponent(correct){
+function judgeOpponent(correct, giri){
   if(myVerdictOfOpponent !== null) return;
   stopJudgeCountdown();
+  giri = !!giri && correct === true && battleGiriAllowed();   // ★△（2026-10-27）。出せない問題では〇と同じ
   myVerdictOfOpponent = correct;
-  judgeAction.send({idx: currentIndex, correct: correct, qid: questionIds[currentIndex]});   // ★qid: スキップで同じ添字に次の問題が来ても取りちがえない（2026-10-10）
+  const msg = {idx: currentIndex, correct: correct, qid: questionIds[currentIndex]};   // ★qid: スキップで同じ添字に次の問題が来ても取りちがえない（2026-10-10）
+  if(giri) msg.giri = 1;   // ★△は correct:true のまま足すだけ（古い版のホストは〇として記録する）
+  judgeAction.send(msg);
   // ★ゲストだけ、いま下した判定を1件だけ覚える（時間切れの自動「せいかい」もここを通る）。
   //   ★上書きなので、覚えているのは常に最新の1件だけ＝それより前は直せない
   if(role === "guest"){
-    lastJudge = {qid: questionIds[currentIndex], idx: currentIndex, correct: correct};
+    lastJudge = {qid: questionIds[currentIndex], idx: currentIndex, correct: correct, giri: giri};
     judgeFixBusy = false;
     hideJudgeFixStatus();
   }
@@ -11509,7 +11548,7 @@ function judgeOpponent(correct){
   els["host-judge-note"].style.display = "none";
   els["status-banner"].classList.remove("win","lose");
   els["status-banner"].classList.add("show","info");
-  els["status-banner"].textContent = "相手を「"+(correct ? "せいかい" : "まちがい")+"」と判定しました。";
+  els["status-banner"].textContent = "相手を「"+(giri ? "ぎりぎり（あしたもう一度）" : (correct ? "せいかい" : "まちがい"))+"」と判定しました。";
   if(role === "guest" && kidFlow()){ stopCountdown(); els["my-result"].style.display = "none"; }   // ★2026-10-10 親は答えないので、自分の結果は出さない
   else updateMyResultUI();
   updateJudgeFixUI();
@@ -11517,6 +11556,7 @@ function judgeOpponent(correct){
 }
 els["judge-ok"].addEventListener("click", ()=>judgeOpponent(true));
 els["judge-ng"].addEventListener("click", ()=>judgeOpponent(false));
+els["judge-giri"].addEventListener("click", ()=>judgeOpponent(true, true));   // ★△ ぎりぎり（2026-10-27・二人の親の画面）
 
 // ==== ★「一個前の判定を直す」（2026-09-25 ユーザー依頼）====================
 //  ユーザー原文「ゲストがホストを直すだけでいいんですが、一個前の正誤を直せるようにしたいです。
@@ -11564,7 +11604,7 @@ function updateJudgeFixUI(){
   const q = d ? d.q : "";
   const qtext = q ? (q.length > 18 ? q.slice(0, 18) + "…" : q) : lastJudge.qid;
   els["judge-fix-note"].textContent =
-    "一個前「" + qtext + "」は、いま " + (lastJudge.correct ? "〇 せいかい" : "✕ まちがい") + " で記録されています";
+    "一個前「" + qtext + "」は、いま " + (lastJudge.correct ? (lastJudge.giri ? "△ ぎりぎり" : "〇 せいかい") : "✕ まちがい") + " で記録されています";
   els["judge-fix-btn"].textContent =
     lastJudge.correct ? "やっぱり ✕ まちがい に直す" : "やっぱり 〇 せいかい に直す";
   els["judge-fix-btn"].className = "judge-fix-btn " + (lastJudge.correct ? "ng" : "ok");
@@ -11661,6 +11701,7 @@ function onJudgeFixAck(data){
     return;
   }
   lastJudge.correct = data.correct;
+  lastJudge.giri = false;   // ★直したあとは〇か✕（△には直さない）
   // ★得点の増減は**ホストが決めた値をそのまま当てる**。2つの端末が別々に数えると食いちがう
   if(typeof data.scoreDelta === "number" && data.scoreDelta !== 0){
     scores.host = Math.max(0, scores.host + data.scoreDelta);
@@ -11675,7 +11716,7 @@ function onJudgeFixAck(data){
 }
 // ==== ここまで「一個前の判定を直す」 =====================================
 
-function updateMyResultUI(forcedWrong){
+function updateMyResultUI(forcedWrong, giri){
   els["my-result"].style.display = "block";
   els["my-result"].classList.add("show");
   els["my-result"].classList.remove("win","lose","info");
@@ -11684,7 +11725,7 @@ function updateMyResultUI(forcedWrong){
     els["my-result"].textContent = "あなたの結果：相手の判定を待っています…";
   }else if(opponentVerdictOfMe){
     els["my-result"].classList.add("win");
-    els["my-result"].textContent = "あなたの結果：〇 正解でした！"+(forcedWrong ? (inMissRetryRound ? "（まちがえた問題のやり直しなので、記録は苦手のまま残ります）" : "（スキップした問題なので、記録は苦手のまま残ります）") : "");
+    els["my-result"].textContent = (giri ? "あなたの結果：△ ぎりぎり（〇として数えます。あしたもう一度出ます）" : "あなたの結果：〇 正解でした！")+(forcedWrong ? (inMissRetryRound ? "（まちがえた問題のやり直しなので、記録は苦手のまま残ります）" : "（スキップした問題なので、記録は苦手のまま残ります）") : "");
     showBigVerdict(true);
     // 正解した側の端末だけで「ピンポン」を鳴らす。この関数はそれぞれの端末で
     // 自分の結果を出すところなので、相手の端末では鳴らない
@@ -12779,7 +12820,7 @@ function planWeakRank(id, missSet){
   let o = (r === 2.5 && !isDaimonEntry(d) && s0 && correctDaysOf(s0).indexOf(dateToYMD(Date.now())) >= 0) ? 2.75 : r;
   // ★2026-10-26 △ ぎりぎり（最後の答えが△のカード）: 前の日に△ → その日✕のすぐあと（0.5・苦手より先）。
   //   今日△ → いちばんうしろ（3.5・定着よりあと。「今日はやりたくない」）。r（段）は変えない（数の数え方・前の回をまぜる判断はそのまま）
-  if(!isDaimonEntry(d)){ const gw = giriWhen(id); if(gw === "before") o = 0.5; else if(gw === "today") o = 3.5; }
+  { const gw = giriWhenEntry(id, d); if(gw === "before") o = 0.5; else if(gw === "today") o = 3.5; }   // ★2026-10-27 大問も（答える小問の△で見る）
   return { r: r, o: o, at: at === Infinity ? 0 : at };
 }
 // ★2026-10-08 ユーザー「理科だけで35問出ました。ちゃんと理科20と社会15出るようにしてください」
@@ -13356,7 +13397,7 @@ function planGroupIds(no, s, grp){
   const gm = grp.idx.some(i => planRowMerge(s.items[i]));
   grp.idx.forEach(i => withMerge(gm, () => planRowPick(s.items[i], no, i)).ids.forEach(id => { if(!seen.has(id)){ seen.add(id); out.push(id); } }));
   // ★2026-10-26 前の日に△（ぎりぎり）だったカードは、その教科のぶんの先頭へ（どの行から選ばれたかは変えない＝数・同じ答え1回などの決まりはそのまま。並びだけ）
-  const gb = out.filter(id => giriWhen(id) === "before");
+  const gb = out.filter(id => giriWhenEntry(id) === "before");   // ★2026-10-27 大問も
   return gb.length ? gb.concat(out.filter(id => gb.indexOf(id) < 0)) : out;
 }
 // 「完了」: いまのぶんを終わりにする。まだの行は「できたことにする」（記録＝〇✕は何も変えない）。最後のぶんならセットも完了・次のセットへ
