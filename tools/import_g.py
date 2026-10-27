@@ -102,6 +102,11 @@ def convert(src_rows, kai):
         for must in ("subj", "u", "q", "a"):
             if not str(rec.get(must, "")).strip():
                 ir.die("no.%s の %s が空です。" % (r.get("no"), must))
+        # ★2026-10-28（ユーザー承認）: 【記述】の答えは、本文・解答の文の引き写し（src_quote）つきだけ。
+        #   無ければ取り込まない（クイズデータ作成ルール.md「src_quote」の節）。src_quote 自体は data.js に入れない
+        if str(r.get("q", "")).startswith("【記述】") and not str(r.get("src_quote", "") or "").strip():
+            ir.die("no.%s は【記述】なのに src_quote（本文・解答の文の引き写し）がありません。"
+                   "引き写しの無い記述は取り込みません。" % r.get("no"))
         # ★空の欄は落とす。data.js は空のキーを書かないので、落とさずに比べると
         #   中身が同じでも「変わった」と判定してしまう（img="" と img無しのちがい）
         rec = {k: v for k, v in rec.items()
