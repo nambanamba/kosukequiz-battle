@@ -12548,11 +12548,38 @@ async function sendRestoreRecords(){
       }
       if(dirty) savePartStats();
     }catch(e){ console.error("restore sessions failed", e); }
+    // ★2026-10-30 ユーザー「iPadでインポートしたが、まだ朝の分」→ 今日やることの「できた」印も取り戻す（A）。
+    //   置き場の battle/plan_done/<番号>.json（子どもの端末が送った印）を、この端末の印に【足すだけ】（今ある印は消さない・上書きしない）。
+    //   行は番号と題名の両方が合うものだけ。できた・やらなかった・できたことにした・やり直し途中・朝まちがえた問題を入れる。記録（〇✕）は何も変えない
+    let pdRows = 0;
+    try{
+      for(const no of planIndex()){
+        const s = planSetOf(no);
+        if(!s) continue;
+        const j = await planGet(cfg, "battle/plan_done/" + String(no).padStart(4, "0") + ".json");
+        if(!j || !Array.isArray(j.items)) continue;
+        const D = planLoad(PLAN_DONE_KEY) || {}, SK = planLoad(PLAN_SKIP_KEY) || {}, MN = planLoad(PLAN_MANUAL_KEY) || {}, PT = planLoad(PLAN_PARTIAL_KEY) || {}, MS = planLoad(PLAN_MISS_KEY) || {};
+        const d = D[no] || {}, sk = SK[no] || {}, mn = MN[no] || {}, pt = PT[no] || {}, ms = MS[no] || {};
+        const tm = (x) => { const v = Date.parse(x || ""); return isNaN(v) ? Date.now() : v; };
+        j.items.forEach(o => {
+          if(!o || typeof o !== "object") return;
+          const it = s.items[o.i];
+          if(!it || String(it.title || "") !== String(o.title || "")) return;
+          const k = planItemKey(it, o.i);
+          if(o.done && !d[k]){ d[k] = tm(o.doneAt); pdRows++; if(o.manual) mn[k] = tm(o.manualAt); if(o.partial) pt[k] = d[k]; }
+          else if(!o.done && o.skipped && !d[k] && !sk[k]){ sk[k] = tm(o.skippedAt); pdRows++; }
+          if(Array.isArray(o.miss) && o.miss.length && !ms[k]) ms[k] = o.miss.slice();
+        });
+        const put = (key, all, v) => { if(Object.keys(v).length){ all[no] = v; planSave(key, all); } };
+        put(PLAN_DONE_KEY, D, d); put(PLAN_SKIP_KEY, SK, sk); put(PLAN_MANUAL_KEY, MN, mn); put(PLAN_PARTIAL_KEY, PT, pt); put(PLAN_MISS_KEY, MS, ms);
+      }
+    }catch(e){ console.error("restore plan_done failed", e); }
+    if(pdRows) planShownNo = null;   // いま進めているセットを、写した印で決め直す
     renderHome();
     if(els["screen-list"].classList.contains("active")) renderListItems();
     const nl = String.fromCharCode(10);
     alert(["記録を取り戻しました（" + day + " の snapshot）。", "記録を戻した（足した）問題: " + r.updated + "問",
-      "正解した日を足したカード: " + dr.merged, "分けての部分を入れた数: " + (pr.added + pr.replaced) + "（あとの回 " + sess + "回ぶんを見ました）"]
+      "正解した日を足したカード: " + dr.merged, "分けての部分を入れた数: " + (pr.added + pr.replaced) + "（あとの回 " + sess + "回ぶんを見ました）", "今日やることの「できた」印を写した行: " + pdRows]
       .concat(r.unmatched ? ["問題が一致せず読み飛ばした行: " + r.unmatched] : [])
       .concat(["※ " + day + " の snapshot のあとの回の〇✕は入りません（次に子どもが使った日から、この端末で増えます）。"]).join(nl));
   }catch(e){
