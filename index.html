@@ -12853,7 +12853,8 @@ function planWeakRank(id, missSet){
 // ★2026-10-08 ユーザー「理科だけで35問出ました。ちゃんと理科20と社会15出るようにしてください」
 //   count は「カードの枚数」ではなく「答える回数」（weightOf と同じ数え方: 分けて出すカードは出す部分の数・まとめては1・大問は答える小問の数）。
 //   並んだ順に取り、入れると count をこえるカードは飛ばして次の小さいカードで埋める（takeByWeight と同じ）。
-//   それでも足りないときだけ、こえる分が2問までのカードを1枚足す（いちばんこえ方が小さいもの。並びの元の位置に入れる）。答える問題が0のカードは入れない
+//   ★2026-10-31 ユーザー「20をこえないようにする」: こえるカードは足さない（前は、足りないときだけ こえる分が2問までのカードを1枚足していた → 理科が22問になった）。
+//   埋まらないときは少なめ（19問など）で終わる。答える問題が0のカードは入れない
 function planIdWeight(id){ const i = QA_DATA.findIndex(d => d.id === id); return i < 0 ? 0 : weightOf(i); }
 function planTakeCount(ids, n){
   const out = [], skipped = [];
@@ -12865,10 +12866,6 @@ function planTakeCount(ids, n){
     if(total + w > n){ skipped.push({ id: id, k: k, w: w }); return; }
     out.push({ id: id, k: k }); total += w;
   });
-  if(total < n){
-    const c = skipped.filter(x => total + x.w - n <= 2).sort((a, b) => (a.w - b.w) || (a.k - b.k))[0];
-    if(c){ out.push({ id: c.id, k: c.k }); out.sort((a, b) => a.k - b.k); }
-  }
   return out.map(x => x.id);
 }
 function planSumWeight(ids){ return ids.reduce((a, id) => a + planIdWeight(id), 0); }
@@ -13011,7 +13008,8 @@ function planRowPick(it, no, idx){
     if(rp && !rp.random) return { ids: rp.ids.filter(id => QA_DATA.some(d => d.id === id)), miss: rp.miss || 0, saved: true, remote: rp };
   }
   let sv = planSavedPick(no, planItemKey(it, idx));
-  // ★2026-10-09 直す前に保存した一覧（ids の行で count をこえたもの）は使わずに選び直す（こえてよいのは2問まで＝planTakeCount）
+  // ★2026-10-09 直す前に保存した一覧（ids の行で count をこえたもの）は使わずに選び直す。
+  //   ★2026-10-31 新しく選ぶときは count をこえない（planTakeCount）。もう保存した一覧（始めた日の分）は、2問こえていても書きかえない
   const n = parseInt(it && it.count, 10);
   if(sv && n > 0 && withMerge(planRowMerge(it), () => planSumWeight(sv.ids)) > n + 2) sv = null;
   return sv ? { ids: sv.ids.filter(id => QA_DATA.some(d => d.id === id)), miss: sv.miss || 0, saved: true } : planItemPick(it, no, idx);
