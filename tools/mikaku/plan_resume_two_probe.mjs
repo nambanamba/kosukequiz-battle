@@ -9,16 +9,21 @@
 //   P3 ✕だった問題を続きで〇にしても、記録（stats）は1回目の✕のまま・終えると行は「できた」で、朝まちがえたに残る
 //   P4 夜の分を途中で中断 →「つづき」が出る → 「完了」→ 次のセットの行は ふつうの問題数（続きは捨てた・保存も消えた）
 //   P5 日が変わったら（保存の日付が前の日）続きは出ない
+//   P6 ★2026-11-02 途中で「おわる」→ 同じ行の「二人で」→ 続きから（まだの2問 → ✕の1問）
+//   P7 ★2026-11-02 途中で「おわる」→「つづき」が出る →「完了」→ 次の行は ふつうの問題数・保存は消えた
+//   P8 ★2026-11-02 古い版（OLD_COMMIT）で途中まで → 新しい版を開いて同じ行の「二人で」→ 続きから（保存の形が同じ）
 //   E  画面のエラー 0
-// 自己テスト: 直す前（BASE_COMMIT）で鳴る
+// 自己テスト: 直す前（BASE_COMMIT）で P1 P2 が鳴る・おわるの直しの前（OLD_COMMIT）で P6 P7 が鳴る
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
 import { startFakeRelay } from "./fake_relay.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BASE_COMMIT = "579d5f4";   // 直す前
+const OLD_COMMIT = "74bbb5f";    // ★2026-11-02 おわるで続きが消えていた版（いまの本番）
 const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
 const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const OLDSRC = execSync("git show " + OLD_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 let SERVED = CURRENT;
 const relay = await startFakeRelay({ broadcast: true, label: "plan_resume_two" });
 function withFakeRelay(s) { const i0 = s.indexOf("const RELAY_URLS = ["), i1 = s.indexOf("];", i0); return s.slice(0, i0) + 'const RELAY_URLS = ["' + relay.url + '"' + s.slice(i1); }
@@ -33,12 +38,15 @@ const server = http.createServer((req, res) => {
 await new Promise(r => server.listen(0, "127.0.0.1", r));
 const PAGE_URL = "http://127.0.0.1:" + server.address().port + "/index.html";
 const SETS = {
-  "plan/index.json": { sets: [1, 2] },
+  "plan/index.json": { sets: [1, 2, 3] },
   "plan/0001.json": { no: 1, label: "10/11 のぶん", items: [
     { subj: "社会", title: "朝：6問", ids: ["g6r1", "g6r2", "g6r3", "g6r4", "g6r5", "g6r6"] },
     { subj: "社会", title: "夜：3問", ids: ["g6r7", "g6r8", "g6r9"] } ] },
   "plan/0002.json": { no: 2, label: "10/12 のぶん", items: [
-    { subj: "社会", title: "朝：3問", ids: ["g6r10", "g6r11", "g6r12"] } ] }
+    { subj: "社会", title: "朝：3問", ids: ["g6r10", "g6r11", "g6r12"] } ] },
+  "plan/0003.json": { no: 3, label: "10/13 のぶん", items: [
+    { subj: "社会", title: "朝：3問", ids: ["g6r13", "g6r14", "g6r15"] },
+    { subj: "社会", title: "夜：3問", ids: ["g6r16", "g6r17", "g6r18"] } ] }
 };
 const TOKEN = "github_pat_TESTONLY_1234567890";
 let written = new Map();
@@ -116,6 +124,11 @@ async function run(label, src) {
   };
   const next = async () => { await tap(H.page, "#next-btn").catch(() => {}); await H.page.waitForTimeout(600); };
   const pause = async () => { await tap(H.page, "#battle-pause-btn"); await H.page.waitForTimeout(1500); };
+  // ★2026-11-02 途中の「おわる」（確認は自動で「はい」）→ 結果画面 →「はじめの画面にもどる」
+  const quitEnd = async () => { await tap(H.page, "#battle-end-btn"); await H.page.waitForTimeout(1200);
+    await H.page.evaluate(() => { const b = document.getElementById("result-home-btn"); if (b) b.click(); }); await H.page.waitForTimeout(1500); };
+  const finishToHome = async () => { await H.page.waitForFunction(() => document.getElementById("screen-result").classList.contains("active"), null, { timeout: 30000 }).catch(() => {});
+    await H.page.evaluate(() => { const b = document.getElementById("result-home-btn"); if (b) b.click(); }); await H.page.waitForTimeout(1500); };
   try {
     for (const [x, cfg] of [[H, { token: TOKEN, api: API_URL }], [G, null]]) { await x.page.evaluate(SEED, [MIG, cfg]); await x.page.reload(); await x.page.waitForTimeout(1800); }
     // ===== P1 朝: ✕〇〇で中断 =====
@@ -161,6 +174,56 @@ async function run(label, src) {
     await reloadHost();
     const r5b = await kidRows();
     check("P5 続きがあっても（" + (r5a[0] && r5a[0].sub) + "）、保存の日付が前の日なら続きは出ない（3問）", r5a[0] && /つづき 2問/.test(r5a[0].sub) && r5b[0] && r5b[0].sub === "3問", JSON.stringify({ r5a, r5b }));
+    // ===== P6 途中「おわる」→ 続きから（10/12 の朝 3問） =====
+    await reloadHost();
+    await startKidBattle();
+    const b1 = await answerOne(false); await next();
+    await quitEnd();
+    const ss6 = await session();
+    await reloadHost();
+    const r6 = await kidRows();
+    let asked6 = [];
+    if (r6[0] && /つづき/.test(r6[0].sub)) {
+      await startKidBattle();
+      for (let k = 0; k < 3; k++) { asked6.push(await answerOne(true)); await next(); await H.page.waitForTimeout(300); }
+      await finishToHome();
+    }
+    const ss6b = await session();   // 全問終えたら保存は消える（今までどおり）
+    const want6 = ["g6r10", "g6r11", "g6r12"].filter(i => i !== b1).concat([b1]);
+    check("P6 途中で「おわる」→ 行が「二人のつづき 3問」→ 同じ行の「二人で」→ まだの2問 → ✕の1問の順・全問終えたら保存は消える",
+      r6[0] && /つづき 3問/.test(r6[0].sub) && JSON.stringify(asked6) === JSON.stringify(want6) && !ss6b, JSON.stringify({ r6, asked6, want6, saved: !!ss6, savedAfterAll: !!ss6b, h: await head() }));
+    // 10/12 が終わっても次のセットへ進まないときは「完了」で進める
+    if (!/10\/13/.test(await head())) { await H.page.evaluate(() => { const b = document.getElementById("plan-close-btn"); if (b) b.click(); }); await H.page.waitForTimeout(2500); }
+    // ===== P7 途中「おわる」→「完了」→ ふつう（10/13 の朝 → 夜） =====
+    await reloadHost();
+    const h7a = await head();
+    await startKidBattle();
+    await answerOne(true); await next();
+    await quitEnd();
+    await reloadHost();
+    const r7a = await kidRows();
+    await H.page.evaluate(() => document.getElementById("plan-close-btn").click()); await H.page.waitForTimeout(2500);
+    const r7b = await kidRows(), h7 = await head(), ss7 = await session();
+    check("P7 途中で「おわる」（つづき 2問）→「完了」→ 次の行（夜）はふつうの3問・二人の続きの保存は消えた",
+      /10\/13/.test(h7a) && r7a[0] && /つづき 2問/.test(r7a[0].sub) && /夜/.test(h7) && r7b[0] && r7b[0].sub === "3問" && !ss7, JSON.stringify({ h7a, r7a, r7b, h7, ss7: !!ss7 }));
+    // ===== P8 古い版で途中まで → 新しい版で続きから（10/13 の夜） =====
+    const keep = SERVED;
+    SERVED = OLDSRC; await reloadHost();
+    await startKidBattle();
+    const c1 = await answerOne(false); await next();
+    await pause();
+    SERVED = keep; await reloadHost();
+    const isNew = await H.page.evaluate(() => /keepPlanResume/.test(document.documentElement.innerHTML) || [...document.scripts].some(s => /keepPlanResume/.test(s.textContent)));
+    const r8 = await kidRows();
+    const asked8 = [];
+    if (r8[0] && /つづき/.test(r8[0].sub)) {
+      await startKidBattle();
+      for (let k = 0; k < 3; k++) { asked8.push(await answerOne(true)); await next(); await H.page.waitForTimeout(300); }
+      await finishToHome();
+    }
+    const want8 = ["g6r16", "g6r17", "g6r18"].filter(i => i !== c1).concat([c1]);
+    check("P8 古い版（" + OLD_COMMIT + "）で ✕1問のあと中断 → 開き直した版で行が「つづき 3問」→ 続きから同じ順",
+      r8[0] && /つづき 3問/.test(r8[0].sub) && JSON.stringify(asked8) === JSON.stringify(want8), JSON.stringify({ r8, asked8, want8, servedNew: isNew }));
     check("E 画面のエラー 0", H.errs.length + G.errs.length === 0, [].concat(H.errs, G.errs).join(" | "));
   } catch (e) { check("（途中で止まった）", false, (e && e.message || e) + " / errs=" + [].concat(H.errs, G.errs).join(" | ") + " / plan=" + (await H.page.evaluate(() => { const b = document.getElementById("plan-box"); return b ? b.innerText.slice(0, 300) : "(no plan-box)"; }).catch(() => ""))); }
   finally { await H.ctx.close(); await G.ctx.close(); }
@@ -175,6 +238,12 @@ if (!process.env.NOW_ONLY) {
   const must = ["P1", "P2"].filter(t => !outB.some(c => !c.ok && c.n.startsWith(t)));
   console.log(must.length === 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴った）" : "  → ✘ 自己テスト不合格（鳴らなかった: " + must.join(" ") + "）");
   if (must.length) await done(3);
+  console.log("■ 自己テスト: おわるの直しの前 " + OLD_COMMIT + " … ★P6 P7 が鳴るのが正しい");
+  const outO = await run("old", OLDSRC);
+  const ngO = report("対照 " + OLD_COMMIT, outO);
+  const must2 = ["P6", "P7"].filter(t => !outO.some(c => !c.ok && c.n.startsWith(t)));
+  console.log(must2.length === 0 ? "  → ✔ 自己テスト合格（" + ngO + " 件で鳴った）" : "  → ✘ 自己テスト不合格（鳴らなかった: " + must2.join(" ") + "）");
+  if (must2.length) await done(3);
 }
 const ng = report("いまの index.html", await run("now", CURRENT));
 console.log(ng === 0 ? "\n✔ 全部通りました" : "\n✘ " + ng + " 件ひっかかりました");

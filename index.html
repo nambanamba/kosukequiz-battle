@@ -11840,8 +11840,14 @@ const RETRY_COUNTDOWN_SEC = 3;
 
 function endGame(){
   // ★今日やることの「二人で」: 最後まで終えた（最後の問題まで採点ずみ）ならその行を「できた」に。とちゅうで「おわる」なら付けない
-  if(role === "host") planNoteBattleEnd(currentIndex >= questionIds.length - 1 && hostScoredIdx >= questionIds.length - 1);
-  clearBattleSession();
+  const finishedAll = currentIndex >= questionIds.length - 1 && hostScoredIdx >= questionIds.length - 1;
+  // ★2026-11-02 ユーザー「2人で始めるから再開できるようにしてほしい」。今日やることの「二人で」を途中の「おわる」でやめたときは、
+  //   続き（BATTLE_SESSION_KEY）を消さない → 同じ行の「二人で」で続きから（planBattleResume・中断と同じ）。
+  //   全問終えたとき・今日やることでない対戦・ぐるぐる（もう一勝負）は今までどおり消す。保存の形は変えない
+  const keepPlanResume = role === "host" && !!planBattleActive && !finishedAll && !inMissRetryRound;
+  if(keepPlanResume) saveBattleSession();   // いまの状態で残す（plan は planNoteBattleEnd で消す前に入れる）
+  if(role === "host") planNoteBattleEnd(finishedAll);
+  if(!keepPlanResume) clearBattleSession();
   studyLogFinish("battle");   // ★学習ログ（2026-10-05）
   clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
   const my = role === "host" ? scores.host : scores.guest;
