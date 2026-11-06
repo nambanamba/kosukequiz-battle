@@ -13461,7 +13461,8 @@ function planNoteBattleEnd(finished){
   const a = planBattleActive;
   planBattleActive = null;
   if(!a || !finished) return;
-  const miss = myMissesThisRound.concat(Array.from(battleTimeupIds));
+  // ★2026-11-06 スキップも入れる（とちゅうでやめた回 planNoteBattleQuit と同じ。最後まで終えた回だけ抜けていた）
+  const miss = myMissesThisRound.concat(Array.from(battleTimeupIds), Array.from(hostSkippedIds));
   planRefKeys(a).forEach(k => planMarkDone(a.no, k, miss));
 }
 // battle/plan_done/<番号>.json（同じセットは上書き）。送り先の鍵が無ければ何もしない（sendEnqueue の中で見る）
