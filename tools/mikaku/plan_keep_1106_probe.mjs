@@ -1,6 +1,6 @@
 // ★2026-11-06 今日やることの「二人で」を、とちゅうで止まっても同じ所から（依頼 司令塔/回答/依頼_暗記カード_二人で途中から再開_2026-11-06.md）
 // ユーザー「暗記カードですが、何があっても状態を消さないでください」「今日の分の二人で始めるを押して、5/12のときに、終わるを押そうが落ちようが、5/12から始めます」
-// 本物の Chrome 2枚（headless）・まねの GitHub API・まねの待ち合わせ先（本物には触らない）。使い方: node tools/mikaku/plan_keep_1106_probe.mjs（NOW_ONLY=1 で今の版だけ）
+// 本物の Chrome 2枚（headless）・まねの GitHub API・まねの待ち合わせ先（本物には触らない）。REAL=1 … 待ち合わせ先だけ本物（RELAY_URLS のまま）。使い方: node tools/mikaku/plan_keep_1106_probe.mjs（NOW_ONLY=1 で今の版だけ）
 // 見ること:
 //   K1 12問の行を二人で 4問（〇✕〇スキップ）→ 5問目（スキップした問題はうしろへ回るので「4 / 12」）で「✕ おわる」→ 開き直す → 行が「二人のつづき」→ 二人で → 「4 / 12」・同じ問題から
 //   K2 続きで2問 → 「6 / 12」でタブを落とす（何も押さずに開き直す）→ 二人で → 「6 / 12」・同じ問題から
@@ -21,7 +21,7 @@ const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 let SERVED = CURRENT;
 const relay = await startFakeRelay({ broadcast: true, label: "plan_keep_1106" });
-function withFakeRelay(s) { const i0 = s.indexOf("const RELAY_URLS = ["), i1 = s.indexOf("];", i0); return s.slice(0, i0) + 'const RELAY_URLS = ["' + relay.url + '"' + s.slice(i1); }
+function withFakeRelay(s) { if (process.env.REAL) return s; const i0 = s.indexOf("const RELAY_URLS = ["), i1 = s.indexOf("];", i0); return s.slice(0, i0) + 'const RELAY_URLS = ["' + relay.url + '"' + s.slice(i1); }
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png" };
 const server = http.createServer((req, res) => {
   const rel = decodeURIComponent(req.url.split("?")[0]).replace(/^\/+/, "") || "index.html";
