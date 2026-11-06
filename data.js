@@ -19917,7 +19917,7 @@ const QA_DATA = [
   "a": "（てつはう）です。",
   "img": "kai6_08.jpg",
   "priority": "普通",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g6r52",
@@ -20021,7 +20021,7 @@ const QA_DATA = [
   "a": "（北条政子）です。",
   "yomi": "北条政子＝ほうじょうまさこ",
   "priority": "普通",
-  "level": "基礎"
+  "level": "標準"
  },
  {
   "id": "g6r61",
@@ -22848,7 +22848,7 @@ const QA_DATA = [
   "a": "（尾張国）です。",
   "yomi": "尾張国＝おわりのくに",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "g8r107",
@@ -22925,7 +22925,7 @@ const QA_DATA = [
   "a": "（名護屋）です。",
   "yomi": "名護屋＝なごや",
   "priority": "低",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g8r114",
@@ -24546,7 +24546,7 @@ const QA_DATA = [
   "a": "（三河）です。",
   "yomi": "三河＝みかわ",
   "priority": "普通",
-  "level": "標準"
+  "level": "発展"
  },
  {
   "id": "g9r102",
@@ -24655,7 +24655,7 @@ const QA_DATA = [
   "a": "（清）です。",
   "yomi": "清＝しん",
   "priority": "普通",
-  "level": "標準"
+  "level": "基礎"
  },
  {
   "id": "g9r112",
