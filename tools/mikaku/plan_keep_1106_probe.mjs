@@ -200,8 +200,11 @@ async function run(label, src) {
       JSON.stringify({ files: sf.map(x => x.p + ":" + (x.b.summary || {})["予定の問題数"] + ":" + (x.b.q || []).length), q: sb && sb.q.map(e => e.id + ":" + e.r + (e.re ? "(re)" : "")).join(" ") }));
     // ===== K8 plan_done =====
     const pd = written.get("battle/plan_done/0001.json"); const it0 = pd && pd.content.items[0];
-    check("K8 plan_done の社会の行: done・partial なし・miss に✕の問題（" + (it0 && JSON.stringify(it0.miss)) + "）。★最後まで終えた回の miss にスキップが入らないのは前からの作り（planNoteBattleEnd）",
+    check("K8 plan_done の社会の行: done・partial なし・miss に✕の問題（" + (it0 && JSON.stringify(it0.miss)) + "）",
       it0 && it0.done && !it0.partial && it0.miss.includes(first[1][1]), JSON.stringify(it0));
+    // ★2026-11-06 ユーザー OK「直す（スキップもまちがいに入れる）」: 最後まで終えた回の miss にもスキップ
+    check("K9 最後まで終えた回の plan_done の miss にスキップした問題（" + first[3][1] + "）も入る",
+      it0 && it0.miss.includes(first[3][1]), JSON.stringify(it0 && it0.miss));
     check("E 画面のエラー 0", H.errs.length + G.errs.length === 0, [].concat(H.errs, G.errs).join(" | "));
   } catch (e) { check("（途中で止まった）", false, (e && e.message || e) + " / errs=" + [].concat(H.errs, G.errs).join(" | ")); }
   finally { await H.ctx.close(); await G.ctx.close(); }
