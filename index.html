@@ -10045,6 +10045,10 @@ function battleGiriAllowed(){
 }
 function syncBattleGiriBtn(){
   if(els["judge-giri"]) els["judge-giri"].style.display = battleGiriAllowed() ? "" : "none";
+  // ★2026-11-11 ユーザー「親が間違いでバツってつけると思いますが、あれをスキップに変更してください（意味は同じ）」
+  //   → 親（ゲスト・kidFlow）の画面だけ、✕ の字を「スキップ」に。動き（judgeOpponent(false)＝まちがい・うしろへ回す）はそのまま
+  const ng = els["judge-ng"], lab = role === "guest" && kidFlow() ? "スキップ" : "✕ 相手はまちがい";
+  if(ng && ng.dataset.label !== lab){ ng.dataset.label = lab; const s = ng.querySelector(".fill-label"); if(s) s.textContent = lab; }
 }
 // ★ホスト（子ども）の画面で答えが開いたか。ゲストにだけ出す。秒は問題が出てから数える
 let hostOpenedIdx = -1;

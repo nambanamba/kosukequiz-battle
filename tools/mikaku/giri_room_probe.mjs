@@ -131,7 +131,7 @@ async function runMain(label, ver) {
       if (q === A) {
         const btns = await guest.page.evaluate(() => [...document.querySelectorAll("#judge-row .judge-btn")].filter(b => getComputedStyle(b).display !== "none").map(b => b.innerText.replace(/\s+/g, " ").trim()));
         await shot(guest.page, label + "_R1_parent"); await shot(host.page, label + "_R1_kid");
-        check("R1 親の画面: ✕・△・〇 の3つ（左から）・△は「△ ぎりぎり」「あしたもう一度」", btns.length === 3 && /^✕/.test(btns[0]) && /△ ぎりぎり/.test(btns[1]) && /あしたもう一度/.test(btns[1]) && /^〇/.test(btns[2]), JSON.stringify(btns));
+        check("R1 親の画面: スキップ・△・〇 の3つ（左から。✕ の字は 2026-11-11 から「スキップ」）・△は「△ ぎりぎり」「あしたもう一度」", btns.length === 3 && /^スキップ/.test(btns[0]) && /△ ぎりぎり/.test(btns[1]) && /あしたもう一度/.test(btns[1]) && /^〇/.test(btns[2]), JSON.stringify(btns));
         const box = await guest.page.evaluate(() => [...document.querySelectorAll("#judge-row .judge-btn")].filter(b => getComputedStyle(b).display !== "none").map(b => { const x = b.getBoundingClientRect(); return { w: Math.round(x.width), r: Math.round(x.right) }; }));
         check("R1 3つとも画面の幅に入る（はば 80px 以上）", box.length === 3 && box.every(b => b.w >= 80 && b.r <= 390), JSON.stringify(box));
         check("R1 子どもの画面に△は出ない", !hGiri);
@@ -240,6 +240,8 @@ async function runMixed() {
     if (await vis(guest.page, "#answer-reveal-btn")) await tap(guest.page, "#answer-reveal-btn");
     await waitVis(guest.page, "#judge-ok");
     check("F1 公平モード: ゲストの判定に△は出ない", !(await vis(guest.page, "#judge-giri")));
+    const fNg = await guest.page.evaluate(() => { const b = document.getElementById("judge-ng"); return b.innerText.replace(/\s+/g, " ").trim() + "|" + b.dataset.label; });
+    check("F1 公平モード: ✕ の字はそのまま「✕ 相手はまちがい」（スキップにするのは親の画面だけ）", fNg === "✕ 相手はまちがい|✕ 相手はまちがい", fNg);
     await tap(guest.page, "#judge-ok");
     await waitVis(host.page, "#judge-ok", 8000);
     check("F1 公平モード: ホストの判定に△は出ない", !(await vis(host.page, "#judge-giri")));
