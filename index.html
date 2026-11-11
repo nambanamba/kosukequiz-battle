@@ -5205,8 +5205,9 @@ function saveSoloSession(){
   const ids = quizQueue.slice();
   if(ids.some(id => !id)) return; // 念のため。保存時の id は必ず有効なのでここには来ない
   try{
-    window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify({
+    const o = {
       v: SOLO_SESSION_VERSION,
+      fsubj: freeSoloSubj,   // ★2026-11-12 下の選び方で始めた回の教科（教科ごとの続き FREE_KEEP_KEY）
       quizIds: ids,
       quizPos: quizPos,
       // ★before … 記録する前の stats（JSON 文字列。無かったら null）。大問の途中から再開して
@@ -5215,7 +5216,9 @@ function saveSoloSession(){
       quizResults: quizResults.map(r => Object.assign({ id: r.id, correct: r.correct, recorded: r.recorded, before: r.before, norecord: !!r.norecord, skip: !!r.skip, requeued: !!r.requeued }, r.giri ? { giri: true } : {})),
       reviewMode: reviewMode,
       inSoloRetryRound: inSoloRetryRound
-    }));
+    };
+    window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify(o));
+    if(freeSoloSubj) freeKeepPut("solo", freeSoloSubj, o);
   }catch(e){}
 }
 function loadSoloSession(){
@@ -5326,8 +5329,10 @@ function saveBattleSession(){
       day: spDayKey(Date.now()),                 // ★2026-10-11（11-06 からは続きの判定には使わない。見るためだけに残す）
       slid: studyLog && studyLog.cur ? (studyLog.cur.battle || "") : ""   // ★2026-11-06 学習ログの回の id（続きから同じ回に戻す）
     };
+    o.fsubj = freeBattleSubj;   // ★2026-11-12 下の選び方で始めた二人の教科
     window.localStorage.setItem(BATTLE_SESSION_KEY, JSON.stringify(o));
-    if(planBattleActive) planTwoKeepPut(planBattleActive, o);   // ★2026-11-06 今日やることの「二人で」は、行ごとにも控える
+    if(planBattleActive) planTwoKeepPut(planBattleActive, o);
+    else if(freeBattleSubj) freeKeepPut("two", freeBattleSubj, o);   // ★2026-11-06 今日やることの「二人で」は、行ごとにも控える
   }catch(e){}
 }
 // ★★2026-11-06 ユーザー「暗記カードですが、何があっても状態を消さないでください」
@@ -8971,6 +8976,7 @@ function soloTimeUp(){
 
 els["solo-start-btn"].addEventListener("click", ()=>{
   kinaiActive = false;
+  freeSoloSubj = currentSubject;   // ★2026-11-12 教科ごとの続き
   // ★ひとりで解くときも、二人と同じように大問が小問に開いて混ざる（2026-09-28）。
   //   並べかえ（buildFinalPool の中）のあとに開くので、大問はばらけない
   const pool = buildFinalPool();
@@ -9108,6 +9114,7 @@ els["solo-review-next-btn"].addEventListener("click", ()=>{
   quizPos++;
   if(quizPos >= quizQueue.length){
     clearSoloSession();
+    if(freeSoloSubj){ freeKeepDrop("solo", freeSoloSubj); freeSoloSubj = null; }
     studyLogFinish("solo");
     alert("全"+quizQueue.length+"問の確認が終わりました。");
     renderHome();
@@ -9343,6 +9350,7 @@ function finishSoloQuiz(){
   spLiveHide("solo");
   stopSoloThink();
   clearSoloSession();
+  if(freeSoloSubj){ freeKeepDrop("solo", freeSoloSubj); freeSoloSubj = null; }   // ★2026-11-12 最後まで終えたら、その教科の続きは消す
   planNoteFinish();   // ★今日やることの行を「できた」に（2026-10-07）
   studyLogFinish("solo");   // ★学習ログ（2026-10-05）
   // ★2026-10-05 スキップのあとの出し直し（norecord）は数に入れない（1問は1回）
@@ -9411,8 +9419,10 @@ els["retry-last-miss-btn"].addEventListener("click", ()=>{
 });
 
 els["resume-solo-btn"].addEventListener("click", ()=>{
-  const session = restoreSoloSession(loadSoloSession());
+  const raw = loadSoloSession();
+  const session = restoreSoloSession(raw);
   if(!session) return;
+  freeSoloSubj = raw && (raw.fsubj === "社会" || raw.fsubj === "理科") ? raw.fsubj : null;   // ★2026-11-12
   applySoloRewind(session.dropped);   // ★(1)に戻した小問の記録を、答える前に戻す（二重に付けない）
   quizQueue = session.quizQueue;
   quizPos = session.quizPos;
@@ -10726,6 +10736,8 @@ els["create-btn"].addEventListener("click", ()=>{
   if(offlineBattleBlock()) return;   // ★ネットなしでは対戦できない（2026-10-21）
   const pool = buildFinalPool();
   if(pool.length === 0) return;
+  freeBattleSubj = currentSubject;   // ★2026-11-12 教科ごとの続き（FREE_KEEP_KEY）
+  planBattleCarry = null;
 
   // ★大問は小問に開いて続けて並べる（並べかえは buildFinalPool の中で済んでいる＝大問はばらけない）
   sessionMerge = false;   // ★今日やることの merge 行ではない（2026-10-09）
@@ -10805,6 +10817,7 @@ els["resume-battle-btn"].addEventListener("click", async ()=>{
   battleDoneIds = new Set(Array.isArray(session.doneIds) ? session.doneIds : []);
   hostRequeuedIdx = typeof session.requeuedIdx === "number" ? session.requeuedIdx : -1;
   planBattleActive = session.plan && session.plan.no ? session.plan : null;   // ★2026-10-07
+  freeBattleSubj = !planBattleActive && (session.fsubj === "社会" || session.fsubj === "理科") ? session.fsubj : null;   // ★2026-11-12
   battleTimeupIds = new Set(Array.isArray(session.timeupIds) ? session.timeupIds : []);
   hostScoredIdx = -1;
   // 採点まで済んだ問題には戻らない（戻ると記録と得点が二重に入る）
@@ -11910,7 +11923,8 @@ function endGame(){
   // ★★2026-11-06 今日やることの「二人で」を、とちゅうで「おわる」: 進みを消さない（もう一度「二人で」で同じ所から）。
   //   前は ここで保存を消していたので、もう一度押すと1問目から（11-05 夜の社会）。学習ログの回も「しめずに中断」にして、
   //   続きから同じ回に戻す（答えていない問題は記録に何も書かない）
-  const keepPlan = role === "host" && !!planBattleActive && !finished;
+  // ★2026-11-12 下の選び方で始めた二人（今日やることの 社会・理科 の行・大きい「二人で始める」）も同じ: おわる・落ちるでは消さない
+  const keepPlan = role === "host" && (!!planBattleActive || !!freeBattleSubj) && !finished;
   const planWas = planBattleActive;
   if(keepPlan) saveBattleSession();
   if(role === "host") planNoteBattleEnd(finished);
@@ -11919,6 +11933,7 @@ function endGame(){
   }else{
     clearBattleSession();
     if(role === "host" && planWas && finished) planTwoKeepDrop(planWas);
+    if(role === "host" && freeBattleSubj && finished){ freeKeepDrop("two", freeBattleSubj); freeBattleSubj = null; }
     studyLogFinish("battle");   // ★学習ログ（2026-10-05）
   }
   clearJudgeFix();   // ★対戦が終わったら直せない（直す導線は対戦画面の中にしか無い）
@@ -12049,7 +12064,7 @@ function startBattleNow(){
   hideStartMsg();   // ★ひとこと（2026-10-10）が出たままなら消す
   planBattleActive = planBattlePending;   // ★今日やることの「二人で」から作った部屋なら、その行（2026-10-07）
   planBattlePending = null;
-  const carry = planBattleActive ? planBattleCarry : null;   // ★2026-10-11 今日やることの続き（planBattleResume）
+  const carry = (planBattleActive || freeBattleSubj) ? planBattleCarry : null;   // ★2026-10-11 今日やることの続き（planBattleResume）・★11-12 下の選び方の二人の続き
   planBattleCarry = null;
   battleTimeupIds = new Set();
   battleTimeupCount = 0;
@@ -13262,7 +13277,8 @@ function kidMsgSyncBtn(name){
 // 一人の一問一答をこの問題だけで始める（リンクの「はじめる」と同じ）
 let planStarting = null;   // studyLogStart に「今日やること」から始めたことを伝える {no, key}
 function startSoloWithIds(ids, planRef){
-  kinaiActive = false;   // ★機内用から始めるときは、呼んだあとで true にする
+  kinaiActive = false;
+  freeSoloSubj = null;   // ★機内用から始めるときは、呼んだあとで true にする
   if(!ids || ids.length === 0) return false;
   const mg = !!(planRef && planRef.merge);   // ★2026-10-09 行の印 merge＝分けずにまとめて
   const q = withMerge(mg, () => expandDaimonIds(ids));
@@ -13408,6 +13424,12 @@ function planBattleResume(ref){
     const idx = s.items.map((it, i) => i).filter(i => planRefKeys(ref).indexOf(planItemKey(s.items[i], i)) >= 0);
     if(idx.some(i => pc[planPartOf(s.items[i])])) return null;
   }
+  return battleCarryFrom(bs);
+}
+// 保存した対戦（saveBattleSession の形）→ 続きから始めるときに引きつぐもの（並び・いまの添字・1回目の答え）。続きが無ければ null
+// ★2026-11-12 今日やることの行（planBattleResume）と、下の選び方で始めた二人（freeBattleCarry）で同じものを使う
+function battleCarryFrom(bs){
+  if(!bs || !Array.isArray(bs.questionIds)) return null;
   let at = typeof bs.currentIndex === "number" ? bs.currentIndex : 0;
   if(bs.scoredIdx === at) at += 1;   // 採点まで済んだ問題には戻らない（再開と同じ）
   const known = new Set(QA_DATA.map(d => d.id));
@@ -13435,9 +13457,11 @@ function planBattleResume(ref){
   };
 }
 let planBattleCarry = null;   // 続きから始めるときに引きつぐ1回目の答え（startBattleNow で入れる）
-function startBattleWithIds(ids, planRef){
+// freeCarry … ★2026-11-12 下の選び方で始めた二人の続き（freeBattleCarry）。そのときは planRef なし
+function startBattleWithIds(ids, planRef, freeCarry){
   if(offlineBattleBlock()) return false;   // ★ネットなしでは対戦できない（2026-10-21）
-  const carry = planRef ? planBattleResume(planRef) : null;   // ★2026-10-11 今日やることの続き
+  freeBattleSubj = null;
+  const carry = freeCarry || (planRef ? planBattleResume(planRef) : null);   // ★2026-10-11 今日やることの続き
   if(!carry && (!ids || ids.length === 0)) return false;
   const mg = !!(planRef && planRef.merge);   // ★2026-10-09 行の印 merge＝分けずにまとめて
   const q = carry ? carry.ids.slice() : withMerge(mg, () => expandDaimonIds(ids));   // 続きの並びは、保存した並びのまま（もう開いた小問・✕でうしろへ回した問題も）
@@ -13747,37 +13771,72 @@ function planFreeCount(subj){
   try{ return sumWeight(buildPlan().pool); }
   finally{ currentSubject = old; selectedUnits = restoreUnitSelection(old); restoreSubjectSettings(old); }
 }
+// ★★2026-11-12 ユーザー「続きからのボタンが続きからできなくなっていました」
+//   下の選び方で始めた回（一人・二人）は、おわる・やめる・落ちるでは消さず、教科ごとに控える（前は今日のセットの行だけ控えていた）。
+//   行の「一人で」「二人で」は、その教科の続きがあれば続きから（いつもの「前回の続きから再開する」と同じ動き・数もそのまま）。
+//   最後まで終えたら、その教科の続きは消す。
+var freeSoloSubj = null, freeBattleSubj = null;   // いまの回が下の選び方で始めた回なら、その教科（var … 開いてすぐ読まれても止まらない）
+const FREE_KEEP_KEY = "kq_battle_free_keep_v1";   // {solo: {社会: 一人の保存, 理科: …}, two: {社会: 二人の保存, …}}
+function freeKeepAll(){ try{ const o = JSON.parse(window.localStorage.getItem(FREE_KEEP_KEY) || "{}"); return o && typeof o === "object" ? o : {}; }catch(e){ return {}; } }
+function freeKeepGet(kind, subj){ const o = freeKeepAll(); return o[kind] && o[kind][subj] ? o[kind][subj] : null; }
+function freeKeepPut(kind, subj, v){ const o = freeKeepAll(); o[kind] = o[kind] || {}; o[kind][subj] = v; try{ window.localStorage.setItem(FREE_KEEP_KEY, JSON.stringify(o)); }catch(e){} }
+function freeKeepDrop(kind, subj){ const o = freeKeepAll(); if(o[kind] && o[kind][subj]){ delete o[kind][subj]; try{ window.localStorage.setItem(FREE_KEEP_KEY, JSON.stringify(o)); }catch(e){} } }
+// 続きの残りの数（無ければ 0）
+function freeSoloLeft(subj){ const k = freeKeepGet("solo", subj); const ss = k ? restoreSoloSession(k) : null; return ss && !ss.reviewMode && ss.quizPos < ss.quizQueue.length ? ss.quizQueue.length - ss.quizPos : 0; }
+function freeBattleCarry(subj){ const k = freeKeepGet("two", subj); return k && !k.inMissRetryRound ? battleCarryFrom(k) : null; }
+function freeTwoLeft(subj){ const c = freeBattleCarry(subj); return c ? c.queue.length : 0; }
+function freeRowStart(subj, kind){
+  switchSubject(subj);
+  refreshCreateButton();
+  if(kind === "solo" && freeSoloLeft(subj)){
+    try{ window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify(freeKeepGet("solo", subj))); }catch(e){}
+    els["resume-solo-btn"].click(); return;
+  }
+  if(kind === "battle"){
+    // ★続きは「二人で始める」と同じ待ち合わせ（部屋番号→開始）で、保存した並び・いまの添字から（今日やることの行の続きと同じ）
+    const carry = freeBattleCarry(subj);
+    if(carry && startBattleWithIds(null, null, carry)){ freeBattleSubj = subj; return; }
+  }
+  const big = els[kind === "solo" ? "solo-start-btn" : "create-btn"];
+  if(!big.disabled) big.click();
+}
 function renderFreeRows(box){
   const cur = document.getElementById("plan-cur");
   document.getElementById("plan-done").style.display = "none";
   const nx = document.getElementById("plan-next"); nx.style.display = "none"; nx.innerHTML = "";
   box.style.display = "";
-  cur.innerHTML = "";
-  const head = document.createElement("div"); head.className = "plan-head"; head.textContent = "今日やること";
-  cur.appendChild(head);
-  const kid = document.createElement("div"); kid.className = "plan-kid";
-  ["社会", "理科"].forEach(subj => {
-    let n = 0; try{ n = planFreeCount(subj); }catch(e){ console.error("free rows count failed", e); }
-    const row = document.createElement("div"); row.className = "plan-kid-row"; row.dataset.subj = subj;
-    const nm = document.createElement("div"); nm.className = "plan-kid-subj"; nm.textContent = subj;
-    const sub = document.createElement("span"); sub.className = "plan-kid-sub"; sub.textContent = n ? n + "問" : "問題がありません";
-    nm.appendChild(sub);
-    const bs = document.createElement("div"); bs.className = "plan-kid-btns";
-    [["一人で", "solo"], ["二人で", "battle"]].forEach(([lab, k]) => {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "plan-kid-btn" + (k === "battle" ? " battle" : ""); b.dataset.kind = k; b.textContent = lab;
-      b.disabled = n === 0;
-      b.addEventListener("click", () => {
-        switchSubject(subj);
-        refreshCreateButton();
-        const big = els[k === "solo" ? "solo-start-btn" : "create-btn"];
-        if(!big.disabled) big.click();
+  // ★行は1回だけ作り、あとは数と字だけ書きかえる（入力の途中で行を押すと、押した行が作り直されて空振りしていた）
+  let kid = cur.querySelector(".plan-kid[data-free]");
+  if(!kid){
+    cur.innerHTML = "";
+    const head = document.createElement("div"); head.className = "plan-head"; head.textContent = "今日やること";
+    cur.appendChild(head);
+    kid = document.createElement("div"); kid.className = "plan-kid"; kid.dataset.free = "1";
+    ["社会", "理科"].forEach(subj => {
+      const row = document.createElement("div"); row.className = "plan-kid-row"; row.dataset.subj = subj;
+      const nm = document.createElement("div"); nm.className = "plan-kid-subj"; nm.textContent = subj;
+      const sub = document.createElement("span"); sub.className = "plan-kid-sub";
+      nm.appendChild(sub);
+      const bs = document.createElement("div"); bs.className = "plan-kid-btns";
+      [["一人で", "solo"], ["二人で", "battle"]].forEach(([lab, k]) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "plan-kid-btn" + (k === "battle" ? " battle" : ""); b.dataset.kind = k; b.textContent = lab;
+        b.addEventListener("click", () => freeRowStart(subj, k));
+        bs.appendChild(b);
       });
-      bs.appendChild(b);
+      row.appendChild(nm); row.appendChild(bs); kid.appendChild(row);
     });
-    row.appendChild(nm); row.appendChild(bs); kid.appendChild(row);
+    cur.appendChild(kid);
+  }
+  kid.querySelectorAll(".plan-kid-row").forEach(row => {
+    const subj = row.dataset.subj;
+    let n = 0; try{ n = planFreeCount(subj); }catch(e){ console.error("free rows count failed", e); }
+    const sl = freeSoloLeft(subj), tl = freeTwoLeft(subj);
+    row.querySelector(".plan-kid-sub").textContent = (n ? n + "問" : "問題がありません")
+      + (sl ? "・一人のつづき " + sl + "問" : "") + (tl ? "・二人のつづき " + tl + "問" : "");
+    row.querySelector('button[data-kind="solo"]').disabled = n === 0 && !sl;
+    row.querySelector('button[data-kind="battle"]').disabled = n === 0 && !tl;
   });
-  cur.appendChild(kid);
 }
 function renderPlan(){
   const box = document.getElementById("plan-box");

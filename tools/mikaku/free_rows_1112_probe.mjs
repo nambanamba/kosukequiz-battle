@@ -56,7 +56,7 @@ try {
   check("F2 理科を2単元（" + two.join("・") + "）にして社会へ → 理科の行 " + n2 + "問・社会の大きいボタンは " + sNow + "問のまま", two.length >= 1 && r[1].sub === n2 + "問" && sNow === nS && n2 !== nR, JSON.stringify(r));
   await page.click('#plan-cur .plan-kid-row[data-subj="社会"] button[data-kind="solo"]'); await page.waitForTimeout(800);
   let q = await soloInfo();
-  check("F3 社会の「一人で」→ 一人の画面「" + q.c + "」（行は " + nS + "問）・社会の問題（" + q.id + "）", (await active()) === "screen-solo" && q.c === "1 / " + nS && /No\.g/.test(q.id), JSON.stringify(q));
+  check("F3 社会の「一人で」→ 一人の画面「" + q.c + "」（行は " + nS + "問）・社会の問題（" + q.id + "）", (await active()) === "screen-solo" && q.c === "1 / " + nS && !/No\.r/.test(q.id), JSON.stringify(q));   // 社会は g・kaki（夏期講習）など。理科（r）でなければよい
   await page.goto(URL0); await page.waitForTimeout(900);
   await page.click('#plan-cur .plan-kid-row[data-subj="理科"] button[data-kind="solo"]'); await page.waitForTimeout(800);
   q = await soloInfo();
