@@ -6498,6 +6498,7 @@ function refreshCreateButton(){
   els["solo-start-btn"].textContent = disabled ? "問題がありません" : "一人で始める（"+label+"）";
   els["create-btn"].disabled = disabled;
   els["create-btn"].textContent = disabled ? "問題がありません" : "二人で始める（"+label+"）";
+  if(PLAN_FREE_ROWS && typeof renderPlan === "function") renderPlan();   // ★2026-11-12 今日やることの行の数も、同じ選び方で数え直す
 }
 // ---- units are grouped into 地理/公民/歴史 by their name prefix so the
 //      unit list can be collapsed into an accordion as more units get
@@ -13731,9 +13732,57 @@ function renderPlanSet(container, no, prefix, closable){
   container.appendChild(det);
   return true;
 }
+// ★★2026-11-12 ユーザー「もう選んでもらう必要はなくて、選択したとおりに問題を出してほしいです。
+//   ただ、理科、社会の二人で、一人でのボタンは使いやすいので、押すと、下での選択に沿って選ばれた問題をできるようにしてもらえますか？」
+//   ・今日やることは 社会・理科 の2行と「一人で」「二人で」だけ。自動の今日のセット（できた・二人のつづきの印）は使わない
+//   ・押すと その教科に切りかえて、下の大きい「一人で始める」「二人で始める」を押したのと同じ（単元・出題モード・問題数など その教科で選んである設定どおり）
+//   ・行の数は buildPlan（大きいボタンの数と同じ関数）。途中で切れたら、いつもの「前回の続きから再開する」
+//   ・var … 開いてすぐの refreshCreateButton からも読める（まだ undefined＝今までどおり）
+var PLAN_FREE_ROWS = true;
+function planFreeCount(subj){
+  if(subj === currentSubject) return sumWeight(buildPlan().pool);
+  rememberUnitSelection(); rememberSubjectSettings();   // ★いまの教科の選択を覚えてから、数えるあいだだけ切りかえる（画面はさわらない）
+  const old = currentSubject;
+  currentSubject = subj; selectedUnits = restoreUnitSelection(subj); restoreSubjectSettings(subj);
+  try{ return sumWeight(buildPlan().pool); }
+  finally{ currentSubject = old; selectedUnits = restoreUnitSelection(old); restoreSubjectSettings(old); }
+}
+function renderFreeRows(box){
+  const cur = document.getElementById("plan-cur");
+  document.getElementById("plan-done").style.display = "none";
+  const nx = document.getElementById("plan-next"); nx.style.display = "none"; nx.innerHTML = "";
+  box.style.display = "";
+  cur.innerHTML = "";
+  const head = document.createElement("div"); head.className = "plan-head"; head.textContent = "今日やること";
+  cur.appendChild(head);
+  const kid = document.createElement("div"); kid.className = "plan-kid";
+  ["社会", "理科"].forEach(subj => {
+    let n = 0; try{ n = planFreeCount(subj); }catch(e){ console.error("free rows count failed", e); }
+    const row = document.createElement("div"); row.className = "plan-kid-row"; row.dataset.subj = subj;
+    const nm = document.createElement("div"); nm.className = "plan-kid-subj"; nm.textContent = subj;
+    const sub = document.createElement("span"); sub.className = "plan-kid-sub"; sub.textContent = n ? n + "問" : "問題がありません";
+    nm.appendChild(sub);
+    const bs = document.createElement("div"); bs.className = "plan-kid-btns";
+    [["一人で", "solo"], ["二人で", "battle"]].forEach(([lab, k]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "plan-kid-btn" + (k === "battle" ? " battle" : ""); b.dataset.kind = k; b.textContent = lab;
+      b.disabled = n === 0;
+      b.addEventListener("click", () => {
+        switchSubject(subj);
+        refreshCreateButton();
+        const big = els[k === "solo" ? "solo-start-btn" : "create-btn"];
+        if(!big.disabled) big.click();
+      });
+      bs.appendChild(b);
+    });
+    row.appendChild(nm); row.appendChild(bs); kid.appendChild(row);
+  });
+  cur.appendChild(kid);
+}
 function renderPlan(){
   const box = document.getElementById("plan-box");
   if(!box) return;
+  if(PLAN_FREE_ROWS){ renderFreeRows(box); return; }   // ★2026-11-12 今日のセットは使わない（下の renderFreeRows の説明）
   if(planShownNo === null || !planSetOf(planShownNo)){
     planShownNo = planFirstOpen() || null;
     if(planShownNo === null){
