@@ -10271,7 +10271,11 @@ function showGuestWaitStatus(data){
   els["answer-countdown"].style.display = "none";
   hideBigVerdict();
   if(data.type === "skipped" && keepCard){
-    el.textContent = "子どもがこの問題をスキップしました（答えを見ています）。あとでもう一度出てきます。";
+    // ★2026-11-13 親がスキップを押したとき（子どもと同じ動き）は、そう書く。一個前を直すの対象からも外す（記録は直せないスキップのため）
+    const bySelf = myVerdictOfOpponent === false && !!lastJudge && lastJudge.qid === questionIds[currentIndex];
+    if(bySelf) clearJudgeFix();
+    el.textContent = bySelf ? "スキップしました（子どもは答えを見ています）。あとでもう一度出てきます。"
+                            : "子どもがこの問題をスキップしました（答えを見ています）。あとでもう一度出てきます。";
   }else if(data.type === "skipped"){
     // 問題文だけは、データに入れた改行をそのまま出す（お知らせの文面のほうは今までどおり）
     el.innerHTML = "相手がこの問題をスキップしました。<br><span class=\"wrapped-q\">"+negMarkHtml(typeof data.qv === "string" ? data.qv : displayQ(data.q))+"</span>";
@@ -10609,6 +10613,10 @@ function setupActions(){
     if(data.idx !== currentIndex) return;
     if(data.qid && data.qid !== questionIds[currentIndex]) return;   // ★2026-10-10 スキップしたあとに届いた、前の問題の判定
     if(opponentVerdictOfMe !== null) return;
+    // ★2026-11-13 ユーザー「親がスキップを押すとこたえが一瞬で消えます」「親のスキップと子供のスキップは同じ動きでいいです」
+    //   → 二人（親が判定する流れ）で親が「スキップ」（judge-ng）を押したら、子どもが自分でスキップを押したのと同じにする（performSkip）。
+    //   答えと「あとでもう一度出てくるよ」と「つぎの問題へ」を出し、問題はうしろへ回る。記録もスキップと同じ
+    if(role === "host" && kidFlow() && data.correct === false && !els["battle-a-block"].classList.contains("show")){ performSkip(); return; }
     opponentVerdictOfMe = data.correct;
     // ★⚡2026-10-10 二人のスピードポイント（ホスト＝子どもの端末だけ）。親が〇✕を押したときに決まる。親の反応ぶん2秒を引く
     let spE = null;
