@@ -2872,9 +2872,11 @@ function savePartStats(){
   try{ window.localStorage.setItem(PART_KEY, JSON.stringify(partStats)); }catch(e){ console.error("save part stats failed", e); }
 }
 // 部分の記録。形は stats と同じ（correct/wrong/box/lastCorrectAt/lastAnswered）に、h＝最近の○✕と時刻（[時刻, 1か0]）を足したもの
-function recordPartResult(id, correct){
+function recordPartResult(id, correct, giri){
   const s = partStats[id] || {correct:0, wrong:0};
   const now = Date.now();
+  // ★2026-11-14 ユーザー「ギリギリがありません」→ 分けての部分にも △。〇の数は足すが、連続の〇（box・「2回続けて〇」の h）は動かさない＝次も答える部分のまま
+  if(correct && giri){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = now; s.lastAnswered = now; s.lastGiri = now; partStats[id] = s; savePartStats(); return; }
   if(correct){ s.correct = (s.correct||0) + 1; s.lastCorrectAt = now; }
   else s.wrong = (s.wrong||0) + 1;
   s.lastAnswered = now;
@@ -4399,7 +4401,7 @@ function giriWhenEntry(id, d){
 }
 function recordResult(id, correct, giri){
   // ★2026-10-06 答えが複数のカードの「分けて」の部分は、別の入れ物へ（カードの記録 stats には書かない）
-  if(typeof DAIMON_ITEM !== "undefined" && isPartId(id)){ recordPartResult(id, correct); daimonMark[id] = !!correct; return; }
+  if(typeof DAIMON_ITEM !== "undefined" && isPartId(id)){ recordPartResult(id, correct, giri); daimonMark[id] = !!correct; return; }
   const s = stats[id] || {correct:0, wrong:0};
   if(correct && giri){
     const now = Date.now();
@@ -9301,7 +9303,7 @@ function advanceSolo(){
 // ★2026-10-26 △ ぎりぎり（あしたもう一度）を出してよい問題: 一人の一問一答の1回目だけ。
 //   大問の小問・分けての部分・チェックのみ・やり直しの回・出し直し（2回目から＝記録しない）には出さない。対戦には無い
 function soloGiriAllowed(id){
-  return !!id && !reviewMode && !inSoloRetryRound && !isPartId(id) && !soloIsRepeat(id);   // ★2026-10-27 大問の小問にも出す（box を動かさない＝次も答える小問のまま）
+  return !!id && !reviewMode && !inSoloRetryRound && !soloIsRepeat(id);   // ★2026-11-14 分けての部分にも出す（ユーザー「ギリギリがありません」）   // ★2026-10-27 大問の小問にも出す（box を動かさない＝次も答える小問のまま）
 }
 function judgeSolo(correct, giri){
   // ★学習ログ（2026-10-05）。スキップのあとの出し直し（記録しない回）は「出し直し」の印を付ける（recordSoloAnswer と同じ条件）
@@ -10155,7 +10157,7 @@ function guestPeek(){
 //     古い版のゲストからは giri が来ないので、ふつうの〇✕のまま
 function battleGiriAllowed(){
   const id = questionIds[currentIndex];
-  return role === "guest" && kidFlow() && !!id && !inMissRetryRound && !isPartId(id) && !isRepeatInRound(questionIds, currentIndex);
+  return role === "guest" && kidFlow() && !!id && !inMissRetryRound && !isRepeatInRound(questionIds, currentIndex);   // ★2026-11-14 分けての部分にも出す
 }
 function syncBattleGiriBtn(){
   if(els["judge-giri"]) els["judge-giri"].style.display = battleGiriAllowed() ? "" : "none";
@@ -10691,7 +10693,7 @@ function setupActions(){
     // ★2026-10-27 △ ぎりぎり（親の画面から）。子ども（ホスト）の端末でもう一度確かめる: 二人の親子の流れ・〇・1回目・
     //   スキップのあと／やり直しの回（forcedWrong）・大問のスキップ・分けての部分・出し直しでない。だめなら〇のまま（△を知らない版と同じ）
     const giri = role === "host" && kidFlow() && data.giri === 1 && data.correct === true && !forcedWrong && !repeat
-                 && !inMissRetryRound && !daimonSkipRecorded.has(qid) && !isPartId(qid) && !isRepeatInRound(questionIds, currentIndex);
+                 && !inMissRetryRound && !daimonSkipRecorded.has(qid) && !isRepeatInRound(questionIds, currentIndex);   // ★2026-11-14 分けての部分にも △
     if(!(role === "host" && hostRecordedIdx === currentIndex)){
       studyLogAnswer("battle", qid, data.correct ? "o" : "x", repeat || (role === "host" && (hostSkippedIds.has(qid) || daimonSkipRecorded.has(qid))), giri);
     }
