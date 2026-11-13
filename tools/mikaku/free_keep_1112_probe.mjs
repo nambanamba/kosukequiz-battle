@@ -102,8 +102,11 @@ async function run(label, src) {
     await G.page.waitForTimeout(300);
     await waitVis(G.page, "#judge-row", 15000).catch(() => {});
     await tap(G.page, ok ? "#judge-ok" : "#judge-ng").catch(() => {});
-    await H.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show"), null, { timeout: 25000 }).catch(() => {});
-    await tap(H.page, "#next-btn").catch(() => {}); await H.page.waitForTimeout(700);
+    // ★11-13〜 親のスキップ（judge-ng）は子どものスキップと同じ動き＝「つぎの問題へ」は skip-continue-btn
+    await H.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show") || getComputedStyle(document.getElementById("skip-continue-btn")).display !== "none", null, { timeout: 25000 }).catch(() => {});
+    if (await H.page.evaluate(() => getComputedStyle(document.getElementById("skip-continue-btn")).display !== "none")) await tap(H.page, "#skip-continue-btn").catch(() => {});
+    else await tap(H.page, "#next-btn").catch(() => {});
+    await H.page.waitForTimeout(700);
     return id;
   };
   const skipOne = async () => {
