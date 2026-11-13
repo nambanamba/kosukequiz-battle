@@ -1,0 +1,165 @@
+// ★2026-11-14 今日やることの 社会・理科 の行に「つづきを消す」（ユーザー「残っちゃったときとか間違えて始めちゃうこともあるので、続きをクリアする機能が欲しい」）
+// その教科の続き（一人・二人）をまとめて消す・押したら聞く・◎×の記録は消さない。使い方: node tools/mikaku/clear_keep_1114_probe.mjs（NOW_ONLY=1 で今の版だけ）
+// 見ること:
+//   C1 続きが無い行には「つづきを消す」が出ない
+//   C2 社会を二人で2問・一人で3問、理科を一人で2問 → 開き直す → 社会の行に 一人・二人のつづき と「つづきを消す」・理科の行にも出る
+//   C3 社会の「つづきを消す」で聞かれて「キャンセル」→ 何も消えない
+//   C4 「OK」→ 社会の行の つづき と ボタンが消える・理科の行の 一人のつづき は残る・◎×の記録（stats）の数は同じ
+//   C5 社会の「一人で」→「1 / n」から・「二人で」→「1 / n」から
+//   E  画面のエラー 0
+import http from "node:http"; import fs from "node:fs"; import path from "node:path";
+import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
+import { startFakeRelay } from "./fake_relay.mjs";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const BASE_COMMIT = "22998cd";   // 直す前（2026-11-12 今日のセットをやめた版）
+const { chromium } = await import(pathToFileURL(path.join(execSync("npm root -g", { encoding: "utf8" }).trim(), "playwright", "index.mjs")).href);
+const CURRENT = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+const BASELINE = execSync("git show " + BASE_COMMIT + ":index.html", { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+let SERVED = CURRENT;
+const relay = await startFakeRelay({ broadcast: true, label: "plan_keep_1106" });
+function withFakeRelay(s) { if (process.env.REAL) return s; const i0 = s.indexOf("const RELAY_URLS = ["), i1 = s.indexOf("];", i0); return s.slice(0, i0) + 'const RELAY_URLS = ["' + relay.url + '"' + s.slice(i1); }
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".jpg": "image/jpeg", ".png": "image/png" };
+const server = http.createServer((req, res) => {
+  const rel = decodeURIComponent(req.url.split("?")[0]).replace(/^\/+/, "") || "index.html";
+  if (rel === "index.html") { res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-store" }); res.end(Buffer.from(withFakeRelay(SERVED), "utf8")); return; }
+  const file = path.join(ROOT, rel);
+  if (!file.startsWith(ROOT + path.sep)) { res.writeHead(403).end(); return; }
+  fs.readFile(file, (e, b) => e ? res.writeHead(404).end() : (res.writeHead(200, { "content-type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream", "cache-control": "no-store" }), res.end(b)));
+});
+await new Promise(r => server.listen(0, "127.0.0.1", r));
+const PAGE_URL = "http://127.0.0.1:" + server.address().port + "/index.html";
+const R = ["g6r1","g6r2","g6r3","g6r4","g6r5","g6r6","g6r7","g6r8","g6r9","g6r10","g6r11","g6r12"];
+const SETS = {
+};
+const TOKEN = "github_pat_TESTONLY_1234567890";
+let written = new Map();
+const CORS = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, PUT, OPTIONS", "access-control-allow-headers": "authorization, content-type, accept, x-github-api-version" };
+const api = http.createServer((req, res) => {
+  if (req.method === "OPTIONS") { res.writeHead(204, CORS); res.end(); return; }
+  let b = ""; req.on("data", c => b += c); req.on("end", () => {
+    const send = (st, o) => { res.writeHead(st, Object.assign({ "content-type": "application/json" }, CORS)); res.end(JSON.stringify(o)); };
+    const m = /^\/repos\/nambanamba\/kosuke-records\/contents\/([^?]+)/.exec(req.url);
+    if (!m) return send(404, {});
+    const p = decodeURIComponent(m[1]);
+    if (req.headers.authorization !== "Bearer " + TOKEN) return send(401, { message: "Bad credentials" });
+    if (req.method === "GET") {
+      if (p.startsWith("plan/")) { if (!SETS[p]) return send(404, {}); return send(200, { sha: "x", content: Buffer.from(JSON.stringify(SETS[p]), "utf8").toString("base64") }); }
+      const w = written.get(p); return w ? send(200, { sha: w.sha }) : send(404, {});
+    }
+    if (req.method === "PUT") { const j = JSON.parse(b), w = written.get(p); if (w && j.sha !== w.sha) return send(409, {}); const sha = "s" + Math.random(); written.set(p, { sha, content: JSON.parse(Buffer.from(j.content, "base64").toString("utf8")) }); return send(w ? 200 : 201, {}); }
+    send(405, {});
+  });
+});
+await new Promise(r => api.listen(0, "127.0.0.1", r));
+const API_URL = "http://127.0.0.1:" + api.address().port;
+const browser = await chromium.launch({ channel: "chrome" });
+const MIG = { "kaki1-4": 1, "kaki5-8": 1, "lastcorrect-backfill": 1 };
+const SEED = (arg) => {
+  const [mig, cfg] = arg;
+  localStorage.clear();
+  localStorage.setItem("kq_battle_migrations_v1", JSON.stringify(mig));
+  localStorage.setItem("kq_battle_daimon_merged_v1", "1");
+  localStorage.setItem("kq_battle_settings_v1", JSON.stringify({ subject: "社会", unitsBySubject: { "社会": ["第6回.鎌倉時代"], "理科": ["第6回.ヒトと動物の呼吸・循環"] }, units: ["第6回.鎌倉時代"], count: 12, shuffle: false, tiers: [0, 1, 2],
+    filterUnmastered: false, filterWeak: false, fairMode: false, headStartSec: 60, answerTimeSec: 60, judgeTimeSec: 600, nextTimeSec: 600, skipNextTimeSec: 600, speedLevel: 2 }));
+  if (cfg) localStorage.setItem("kq_battle_send_gh_v1", JSON.stringify(cfg));
+};
+async function run(label, src) {
+  SERVED = src; written = new Map(); const out = [];
+  const check = (n, ok, x) => { out.push({ n, ok: !!ok, x: x == null ? "" : String(x) }); console.log("  [" + label + "] " + (ok ? "✔" : "✘") + " " + n.slice(0, 60)); };
+  const mk = async () => { const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await ctx.newPage(); const errs = [];
+    page.on("pageerror", e => errs.push(String(e))); page.on("dialog", d => d.accept().catch(() => {})); await page.goto(PAGE_URL); await page.waitForTimeout(400); return { ctx, page, errs }; };
+  const tap = (pg, sel) => pg.$eval(sel, e => e.click());
+  const waitVis = (pg, sel, ms) => pg.waitForFunction(s => { const e = document.querySelector(s); return !!(e && getComputedStyle(e).display !== "none" && e.offsetParent !== null); }, sel, { timeout: ms || 25000 });
+  const qid = pg => pg.$eval("#battle-q-id", e => e.textContent.replace(/^No\./, ""));
+  const H = await mk(), G = await mk();
+  const counter = () => H.page.$eval("#battle-counter", e => e.textContent.trim());
+  const kidRows = () => H.page.evaluate(() => [...document.querySelectorAll("#plan-cur .plan-kid-row")].map(r => ({ subj: r.dataset.subj, sub: r.querySelector(".plan-kid-sub").textContent })));
+  const reloadHost = async () => { await H.page.evaluate(() => localStorage.removeItem("kq_battle_last_code_v1")); await H.page.reload(); await H.page.waitForTimeout(1800); };
+  const onResult = () => H.page.evaluate(() => document.getElementById("screen-result").classList.contains("active"));
+  const startKidBattle = async (subj) => {
+    await H.page.waitForSelector("#plan-cur .plan-kid-row", { timeout: 20000, state: "attached" });
+    await H.page.evaluate(sj => { const r = document.querySelector('#plan-cur .plan-kid-row[data-subj="' + sj + '"]'); r.querySelector('.plan-kid-btn[data-kind="battle"]').click(); }, subj);
+    await H.page.waitForFunction(() => /^\d{4}$/.test(document.getElementById("room-code-display").textContent), null, { timeout: 30000 });
+    const code = await H.page.$eval("#room-code-display", e => e.textContent);
+    await H.page.waitForTimeout(1500);
+    await G.page.reload(); await G.page.waitForTimeout(800);
+    await tap(G.page, "#go-join"); await G.page.fill("#join-code-input", code); await tap(G.page, "#join-btn");
+    await waitVis(H.page, "#start-together-btn", 60000);
+    await tap(H.page, "#start-together-btn"); await tap(G.page, "#join-start-together-btn");
+    await H.page.waitForFunction(() => document.getElementById("screen-battle").classList.contains("active"), null, { timeout: 30000 });
+    await H.page.waitForTimeout(600);
+  };
+  const waitShown = async () => { await H.page.waitForFunction(() => { const e = document.querySelector("#skip-btn"); return e && getComputedStyle(e).display !== "none" && e.offsetParent !== null; }, null, { timeout: 30000 }).catch(() => {}); };
+  const answerOne = async (ok) => {
+    await waitShown();
+    const id = await qid(H.page);
+    await G.page.waitForFunction(i => document.getElementById("battle-q-id").textContent === "No." + i && getComputedStyle(document.getElementById("battle-view")).display !== "none", id, { timeout: 20000 }).catch(() => {});
+    await G.page.waitForTimeout(300);
+    await waitVis(G.page, "#judge-row", 15000).catch(() => {});
+    await tap(G.page, ok ? "#judge-ok" : "#judge-ng").catch(() => {});
+    // ★11-13〜 親のスキップ（judge-ng）は子どものスキップと同じ動き＝「つぎの問題へ」は skip-continue-btn
+    await H.page.waitForFunction(() => document.getElementById("next-btn").classList.contains("show") || getComputedStyle(document.getElementById("skip-continue-btn")).display !== "none", null, { timeout: 25000 }).catch(() => {});
+    if (await H.page.evaluate(() => getComputedStyle(document.getElementById("skip-continue-btn")).display !== "none")) await tap(H.page, "#skip-continue-btn").catch(() => {});
+    else await tap(H.page, "#next-btn").catch(() => {});
+    await H.page.waitForTimeout(700);
+    return id;
+  };
+  const skipOne = async () => {
+    await waitShown();
+    const id = await qid(H.page);
+    await tap(H.page, "#skip-btn");
+    await waitVis(H.page, "#skip-continue-btn", 15000).catch(() => {});
+    await tap(H.page, "#skip-continue-btn").catch(() => {}); await H.page.waitForTimeout(700);
+    return id;
+  };
+  const at = async () => { await waitShown(); return { c: await counter(), q: await qid(H.page), left: await H.page.$eval("#battle-left", e => e.textContent) }; };
+  const endBattle = async () => {
+    await tap(H.page, "#battle-end-btn"); await H.page.waitForTimeout(1200);
+    await H.page.evaluate(() => { const b = document.getElementById("result-home-btn"); if (b) b.click(); }); await H.page.waitForTimeout(1200);
+  };
+  const sessFiles = () => [...written.keys()].filter(p => p.startsWith("battle/session/"));
+  try {
+    for (const [x, cfg] of [[H, { token: TOKEN, api: API_URL }], [G, null]]) { await x.page.evaluate(SEED, [MIG, cfg]); await x.page.reload(); await x.page.waitForTimeout(1800); }
+    const soloRow = async (subj) => { await H.page.evaluate(sj => document.querySelector('#plan-cur .plan-kid-row[data-subj="' + sj + '"] .plan-kid-btn[data-kind="solo"]').click(), subj); await H.page.waitForTimeout(900); };
+    const soloOk = async (n) => { for (let i = 0; i < n; i++) { await tap(H.page, "#solo-reveal-btn"); await H.page.waitForTimeout(150); await tap(H.page, "#solo-judge-ok"); await H.page.waitForTimeout(350); } };
+    const soloAt = () => H.page.evaluate(() => document.getElementById("solo-counter").textContent);
+    const clr = () => H.page.evaluate(() => [...document.querySelectorAll("#plan-cur .plan-kid-row")].map(r => { const b = r.querySelector(".plan-kid-clear"); return !!b && b.style.display !== "none"; }));
+    const nStats = () => H.page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("kq_battle_stats_v1") || "{}")).length);
+    const c0 = await clr();
+    check("C1 続きが無い行に「つづきを消す」なし " + JSON.stringify(c0), c0.length === 2 && !c0[0] && !c0[1], "");
+    await startKidBattle("社会"); await answerOne(true); await answerOne(true); await endBattle(); await reloadHost();
+    await soloRow("社会"); await soloOk(3); await tap(H.page, "#solo-back"); await H.page.waitForTimeout(800);
+    await soloRow("理科"); await soloOk(2); await tap(H.page, "#solo-back"); await H.page.waitForTimeout(800);
+    await reloadHost();
+    const r2 = await kidRows(), c2 = await clr(), st0 = await nStats();
+    check("C2 行［" + r2.map(x => x.sub).join(" / ") + "］・ボタン " + JSON.stringify(c2), /一人のつづき/.test(r2[0].sub) && /二人のつづき/.test(r2[0].sub) && /一人のつづき/.test(r2[1].sub) && c2[0] && c2[1], "");
+    const clickClear = async (accept) => { H.page.removeAllListeners("dialog"); let msg = ""; H.page.once("dialog", d => { msg = d.message(); accept ? d.accept() : d.dismiss(); });
+      await H.page.evaluate(() => document.querySelector('#plan-cur .plan-kid-row[data-subj="社会"] .plan-kid-clear').click()); await H.page.waitForTimeout(500);
+      H.page.on("dialog", d => d.accept().catch(() => {})); return msg; };
+    const m3 = await clickClear(false); const r3 = await kidRows();
+    check("C3 聞かれる（" + m3.replace(/\n/g, " ") + "）→ キャンセル → 行「" + r3[0].sub + "」", /消してよいですか/.test(m3) && r3[0].sub === r2[0].sub, "");
+    await clickClear(true); const r4 = await kidRows(), c4 = await clr(), st1 = await nStats();
+    check("C4 OK → 行［" + r4.map(x => x.sub).join(" / ") + "］・ボタン " + JSON.stringify(c4) + "・記録 " + st0 + "→" + st1, !/つづき/.test(r4[0].sub) && !c4[0] && /一人のつづき/.test(r4[1].sub) && c4[1] && st0 === st1 && st0 > 0, "");
+    await reloadHost(); const r5 = await kidRows();
+    await soloRow("社会"); const s5 = await soloAt(); await tap(H.page, "#solo-back"); await H.page.waitForTimeout(800);
+    await startKidBattle("社会"); const b5 = await at();
+    check("C5 開き直しても社会の行「" + r5[0].sub + "」・一人で「" + s5 + "」・二人で「" + b5.c + "」", !/つづき/.test(r5[0].sub) && /^1 \/ /.test(s5) && /^1 \/ /.test(b5.c), "");
+    await endBattle();
+    check("E 画面のエラー 0", H.errs.length + G.errs.length === 0, [].concat(H.errs, G.errs).join(" | "));
+  } catch (e) { const dbg = async pg => pg.evaluate(() => ((document.querySelector(".screen.active")||{}).id) + " :: " + document.querySelector(".screen.active").innerText.replace(/\s+/g, " ").slice(0, 300)).catch(x => String(x)); check("（途中で止まった）", false, (e && e.message || e) + " / errs=" + [].concat(H.errs, G.errs).join(" | ") + " / H=" + await dbg(H.page) + " / G=" + await dbg(G.page)); }
+  finally { await H.ctx.close(); await G.ctx.close(); }
+  return out;
+}
+function report(t, out) { console.log("\n── " + t + " ──"); let ng = 0; for (const c of out) { console.log("  " + (c.ok ? "✔" : "✘") + " " + c.n + (c.x ? " … " + c.x : "")); if (!c.ok) ng++; } return ng; }
+const done = async c => { await browser.close(); server.close(); api.close(); relay.close(); process.exit(c); };
+if (!process.env.NOW_ONLY) {
+  console.log("■ 自己テスト: 直す前 " + BASE_COMMIT + " … ★鳴るのが正しい");
+  const outB = await run("base", BASELINE);
+  const ngB = report("対照 " + BASE_COMMIT, outB);
+  const must = ["C2"].filter(t => !outB.some(c => !c.ok && c.n.startsWith(t)));
+  console.log(must.length === 0 ? "  → ✔ 自己テスト合格（" + ngB + " 件で鳴った）" : "  → ✘ 自己テスト不合格（鳴らなかった: " + must.join(" ") + "）");
+  if (must.length) await done(3);
+}
+const ng = report("いまの index.html", await run("now", CURRENT));
+console.log(ng === 0 ? "\n✔ 全部通りました" : "\n✘ " + ng + " 件ひっかかりました");
+await done(ng ? 1 : 0);

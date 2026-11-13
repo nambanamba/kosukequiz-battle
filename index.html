@@ -1834,6 +1834,7 @@
   .plan-kid-row{ display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px dashed var(--paper-line); }
   .plan-kid-subj{ flex:1; font-size:24px; font-weight:700; color:var(--ink); line-height:1.2; }
   .plan-kid-sub{ display:block; margin-top:2px; font-size:13px; font-weight:700; color:var(--ink-soft); }
+  .plan-kid-clear{ display:inline-block; margin-top:4px; padding:4px 10px; font-size:12px; font-weight:700; color:var(--ink-soft); background:transparent; border:1px solid currentColor; border-radius:999px; cursor:pointer; }
   .plan-kid-row.done .plan-kid-sub{ color:var(--ok); }
   .plan-kid-btns{ display:flex; gap:8px; flex:0 0 auto; }
   .plan-kid-btn{ min-width:84px; padding:16px 12px; border:none; border-radius:14px; background:var(--navy-deep); color:#fff; font-size:18px; font-weight:700; cursor:pointer; }
@@ -13860,6 +13861,15 @@ function freeKeepDrop(kind, subj){ const o = freeKeepAll(); if(o[kind] && o[kind
 function freeSoloLeft(subj){ const k = freeKeepGet("solo", subj); const ss = k ? restoreSoloSession(k) : null; return ss && !ss.reviewMode && ss.quizPos < ss.quizQueue.length ? ss.quizQueue.length - ss.quizPos : 0; }
 function freeBattleCarry(subj){ const k = freeKeepGet("two", subj); return k && !k.inMissRetryRound ? battleCarryFrom(k) : null; }
 function freeTwoLeft(subj){ const c = freeBattleCarry(subj); return c ? c.queue.length : 0; }
+// ★2026-11-14 その教科の続き（どこまで進んだか）を消す。一人・二人の両方。◎×・学習ログは消さない
+function freeKeepClear(subj){
+  if(!confirm(subj + "のつづき（どこまで進んだか）を消してよいですか？\n◎×の記録は消えません。")) return;
+  freeKeepDrop("solo", subj); freeKeepDrop("two", subj);
+  const so = loadSoloSession(); if(so && so.fsubj === subj) clearSoloSession();
+  const bo = loadBattleSession(); if(bo && bo.fsubj === subj) clearBattleSession();
+  try{ refreshResumeSoloButton(); refreshResumeBattleButton(); }catch(e){}
+  renderPlan();
+}
 function freeRowStart(subj, kind){
   switchSubject(subj);
   refreshCreateButton();
@@ -13892,6 +13902,10 @@ function renderFreeRows(box){
       const nm = document.createElement("div"); nm.className = "plan-kid-subj"; nm.textContent = subj;
       const sub = document.createElement("span"); sub.className = "plan-kid-sub";
       nm.appendChild(sub);
+      // ★2026-11-14 ユーザー「残っちゃったときとか間違えて始めちゃうこともあるので、続きをクリアする機能が欲しい」→ その教科の続き（一人・二人）をまとめて消す。聞いてから消す。◎×の記録は消さない
+      const clr = document.createElement("button"); clr.type = "button"; clr.className = "plan-kid-clear"; clr.textContent = "つづきを消す"; clr.style.display = "none";
+      clr.addEventListener("click", () => freeKeepClear(subj));
+      nm.appendChild(clr);
       const bs = document.createElement("div"); bs.className = "plan-kid-btns";
       [["一人で", "solo"], ["二人で", "battle"]].forEach(([lab, k]) => {
         const b = document.createElement("button");
@@ -13909,6 +13923,7 @@ function renderFreeRows(box){
     const sl = freeSoloLeft(subj), tl = freeTwoLeft(subj);
     row.querySelector(".plan-kid-sub").textContent = (n ? n + "問" : "問題がありません")
       + (sl ? "・一人のつづき " + sl + "問" : "") + (tl ? "・二人のつづき " + tl + "問" : "");
+    row.querySelector(".plan-kid-clear").style.display = sl || tl ? "" : "none";
     row.querySelector('button[data-kind="solo"]').disabled = n === 0 && !sl;
     row.querySelector('button[data-kind="battle"]').disabled = n === 0 && !tl;
   });
