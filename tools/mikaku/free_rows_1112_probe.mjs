@@ -25,7 +25,7 @@ const page = await (await browser.newContext({ viewport: { width: 1024, height: 
 page.on("pageerror", e => errs.push(String(e))); page.on("dialog", d => d.accept().catch(() => {}));
 const out = []; const check = (n, ok, x) => out.push({ n, ok: !!ok, x: x == null ? "" : String(x) });
 const active = () => page.evaluate(() => (document.querySelector(".screen.active") || {}).id);
-const rows = () => page.evaluate(() => [...document.querySelectorAll("#plan-cur .plan-kid-row")].map(r => ({ s: r.dataset.subj, sub: r.querySelector(".plan-kid-sub").textContent, btn: [...r.querySelectorAll("button")].map(b => b.textContent + (b.disabled ? "×" : "")) })));
+const rows = () => page.evaluate(() => [...document.querySelectorAll("#plan-cur .plan-kid-row")].map(r => ({ s: r.dataset.subj, sub: r.querySelector(".plan-kid-sub").textContent, btn: [...r.querySelectorAll(".plan-kid-btns button")].map(b => b.textContent + (b.disabled ? "×" : "")) })));
 const bigN = () => page.evaluate(() => (document.getElementById("solo-start-btn").textContent.match(/（(\d+)問/) || [])[1]);
 const soloInfo = () => page.evaluate(() => ({ c: document.getElementById("solo-counter").textContent, u: document.getElementById("solo-unit-tag").textContent, id: document.getElementById("solo-q-id").textContent }));
 const fresh = async () => {
