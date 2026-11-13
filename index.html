@@ -10157,7 +10157,7 @@ function guestPeek(){
 //     古い版のゲストからは giri が来ないので、ふつうの〇✕のまま
 function battleGiriAllowed(){
   const id = questionIds[currentIndex];
-  return role === "guest" && kidFlow() && !!id && !inMissRetryRound && !isRepeatInRound(questionIds, currentIndex);   // ★2026-11-14 分けての部分にも出す
+  return role === "guest" && kidFlow() && !!id && !inMissRetryRound && !isRepeatInRound(questionIds, currentIndex) && !guestJudgedIds.has(id);   // ★2026-11-14 分けての部分にも出す
 }
 function syncBattleGiriBtn(){
   if(els["judge-giri"]) els["judge-giri"].style.display = battleGiriAllowed() ? "" : "none";
@@ -10319,6 +10319,7 @@ function showGuestWaitStatus(data){
   els["status-banner"].classList.remove("show","win","lose","info");
   els["answer-countdown"].style.display = "none";
   hideBigVerdict();
+  if(data.type === "skipped" && role === "guest" && questionIds[currentIndex]) guestJudgedIds.add(questionIds[currentIndex]);   // ★2026-11-14 子どものスキップも
   if(data.type === "skipped" && keepCard){
     // ★2026-11-13 親がスキップを押したとき（子どもと同じ動き）は、そう書く。一個前を直すの対象からも外す（記録は直せないスキップのため）
     const bySelf = myVerdictOfOpponent === false && !!lastJudge && lastJudge.qid === questionIds[currentIndex];
@@ -10651,6 +10652,7 @@ function setupActions(){
       scores = {host:0, guest:0};
       clearJudgeFix();   // ★新しいラウンド。前のラウンドの判定は直せない（つなぎ直しの resync では消さない）
       battleAnsweredIds = new Set();   // ★2026-10-06
+      guestJudgedIds = new Set();
       battleDoneIds = new Set();
       studyLogStart("battle", questionIds, {role: "guest", retry: inMissRetryRound});   // ★学習ログ
       // ★ホストが1問目（大問の小問）をスキップしたときは、2問目以降から始まる（index つき・2026-09-30）
@@ -11304,6 +11306,9 @@ let daimonSkipRecorded = new Set();   // ★2026-10-05 ホストだけ: スキ�
 //   ・★記録は、このラウンドで1回目の答えだけ（両方の端末とも）。battleAnsweredIds に入っている問は記録しない
 //   ・並びを変えたら、つぎの合図（nextAction）で並び全体（ids）をゲストに送る
 let battleAnsweredIds = new Set();   // このラウンドで記録をつけた問題（ホスト・ゲストそれぞれの端末で）
+// ★2026-11-14 ユーザー「二回目以降でも、△ ぎりぎりがでるようになっています」: スキップした問題はうしろへ「移す」ので、並びでは2回目と分からない。
+//   ゲスト（親）の端末で、このラウンドで〇✕・スキップを付けた問題を覚えて、2回目からは △ を出さない
+let guestJudgedIds = new Set();
 let battleDoneIds = new Set();       // このラウンドでホスト（子ども）が〇になった問題（「のこり◯問」に使う・2026-10-07）
 let hostRequeuedIdx = -1;            // ホストだけ: ✕でうしろへ回したのはどの添字か（つなぎ直しで二重に回さない）
 function battleRequeue(id){
@@ -11729,6 +11734,7 @@ function judgeOpponent(correct, giri){
   const msg = {idx: currentIndex, correct: correct, qid: questionIds[currentIndex]};   // ★qid: スキップで同じ添字に次の問題が来ても取りちがえない（2026-10-10）
   if(giri) msg.giri = 1;   // ★△は correct:true のまま足すだけ（古い版のホストは〇として記録する）
   judgeAction.send(msg);
+  if(role === "guest") guestJudgedIds.add(questionIds[currentIndex]);   // ★2026-11-14 2回目からは △ を出さない
   // ★ゲストだけ、いま下した判定を1件だけ覚える（時間切れの自動「せいかい」もここを通る）。
   //   ★上書きなので、覚えているのは常に最新の1件だけ＝それより前は直せない
   if(role === "guest"){
@@ -12096,6 +12102,7 @@ function startMissRetryRound(){
   battleTimeupCount = 0;
   daimonSkipRecorded = new Set();
   battleAnsweredIds = new Set();
+  guestJudgedIds = new Set();
   hostRequeuedIdx = -1;
   inMissRetryRound = true;
   scores = {host:0, guest:0};
@@ -12182,6 +12189,7 @@ function startBattleNow(){
   battleTimeupIds = new Set();
   battleTimeupCount = 0;
   battleAnsweredIds = new Set();   // ★2026-10-06
+  guestJudgedIds = new Set();
   hostRequeuedIdx = -1;
   daimonSkipRecorded = new Set();
   battleDoneIds = new Set();   // ★2026-10-07 「のこり◯問」
