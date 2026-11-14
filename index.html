@@ -5953,12 +5953,18 @@ function applyPoolFilters(pool, skipModes){
   }
   return pool;
 }
+// ★2026-11-14 ユーザーの決まり「一問一答で出るような問題は計算問題には出さない。計算問題に出るような問題は一問一答には出さない」
+//   紙に式や途中の数を書かないと解けない計算のカードは、理科計算ステップ帳で出す（ユーザー OK・11-14）。from の日から出題に入れない
+//   ★データ（data.js）と◎×の記録は消さない（問題の一覧・全部の問題・これまでの◎× は見られる）。今日（from より前）の分・とちゅうの続きは変えない
+//   ★理科計算ステップ帳にまだ入っていないカード（r7m58〜63・r8m52）は、入ったのを確かめてから ids に足す（どこにも出ない日を作らない）
+const CALC_OUT = { from: "2026-11-15", ids: ["r11m50", "r11m52"] };
+function calcOut(d){ return !!d && CALC_OUT.ids.includes(d.id) && planTodayJst() >= CALC_OUT.from; }
 function buildPool(skipModes){
   let pool = [];
   // kind==="calc"の問題は対戦・ソロには出さない（理科の計算問題は姉妹アプリ
   // keisan-print-appに独立しており、このアプリのdata.jsには存在しないが、
   // 念のためのガードとして残している）。
-  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && selectedUnits.has(d.u) && d.kind !== "calc") pool.push(i); });
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && selectedUnits.has(d.u) && d.kind !== "calc" && !calcOut(d)) pool.push(i); });
   return applyPoolFilters(pool, skipModes);
 }
 // ---- 復習ミックス: 選んでいない単元のうち、復習単元として選ばれているものから
@@ -5998,7 +6004,7 @@ function currentReviewUnits(){
 function buildReviewPool(){
   let pool = [];
   const units = currentReviewUnits();
-  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && units.has(d.u) && d.kind !== "calc") pool.push(i); });
+  QA_DATA.forEach((d,i)=>{ if(d.subj === currentSubject && units.has(d.u) && d.kind !== "calc" && !calcOut(d)) pool.push(i); });
   pool = pool.filter(i => weightOf(i) > 0);   // ★全部○の大問は入れない
   if(reviewType === "image") pool = pool.filter(i => qHasFig(QA_DATA[i]));
   else if(reviewType === "text") pool = pool.filter(i => !qHasFig(QA_DATA[i]));
