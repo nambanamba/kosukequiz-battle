@@ -6345,15 +6345,25 @@ function buildPlan(){
     qaCount: pool.filter(i => !isDaimonEntry(QA_DATA[i])).length
   };
 }
-// ★2026-11-14 学習ログ（1回目の答え）から、選ぶ順に並べる。pick.js の pickCore と同じ考え（同じ答えの組・回ごとのまんべんなくは buildPlan の sameAnswerOnce・takeByWeight にまかせる）
-//   1 前の回（この候補のカードが出た最後の回）で ✕・スキップ・△ ／ 2 まだ一度も答えていない ／ 3 最後が ✕・スキップ・△ ／
+// ★2026-11-14 学習ログ（1回目の答え）から、選ぶ順に並べる。pick.js の pickCore と同じ考え（回ごとのまんべんなくは buildPlan の takeByWeight にまかせる）
+//   ★同じ答えの組（pick.js の groupsOf "words"）を1枚として数える（11-14 ユーザー「同じ答えの暗記カードはセットにして1枚として進める。一通り終わって、
+//     復習や組み分け前には色々な聞き方のなかでセットの別な聞き方で問題を出す」）: 組のどれかの答えを組の答えにする・組から出すのは、◎で覚えたあとの復習なら前に出したカードの次の聞き方（順番に回す）・✕などは同じカード・1組から1枚だけ返す
+//   1 前の回（この候補の組が出た最後の回）で ✕・スキップ・△ ／ 2 まだ一度も答えていない ／ 3 最後が ✕・スキップ・△ ／
 //   4 ◎で、確かめ直しの日が来た（続けて◎ 1回→2日・2回→4日・3回以上→7日）／ 5 のこりの ◎。4・5 は ◎の古い順。同じ段は問題の並び順
-//   急いだ回（hz）の ◎ は数えない（pick.js と同じ）。おうちの方の画面の ◎× は学習ログに無いので入らない
+//   急いだ回（hz）の ◎ は数えない（pick.js と同じ）。おうちの方の画面「やった分」で切り替えた ◎× は、その日の答えとして入れる
 const LOG_ORDER_FROM = "2026-11-15";
+function answerGroups(list){   // pick.js の groupsOf(cands, "words") と同じ組み方（空らんの多い・答えの長いカードを頭に、その語を含むカードを同じ組へ）
+  const W = new Map(list.map(i => [i, sameWordsOf(QA_DATA[i])]));
+  const blanks = i => { const t = String(QA_DATA[i].q || ""); let n = new Set(t.match(/[①-⑳㉑-㉟]/g) || []).size; if(n === 0) n = (t.match(/（\s*）/g) || []).length; return Math.max(n, 1); };
+  let rest = list.slice().sort((x, y) => (blanks(y) - blanks(x)) || (String(QA_DATA[y].a || "").length - String(QA_DATA[x].a || "").length) || (QA_DATA[x].id < QA_DATA[y].id ? -1 : QA_DATA[x].id > QA_DATA[y].id ? 1 : 0));
+  const gs = [];
+  while(rest.length){ const r = rest.shift(), wr = W.get(r); const g = [r].concat(wr.size ? rest.filter(c => [...W.get(c)].some(w => wr.has(w))) : []); rest = rest.filter(c => g.indexOf(c) < 0); gs.push(g); }
+  return gs;
+}
 function orderByLog(list){
   try{
-    const set = new Set(list.map(i => QA_DATA[i].id));
-    const hist = new Map(); let prev = null, prevDay = null;
+    const groups = answerGroups(list), gOf = new Map(); groups.forEach((g, gi) => g.forEach(i => gOf.set(QA_DATA[i].id, gi)));
+    const hist = groups.map(() => []), lastShown = groups.map(() => null); let prev = null, prevDay = null;
     const ss = (studyLog.sessions || []).filter(s => s && s.role !== "guest" && Array.isArray(s.q) && s.q.length).slice().sort((a, b) => (a.st || 0) - (b.st || 0));
     ss.forEach(s => {
       const hurried = s.hz !== undefined && s.hz !== null;
@@ -6362,29 +6372,30 @@ function orderByLog(list){
       const parts = new Map();
       first.forEach((v, pid) => { const c = planCardIdOf(pid); if(!parts.has(c)) parts.set(c, []); parts.get(c).push(v); });
       const res = new Map();
-      parts.forEach((ps, c) => { if(!set.has(c)) return; let r;
+      parts.forEach((ps, c) => { if(!gOf.has(c)) return; let r;
         if(ps.every(v => v.r === "o")) r = ps.some(v => v.g) ? "g" : "o"; else if(ps.some(v => v.r === "x")) r = "x"; else r = "skip";
-        if(hurried && (r === "o" || r === "g")) return; res.set(c, r); });
+        if(hurried && (r === "o" || r === "g")) return; const gi = gOf.get(c); res.set(gi, r); lastShown[gi] = c; });
       if(!res.size) return;
-      res.forEach((r, c) => { if(!hist.has(c)) hist.set(c, []); hist.get(c).push({ st: s.st, r: r }); });
+      res.forEach((r, gi) => hist[gi].push({ st: s.st, r: r }));
       prev = res; prevDay = dateToYMD(s.st);
     });
-    // ★2026-11-14 新しいアプリの親の画面「やった分」で切り替えた ◎×（kq_battle_cards_marks_v1・{id, m, t, d}）。その日の答えとして上書きする（いまのアプリには無い＝何も変わらない）
     try{ const mk = JSON.parse(window.localStorage.getItem("kq_battle_cards_marks_v1") || "{}");
-      Object.values(mk).filter(m => m && m.id && set.has(m.id) && (m.m === "◎" || m.m === "×")).sort((a, b) => a.t - b.t).forEach(m => {
-        const r = m.m === "◎" ? "o" : "x", d = m.d || dateToYMD(m.t);
-        if(!hist.has(m.id)) hist.set(m.id, []); hist.get(m.id).push({ st: m.t, r: r });
-        if(prev && prev.has(m.id) && d === prevDay) prev.set(m.id, r); }); }catch(e){}
+      Object.values(mk).filter(m => m && m.id && gOf.has(m.id) && (m.m === "◎" || m.m === "×")).sort((a, b) => a.t - b.t).forEach(m => {
+        const r = m.m === "◎" ? "o" : "x", d = m.d || dateToYMD(m.t), gi = gOf.get(m.id);
+        hist[gi].push({ st: m.t, r: r }); if(prev && prev.has(gi) && d === prevDay) prev.set(gi, r); }); }catch(e){}
     const dayNo = ts => { const p = dateToYMD(ts).split("-").map(Number); return Math.round(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000); };
     const today = dayNo(Date.now());
-    const it = list.map(i => { const id = QA_DATA[i].id, h = hist.get(id) || []; let tier, okAt = 0;
-      if(prev && prev.has(id) && prev.get(id) !== "o") tier = 1;
+    const it = groups.map((g, gi) => { const h = hist[gi]; let tier, okAt = 0;
+      if(prev && prev.has(gi) && prev.get(gi) !== "o") tier = 1;
       else if(!h.length) tier = 2;
       else if(h[h.length - 1].r !== "o") tier = 3;
       else { let k = 0; for(let j = h.length - 1; j >= 0 && h[j].r === "o"; j--) k++;
         okAt = h[h.length - 1].st; const wait = k >= 3 ? 7 : k === 2 ? 4 : 2; tier = today - dayNo(okAt) >= wait ? 4 : 5; }
-      return { i: i, tier: tier, okAt: okAt }; });
-    it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || a.i - b.i);
+      const ids = g.map(i => QA_DATA[i].id), at = lastShown[gi] ? ids.indexOf(lastShown[gi]) : -1;
+      const lastR = h.length ? h[h.length - 1].r : null;
+      const show = at < 0 ? g[0] : lastR === "o" ? g[(at + 1) % g.length] : g[at];   // ★◎で覚えたあとの復習は、前に出したカードの次の聞き方。✕・スキップ・△は同じカードでもう一度（はじめは組の頭）
+      return { i: show, tier: tier, okAt: okAt, p: Math.min(...g) }; });
+    it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || a.p - b.p);
     return it.map(x => x.i);
   }catch(e){ console.error("orderByLog failed", e); return list; }
 }
