@@ -4,6 +4,7 @@
 //   C1 11-14 の「一人で」には r11m50・r11m52 が入る（今日の分は変えない）
 //   C2 11-15 の「一人で」には入らない・ほかの第11回のカードは同じ数
 //   C3 問題の一覧には 11-15 でも出る（データは消さない）
+//   C5 暗算をカードへ（r11w01〜07）: 11-14 は入らず、11-15 は入る
 //   C4 11-15 は 第7回・第8回の 7枚（r7m58〜63・r8m52）も入らない
 //   E  画面のエラー 0
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
@@ -47,7 +48,9 @@ try {
   await page.evaluate(() => { localStorage.removeItem("kq_battle_solo_session_v1"); localStorage.setItem("kq_battle_free_keep_v1", "{}"); });
   await at("2026-11-15"); await page.reload(); await page.waitForTimeout(1200);
   const d2 = await getIds();
-  check("C2 11-15 の一人で（" + d2.length + "枚）に r11m50・r11m52 なし・ほかは同じ", !d2.includes("r11m50") && !d2.includes("r11m52") && d2.length === d1.length - 2 && d1.filter(x => x !== "r11m50" && x !== "r11m52").every(x => d2.includes(x)), "");
+  check("C2 11-15 の一人で（" + d2.length + "枚）に r11m50・r11m52 なし・ほかは同じ", !d2.includes("r11m50") && !d2.includes("r11m52") && d2.length === d1.length - 2 + 7 && d1.filter(x => x !== "r11m50" && x !== "r11m52").every(x => d2.includes(x)), "");
+  const W7 = ["r11w01", "r11w02", "r11w03", "r11w04", "r11w05", "r11w06", "r11w07"];
+  check("C5 r11w01〜07: 11-14 は " + W7.filter(x => d1.includes(x)).length + "/7・11-15 は " + W7.filter(x => d2.includes(x)).length + "/7", W7.every(x => !d1.includes(x)) && W7.every(x => d2.includes(x)), "");
   await tap("#solo-back"); await page.waitForTimeout(600);
   const inData = await page.evaluate(() => ["r11m50", "r11m52"].every(id => QA_DATA.some(d => d.id === id)));
   check("C3 データには残っている（一覧・全部の問題で見られる）", inData, "");
