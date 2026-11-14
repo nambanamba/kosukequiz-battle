@@ -4,6 +4,7 @@
 //   C1 11-14 の「一人で」には r11m50・r11m52 が入る（今日の分は変えない）
 //   C2 11-15 の「一人で」には入らない・ほかの第11回のカードは同じ数
 //   C3 問題の一覧には 11-15 でも出る（データは消さない）
+//   C4 11-15 は 第7回・第8回の 7枚（r7m58〜63・r8m52）も入らない
 //   E  画面のエラー 0
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -50,6 +51,10 @@ try {
   await tap("#solo-back"); await page.waitForTimeout(600);
   const inData = await page.evaluate(() => ["r11m50", "r11m52"].every(id => QA_DATA.some(d => d.id === id)));
   check("C3 データには残っている（一覧・全部の問題で見られる）", inData, "");
+  await page.evaluate(() => { const st = JSON.parse(localStorage.getItem("kq_battle_settings_v1")); st.unitsBySubject["理科"] = ["第7回.物の燃焼", "第8回.ばね・浮力・圧力"]; st.units = st.unitsBySubject["理科"]; localStorage.setItem("kq_battle_settings_v1", JSON.stringify(st)); localStorage.removeItem("kq_battle_solo_session_v1"); localStorage.setItem("kq_battle_free_keep_v1", "{}"); });
+  await page.reload(); await page.waitForTimeout(1200);
+  const d4 = await getIds(); const seven = ["r7m58", "r7m59", "r7m60", "r7m61", "r7m62", "r7m63", "r8m52"];
+  check("C4 11-15 の 第7回・第8回（" + d4.length + "枚）に 7枚なし", d4.length > 20 && seven.every(x => !d4.includes(x)), JSON.stringify(seven.filter(x => d4.includes(x))));
   check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
 } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
 let ng = 0; for (const c of out) { console.log((c.ok ? "  ✔ " : "  ✘ ") + c.n + (c.x ? " … " + c.x.slice(0, 300) : "")); if (!c.ok) ng++; }
