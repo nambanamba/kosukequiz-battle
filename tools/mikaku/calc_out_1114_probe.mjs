@@ -60,6 +60,10 @@ try {
   check("C4 11-15 の 第7回・第8回（" + d4.length + "枚）に 7枚なし", d4.length > 20 && seven.every(x => !d4.includes(x)), JSON.stringify(seven.filter(x => d4.includes(x))));
   const W8 = Array.from({ length: 20 }, (_, k) => "r8w" + String(k + 1).padStart(2, "0"));
   check("C6 11-15 の第8回に r8w01〜20 " + W8.filter(x => d4.includes(x)).length + "/20", W8.every(x => d4.includes(x)), JSON.stringify(W8.filter(x => !d4.includes(x))));
+  await page.evaluate(() => { const st = JSON.parse(localStorage.getItem("kq_battle_settings_v1")); st.unitsBySubject["理科"] = ["第2回.てこ・滑車・輪軸"]; st.units = st.unitsBySubject["理科"]; localStorage.setItem("kq_battle_settings_v1", JSON.stringify(st)); localStorage.removeItem("kq_battle_solo_session_v1"); localStorage.setItem("kq_battle_free_keep_v1", "{}"); });
+  await page.reload(); await page.waitForTimeout(1200);
+  const d7 = await getIds(); const W2 = Array.from({ length: 14 }, (_, k) => "r2w" + String(k + 1).padStart(2, "0"));
+  check("C7 11-15 の第2回に r2w01〜14 " + W2.filter(x => d7.includes(x)).length + "/14", W2.every(x => d7.includes(x)), JSON.stringify(W2.filter(x => !d7.includes(x))));
   check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
 } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
 let ng = 0; for (const c of out) { console.log((c.ok ? "  ✔ " : "  ✘ ") + c.n + (c.x ? " … " + c.x.slice(0, 300) : "")); if (!c.ok) ng++; }
