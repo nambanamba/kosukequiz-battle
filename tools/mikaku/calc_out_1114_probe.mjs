@@ -58,6 +58,8 @@ try {
   await page.reload(); await page.waitForTimeout(1200);
   const d4 = await getIds(); const seven = ["r7m58", "r7m59", "r7m60", "r7m61", "r7m62", "r7m63", "r8m52"];
   check("C4 11-15 の 第7回・第8回（" + d4.length + "枚）に 7枚なし", d4.length > 20 && seven.every(x => !d4.includes(x)), JSON.stringify(seven.filter(x => d4.includes(x))));
+  const W8 = Array.from({ length: 20 }, (_, k) => "r8w" + String(k + 1).padStart(2, "0"));
+  check("C6 11-15 の第8回に r8w01〜20 " + W8.filter(x => d4.includes(x)).length + "/20", W8.every(x => d4.includes(x)), JSON.stringify(W8.filter(x => !d4.includes(x))));
   check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
 } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
 let ng = 0; for (const c of out) { console.log((c.ok ? "  ✔ " : "  ✘ ") + c.n + (c.x ? " … " + c.x.slice(0, 300) : "")); if (!c.ok) ng++; }
