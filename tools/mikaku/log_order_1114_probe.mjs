@@ -5,6 +5,7 @@
 //   L2 11-16 に開き、社会の「つづきを消す」→「一人で」: ✕ の3問が全部入る・前の日に出て答えなかった10問が全部入る・〇の7問は入らない（2日たっていない）
 //   L3 11-16 の20問は、まだ答えたことのない問題（✕3問のほか）で埋まる
 //   L4 11-14（直す前の日付）は いままでどおり（この直しは働かない）: 11-14 に ✕ を付けて、11-14 のうちに開き直しても、並べ方はランダムのまま（✕が必ず入るとは限らない）… 数えるだけ
+//   L5 新しいアプリの親が「やった分」で 11-15 の 〇 を × に切り替えた（kq_battle_cards_marks_v1）→ 11-16 にその問題が入る
 //   E  画面のエラー 0
 import http from "node:http"; import fs from "node:fs"; import path from "node:path";
 import { execSync } from "node:child_process"; import { fileURLToPath, pathToFileURL } from "node:url";
@@ -44,14 +45,16 @@ try {
   const left1 = day1 ? day1.filter(id => !x.includes(id) && !o.includes(id)) : [];
   check("L1 11-15 の一人で（" + (day1 && day1.length) + "問）10問答えた ✕" + x.join(",") + " 〇" + o.length + "・のこり " + left1.length, day1 && day1.length >= 18 && x.length === 3 && o.length === 7, (await counter()));
   await tap("#solo-back"); await page.waitForTimeout(800);
-  await at("2026-11-16"); await page.reload(); await page.waitForTimeout(1200);
+  await at("2026-11-16");
+  await page.evaluate(id => localStorage.setItem("kq_battle_cards_marks_v1", JSON.stringify({ ["1_" + id]: { id, m: "×", t: Date.now(), d: "2026-11-15", by: "parent" } })), o[0]);
+  await page.reload(); await page.waitForTimeout(1200);
   await page.$eval('#plan-cur .plan-kid-row[data-subj="社会"] .plan-kid-clear', e => e.click()); await page.waitForTimeout(500);
   await soloRow();
   const day2 = await setIds(), c2 = await counter();
-  const hasX = x.filter(id => day2.includes(id)), hasL = left1.filter(id => day2.includes(id)), hasO = o.filter(id => day2.includes(id));
-  check("L2 11-16（" + c2 + "）✕ " + hasX.length + "/3・前の日のこり " + hasL.length + "/" + left1.length + "・〇 " + hasO.length + "/7", hasX.length === 3 && hasL.length === left1.length && hasO.length === 0, JSON.stringify({ day2 }));
+  const hasX = x.filter(id => day2.includes(id)), hasL = left1.filter(id => day2.includes(id)), hasO = o.slice(1).filter(id => day2.includes(id)), hasM = day2.includes(o[0]);
+  check("L2 11-16（" + c2 + "）✕ " + hasX.length + "/3・前の日のこり " + hasL.length + "/" + left1.length + "・〇 " + hasO.length + "/6・切り替えた " + o[0] + " " + hasM, hasX.length === 3 && hasL.length === left1.length && hasO.length === 0 && hasM, JSON.stringify({ day2 }));
   const others = day2.filter(id => !x.includes(id));
-  check("L3 ほかの " + others.length + "問は まだ答えたことのない問題", others.every(id => !o.includes(id)), "");
+  check("L3 ほかの " + others.length + "問は まだ答えたことのない問題", others.every(id => !o.slice(1).includes(id)), "");
   check("E 画面のエラー 0", errs.length === 0, errs.join(" | "));
 } catch (e) { check("最後まで走った", false, String(e && e.message || e)); }
 let ng = 0; for (const c of out) { console.log((c.ok ? "  ✔ " : "  ✘ ") + c.n + (c.x ? " … " + c.x.slice(0, 300) : "")); if (!c.ok) ng++; }

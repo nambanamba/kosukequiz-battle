@@ -6344,7 +6344,7 @@ const LOG_ORDER_FROM = "2026-11-15";
 function orderByLog(list){
   try{
     const set = new Set(list.map(i => QA_DATA[i].id));
-    const hist = new Map(); let prev = null;
+    const hist = new Map(); let prev = null, prevDay = null;
     const ss = (studyLog.sessions || []).filter(s => s && s.role !== "guest" && Array.isArray(s.q) && s.q.length).slice().sort((a, b) => (a.st || 0) - (b.st || 0));
     ss.forEach(s => {
       const hurried = s.hz !== undefined && s.hz !== null;
@@ -6358,8 +6358,14 @@ function orderByLog(list){
         if(hurried && (r === "o" || r === "g")) return; res.set(c, r); });
       if(!res.size) return;
       res.forEach((r, c) => { if(!hist.has(c)) hist.set(c, []); hist.get(c).push({ st: s.st, r: r }); });
-      prev = res;
+      prev = res; prevDay = dateToYMD(s.st);
     });
+    // ★2026-11-14 新しいアプリの親の画面「やった分」で切り替えた ◎×（kq_battle_cards_marks_v1・{id, m, t, d}）。その日の答えとして上書きする（いまのアプリには無い＝何も変わらない）
+    try{ const mk = JSON.parse(window.localStorage.getItem("kq_battle_cards_marks_v1") || "{}");
+      Object.values(mk).filter(m => m && m.id && set.has(m.id) && (m.m === "◎" || m.m === "×")).sort((a, b) => a.t - b.t).forEach(m => {
+        const r = m.m === "◎" ? "o" : "x", d = m.d || dateToYMD(m.t);
+        if(!hist.has(m.id)) hist.set(m.id, []); hist.get(m.id).push({ st: m.t, r: r });
+        if(prev && prev.has(m.id) && d === prevDay) prev.set(m.id, r); }); }catch(e){}
     const dayNo = ts => { const p = dateToYMD(ts).split("-").map(Number); return Math.round(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000); };
     const today = dayNo(Date.now());
     const it = list.map(i => { const id = QA_DATA[i].id, h = hist.get(id) || []; let tier, okAt = 0;
