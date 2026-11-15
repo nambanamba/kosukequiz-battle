@@ -6358,6 +6358,32 @@ const LOG_ORDER_FROM = "2026-11-15";
 //   ③✕・スキップは今までどおり次の回に
 //   ★11-15 ユーザー「まとめる機能は今日から使います」「今日、朝は終わりました。夜はまだ」→ 11-15 から（朝の回は終わっているので変わらない。夜の回から効く）
 const AGG_FROM = "2026-11-15";
+// ★2026-11-16 ユーザー「第11回と第12回の両方から出す。カードは回ごとに交互ではなくて、毎回何問か入れて」→「第12回を毎回15問」・「今週は12回の週テストがあるので12回をちゃんとやります」
+//   「問題は合わせておいてください」（新しいアプリと古いアプリで同じ選び方。新しいアプリ担当から）:
+//   範囲に、いちばん新しい回（第N回）とほかの回があるとき、1回の数（問題数）のうち NEW_KAI.n 問をいちばん新しい回から、残りをほかの回からとる（20問なら 15・5）。
+//   それぞれの回の中の順は orderByLog のまま（前の回の×・スキップ → まだ → ◎の古い順）。★ほかの回の×が残りの数より多い日は、多い分は次の回に
+//   いちばん新しい回が足りなければ、足りない分はほかの回で埋める（数はそろえる）。並びは 3:1 のように混ぜる（いちばん新しい回が続けて出すぎないように）
+//   数は kq_battle_new_kai_n_v1 {教科: 数}（新しいアプリの ③ で変えられる。無ければ NEW_KAI.n。0 で今までの選び方）。11-16 から
+const NEW_KAI = { from: "2026-11-16", n: 15, key: "kq_battle_new_kai_n_v1" };
+function newKaiN(subj){ try{ const v = JSON.parse(localStorage.getItem(NEW_KAI.key) || "{}")[subj]; if(v !== undefined && v !== null && v !== "") return Math.max(0, parseInt(v, 10) || 0); }catch(e){} return NEW_KAI.n; }
+function newKaiFirst(it){
+  try{
+    if(planTodayJst() < NEW_KAI.from || it.length < 2 || questionCount === "all") return it;
+    const n = parseInt(questionCount, 10); if(!(n > 0)) return it;
+    const kaiNo = x => { const m = /^第(\d+)回$/.exec(String(QA_DATA[x.i].u || "").split(".")[0]); return m ? +m[1] : -1; };
+    const top = Math.max(...it.map(kaiNo)); if(top < 0) return it;
+    const A = it.filter(x => kaiNo(x) === top), B = it.filter(x => kaiNo(x) !== top);
+    if(!A.length || !B.length) return it;
+    const d0 = QA_DATA[it[0].i], q = Math.min(n, newKaiN(d0 && d0.subj)); if(q <= 0) return it;
+    const out = []; let ga = 0, gb = 0, ia = 0, ib = 0;
+    while(ia < A.length || ib < B.length){
+      const takeA = ia < A.length && (ib >= B.length || ga * (n - q) <= gb * q);
+      const x = takeA ? A[ia++] : B[ib++], w = Math.max(1, weightOf(x.i)); out.push(x);
+      if(takeA) ga += w; else gb += w;
+    }
+    return out;
+  }catch(e){ console.error("newKaiFirst", e); return it; }
+}
 function answerGroups(list){   // pick.js の groupsOf(cands, "words") と同じ組み方（空らんの多い・答えの長いカードを頭に、その語を含むカードを同じ組へ）
   const W = new Map(list.map(i => [i, sameWordsOf(QA_DATA[i])]));
   const blanks = i => { const t = String(QA_DATA[i].q || ""); let n = new Set(t.match(/[①-⑳㉑-㉟]/g) || []).size; if(n === 0) n = (t.match(/（\s*）/g) || []).length; return Math.max(n, 1); };
@@ -6405,7 +6431,7 @@ function orderByLog(list){
       const show = tier === 3.5 ? unseen[0] : at < 0 ? g[0] : lastR === "o" ? g[(at + 1) % g.length] : g[at];   // ★◎で覚えたあとの復習は、前に出したカードの次の聞き方。✕・スキップ・△は同じカードでもう一度（はじめは組の頭）
       return { i: show, tier: tier, okAt: okAt, p: agg ? show : Math.min(...g), g: g }; });   // ★集約①: 並びは出すカード（代表）の出題順
     it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || a.p - b.p);
-    return it.map(x => x.i);
+    return newKaiFirst(it).map(x => x.i);   // ★11-16 いちばん新しい回を毎回15問（newKaiFirst）
   }catch(e){ console.error("orderByLog failed", e); return list; }
 }
 // ★2026-11-13 ユーザー「今日のカードに入れてください」: 表の問題（改革・ききん・人）3枚を、11-13（日本の日付）の社会では必ず入れる。
