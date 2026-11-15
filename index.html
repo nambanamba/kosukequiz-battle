@@ -6352,6 +6352,12 @@ function buildPlan(){
 //   4 ◎で、確かめ直しの日が来た（続けて◎ 1回→2日・2回→4日・3回以上→7日）／ 5 のこりの ◎。4・5 は ◎の古い順。同じ段は問題の並び順
 //   急いだ回（hz）の ◎ は数えない（pick.js と同じ）。おうちの方の画面「やった分」で切り替えた ◎× は、その日の答えとして入れる
 const LOG_ORDER_FROM = "2026-11-15";
+// ★2026-11-15 ユーザー OK「あってそうです、お願いします」（同じ答えの集約・例 1天保のききん 2吉宗 3天保のききん 4天保のききん 5綱吉 6水野 7松平 → 2,3,5 → 6,7 → 1,4）:
+//   ①1周目は組ごとに代表（答える量の多いもの＝組の頭）1枚・並びは代表の出題順（前は組のいちばん前のカードの順）
+//   ②代表が◎になった組は、組のまだ出していない聞き方を「まだの組」のあと・✕の組のあとに出す（出さないのではなく後に回す。2日待たない）
+//   ③✕・スキップは今までどおり次の回に
+//   ★11-15 ユーザー「まとめる機能は今日から使います」「今日、朝は終わりました。夜はまだ」→ 11-15 から（朝の回は終わっているので変わらない。夜の回から効く）
+const AGG_FROM = "2026-11-15";
 function answerGroups(list){   // pick.js の groupsOf(cands, "words") と同じ組み方（空らんの多い・答えの長いカードを頭に、その語を含むカードを同じ組へ）
   const W = new Map(list.map(i => [i, sameWordsOf(QA_DATA[i])]));
   const blanks = i => { const t = String(QA_DATA[i].q || ""); let n = new Set(t.match(/[①-⑳㉑-㉟]/g) || []).size; if(n === 0) n = (t.match(/（\s*）/g) || []).length; return Math.max(n, 1); };
@@ -6363,7 +6369,8 @@ function answerGroups(list){   // pick.js の groupsOf(cands, "words") と同じ
 function orderByLog(list){
   try{
     const groups = answerGroups(list), gOf = new Map(); groups.forEach((g, gi) => g.forEach(i => gOf.set(QA_DATA[i].id, gi)));
-    const hist = groups.map(() => []), lastShown = groups.map(() => null); let prev = null, prevDay = null;
+    const hist = groups.map(() => []), lastShown = groups.map(() => null), seenC = groups.map(() => new Set()); let prev = null, prevDay = null;
+    const agg = planTodayJst() >= AGG_FROM;
     const ss = (studyLog.sessions || []).filter(s => s && s.role !== "guest" && Array.isArray(s.q) && s.q.length).slice().sort((a, b) => (a.st || 0) - (b.st || 0));
     ss.forEach(s => {
       const hurried = s.hz !== undefined && s.hz !== null;
@@ -6374,7 +6381,7 @@ function orderByLog(list){
       const res = new Map();
       parts.forEach((ps, c) => { if(!gOf.has(c)) return; let r;
         if(ps.every(v => v.r === "o")) r = ps.some(v => v.g) ? "g" : "o"; else if(ps.some(v => v.r === "x")) r = "x"; else r = "skip";
-        if(hurried && (r === "o" || r === "g")) return; const gi = gOf.get(c); res.set(gi, r); lastShown[gi] = c; });
+        if(hurried && (r === "o" || r === "g")) return; const gi = gOf.get(c); res.set(gi, r); lastShown[gi] = c; seenC[gi].add(c); });
       if(!res.size) return;
       res.forEach((r, gi) => hist[gi].push({ st: s.st, r: r }));
       prev = res; prevDay = dateToYMD(s.st);
@@ -6386,15 +6393,17 @@ function orderByLog(list){
     const dayNo = ts => { const p = dateToYMD(ts).split("-").map(Number); return Math.round(Date.UTC(p[0], p[1] - 1, p[2]) / 86400000); };
     const today = dayNo(Date.now());
     const it = groups.map((g, gi) => { const h = hist[gi]; let tier, okAt = 0;
+      const unseen = agg ? g.filter(i => !seenC[gi].has(QA_DATA[i].id)) : [];
       if(prev && prev.has(gi) && prev.get(gi) !== "o") tier = 1;
       else if(!h.length) tier = 2;
       else if(h[h.length - 1].r !== "o") tier = 3;
+      else if(unseen.length) tier = 3.5;   // ★集約②: 代表が◎の組の、まだ出していない聞き方
       else { let k = 0; for(let j = h.length - 1; j >= 0 && h[j].r === "o"; j--) k++;
         okAt = h[h.length - 1].st; const wait = k >= 3 ? 7 : k === 2 ? 4 : 2; tier = today - dayNo(okAt) >= wait ? 4 : 5; }
       const ids = g.map(i => QA_DATA[i].id), at = lastShown[gi] ? ids.indexOf(lastShown[gi]) : -1;
       const lastR = h.length ? h[h.length - 1].r : null;
-      const show = at < 0 ? g[0] : lastR === "o" ? g[(at + 1) % g.length] : g[at];   // ★◎で覚えたあとの復習は、前に出したカードの次の聞き方。✕・スキップ・△は同じカードでもう一度（はじめは組の頭）
-      return { i: show, tier: tier, okAt: okAt, p: Math.min(...g) }; });
+      const show = tier === 3.5 ? unseen[0] : at < 0 ? g[0] : lastR === "o" ? g[(at + 1) % g.length] : g[at];   // ★◎で覚えたあとの復習は、前に出したカードの次の聞き方。✕・スキップ・△は同じカードでもう一度（はじめは組の頭）
+      return { i: show, tier: tier, okAt: okAt, p: agg ? show : Math.min(...g), g: g }; });   // ★集約①: 並びは出すカード（代表）の出題順
     it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || a.p - b.p);
     return it.map(x => x.i);
   }catch(e){ console.error("orderByLog failed", e); return list; }
