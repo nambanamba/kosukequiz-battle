@@ -2702,6 +2702,7 @@
     <div class="judge-fix-row" id="judge-fix-row" style="display:none;">
       <div class="judge-fix-note" id="judge-fix-note"></div>
       <button class="judge-fix-btn" id="judge-fix-btn"></button>
+      <button class="judge-fix-btn" id="judge-fix-btn2" style="display:none;"></button>
       <div class="judge-fix-status" id="judge-fix-status" style="display:none;"></div>
     </div>
   </section>
@@ -3802,7 +3803,7 @@ const els = {};
  "think-timer","think-timer-fill","advance-btn","skip-btn","skip-encourage","skip-continue-btn","status-banner",
  "answer-countdown","answer-countdown-track","answer-reveal-btn",
  "judge-row","judge-ng","judge-ok","judge-giri","my-result","big-verdict",
- "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-status",
+ "next-btn","judge-fix-row","judge-fix-note","judge-fix-btn","judge-fix-btn2","judge-fix-status",
  "result-score","result-sub","result-retry-battle-btn","result-retry-wait-status","result-home-btn","host-seen-badge",
  "solo-think-timer","solo-think-timer-fill","solo-timeup-note","solo-timeup-next-btn","solo-result-skipinfo","result-skipinfo","host-judge-note","guest-judge-prompt",
  "solo-hint-box","solo-hint-btn","solo-hint-list","battle-hint-box","battle-hint-btn","battle-hint-list","hint-guest-note",
@@ -8212,13 +8213,15 @@ function studyLogUndo(k){
   studyLogSave(s);
 }
 // 一個前の判定を直した（二人・ホスト）: その問題のいちばん最後の結果を直す
-function studyLogFix(k, id, correct){
+function studyLogFix(k, id, correct, giri){
   const s = studyLogCur(k);
   if(!s || !Array.isArray(s.q)) return;
   for(let i = s.q.length - 1; i >= 0; i--){
     if(s.q[i][0] === id && (s.q[i][2] === "o" || s.q[i][2] === "x")){
       s.q[i][2] = correct ? "o" : "x";
-      if(s.q[i].length > 6) s.q[i][6] = 0;   // ★△の印は外す（直すのは〇か✕。2026-10-27）
+      const g = giri && correct ? 1 : 0;   // ★△は r:"o" のまま7つ目に 1（studyLogAnswer と同じ形）
+      if(g){ while(s.q[i].length < 6) s.q[i].push(s.q[i].length === 3 ? 0 : s.q[i].length === 4 ? "" : 0); s.q[i][6] = 1; }
+      else if(s.q[i].length > 6) s.q[i][6] = 0;
       break;
     }
   }
@@ -11790,7 +11793,8 @@ function revealAnswer(){
 function judgeOpponent(correct, giri){
   if(myVerdictOfOpponent !== null) return;
   stopJudgeCountdown();
-  giri = !!giri && correct === true && battleGiriAllowed();   // ★△（2026-10-27）。出せない問題では〇と同じ
+  const giriOkNow = battleGiriAllowed();   // ★2026-11-16 「やっぱり △」を出せる問題か（押す前に見る。押したあとは guestJudgedIds に入るため）
+  giri = !!giri && correct === true && giriOkNow;   // ★△（2026-10-27）。出せない問題では〇と同じ
   myVerdictOfOpponent = correct;
   const msg = {idx: currentIndex, correct: correct, qid: questionIds[currentIndex]};   // ★qid: スキップで同じ添字に次の問題が来ても取りちがえない（2026-10-10）
   if(giri) msg.giri = 1;   // ★△は correct:true のまま足すだけ（古い版のホストは〇として記録する）
@@ -11799,7 +11803,9 @@ function judgeOpponent(correct, giri){
   // ★ゲストだけ、いま下した判定を1件だけ覚える（時間切れの自動「せいかい」もここを通る）。
   //   ★上書きなので、覚えているのは常に最新の1件だけ＝それより前は直せない
   if(role === "guest"){
-    lastJudge = {qid: questionIds[currentIndex], idx: currentIndex, correct: correct, giri: giri};
+    lastJudge = {qid: questionIds[currentIndex], idx: currentIndex, correct: correct, giri: giri, giriOk: giriOkNow};
+    // ★2026-11-16 二人（親が判定）の親の「スキップ」（✕）は子どものスキップと同じ（11-13・問題はうしろへ回ってもう一度出る）。記録を入れ直す直しはできないので、直しは出さない
+    if(kidFlow() && correct === false) lastJudge = null;
     judgeFixBusy = false;
     hideJudgeFixStatus();
   }
@@ -11864,26 +11870,33 @@ function updateJudgeFixUI(){
   const qtext = q ? (q.length > 18 ? q.slice(0, 18) + "…" : q) : lastJudge.qid;
   els["judge-fix-note"].textContent =
     "一個前「" + qtext + "」は、いま " + (lastJudge.correct ? (lastJudge.giri ? "△ ぎりぎり" : "〇 せいかい") : "✕ まちがい") + " で記録されています";
-  els["judge-fix-btn"].textContent =
-    lastJudge.correct ? "やっぱり ✕ まちがい に直す" : "やっぱり 〇 せいかい に直す";
-  els["judge-fix-btn"].className = "judge-fix-btn " + (lastJudge.correct ? "ng" : "ok");
-  els["judge-fix-btn"].disabled = judgeFixBusy;
+  // ★2026-11-16 ユーザー「やっぱり△も追加して」: いまの記録（〇・△・✕）でない2つを出す（△は △を出せる問題だけ＝親の画面の △ ぎりぎり と同じ条件）
+  const cur = !lastJudge.correct ? "x" : lastJudge.giri ? "g" : "o";
+  const LAB = { o: "やっぱり 〇 せいかい に直す", g: "やっぱり △ ぎりぎり に直す", x: "やっぱり ✕ まちがい に直す" }, CLS = { o: "ok", g: "ok", x: "ng" };
+  const to = ["o", "g", "x"].filter(k => k !== cur && (k !== "g" || lastJudge.giriOk));
+  [els["judge-fix-btn"], els["judge-fix-btn2"]].forEach((b, k) => { if(!b) return; const v = to[k];
+    if(!v){ b.style.display = "none"; return; }
+    b.style.display = ""; b.dataset.to = v; b.textContent = LAB[v]; b.className = "judge-fix-btn " + CLS[v]; b.disabled = judgeFixBusy; });
   row.style.display = "block";
 }
-els["judge-fix-btn"].addEventListener("click", ()=>{
+function sendJudgeFix(to){
   if(role !== "guest" || !lastJudge || judgeFixBusy) return;
-  const next = !lastJudge.correct;
+  const next = to !== "x";
   judgeFixBusy = true;
   updateJudgeFixUI();
   showJudgeFixStatus("相手の端末に送っています…", "info");
   try{
-    judgefixAction.send({qid: lastJudge.qid, idx: lastJudge.idx, correct: next});
+    const m = {qid: lastJudge.qid, idx: lastJudge.idx, correct: next};
+    if(to === "g") m.giri = 1;   // ★2026-11-16 やっぱり △（correct:true のまま足すだけ。△を知らない版のホストは〇として直す）
+    judgefixAction.send(m);
   }catch(e){
     judgeFixBusy = false;
     updateJudgeFixUI();
     showJudgeFixStatus("★直せませんでした（つながっていません）", "lose");
   }
-});
+}
+els["judge-fix-btn"].addEventListener("click", ()=>sendJudgeFix(els["judge-fix-btn"].dataset.to || (lastJudge && lastJudge.correct ? "x" : "o")));
+if(els["judge-fix-btn2"]) els["judge-fix-btn2"].addEventListener("click", ()=>sendJudgeFix(els["judge-fix-btn2"].dataset.to));
 
 // ---- ホスト側: 直しを当てる ----
 function applyJudgeFixOnHost(data){
@@ -11902,9 +11915,12 @@ function applyJudgeFixOnHost(data){
     // ★「読み込み直したあと」がいちばん多い。壊れたと思われないよう、理由と次の一手まで言う
     reply(false, {reason: "相手が読み込み直したあとは直せません。つぎの問題から直せます"}); return;
   }
-  if(r.rawCorrect === data.correct){          // すでにその向き。何も動かさない
-    reply(true, {correct: data.correct, scoreDelta: 0}); return;
+  // ★2026-11-16 やっぱり △: 〇（correct:true）のまま giri を足す。△にできるのは、そのとき △ で記録できた問題だけ（スキップのあと・やり直しの回・2回目からは〇）
+  const giriNew = data.giri === 1 && data.correct === true && kidFlow() && !r.forcedWrong && !r.norecord && !r.noGiri;
+  if(r.rawCorrect === data.correct && !!r.giri === giriNew){          // すでにその向き。何も動かさない
+    reply(true, {correct: data.correct, giri: giriNew, scoreDelta: 0}); return;
   }
+  const sameCorrect = r.rawCorrect === data.correct;   // 〇 ⇔ △ だけ（点数・回し方・まちがいリストは動かさない）
 
   if(!r.norecord){   // ★2026-10-06 2回目からの答え（記録していない）は、記録もまちがいリストも触らない
   // ① 記録する前の状態に、まるごと戻す（打ち消し）
@@ -11913,14 +11929,19 @@ function applyJudgeFixOnHost(data){
   else stats[r.qid] = JSON.parse(r.statBefore);
   // ② そのうえで入れ直す。＝ correct / wrong / box は、この問について1回しか動かない
   const finalCorrect = r.forcedWrong ? false : data.correct;
-  recordResult(r.qid, finalCorrect);          // saveStats() はこの中で呼ばれる
+  recordResult(r.qid, finalCorrect, giriNew);          // saveStats() はこの中で呼ばれる（★△は今の△と同じ記録＝recordResult の giri）
 
   // ③ 「まちがえた問題だけもう一勝負」のリスト。**生の判定**で決めるのは記録のときと同じ規則
   const at = myMissesThisRound.indexOf(r.qid);
   if(!data.correct && at < 0) myMissesThisRound.push(r.qid);
   if(data.correct && at >= 0) myMissesThisRound.splice(at, 1);
   }
-  studyLogFix("battle", r.qid, data.correct);   // ★学習ログの〇✕も直す
+  studyLogFix("battle", r.qid, data.correct, giriNew);   // ★学習ログの〇✕（と△の印）も直す
+  if(sameCorrect){   // ★〇 ⇔ △ は記録と学習ログだけ
+    r.giri = giriNew; saveBattleSession();
+    if(r.idx === currentIndex && data.correct) updateMyResultUI(r.forcedWrong, giriNew);
+    reply(true, {correct: data.correct, giri: giriNew, scoreDelta: 0}); return;
+  }
   if(r.sp) spBonus("battle", r.qid, data.correct);   // ★⚡〇のおまけを付け外し（速さの点はそのまま）
   // ★2026-10-06 正解するまでぐるぐる: 〇に直したら、うしろへ回した同じ問を取りのぞく。✕に直したら、うしろへ回す
   if(data.correct && r.requeued){ battleUnrequeue(r.qid, Math.max(r.idx, currentIndex)); r.requeued = false; }
@@ -11943,11 +11964,11 @@ function applyJudgeFixOnHost(data){
   //   〇に直したときは今までどおり出す（喜ぶ知らせなので）
   if(r.idx === currentIndex){
     opponentVerdictOfMe = data.correct;
-    if(data.correct) updateMyResultUI(r.forcedWrong);
+    if(data.correct) updateMyResultUI(r.forcedWrong, giriNew);
   }
-  r.rawCorrect = data.correct;
+  r.rawCorrect = data.correct; r.giri = giriNew;
   saveBattleSession();   // まちがいリストと得点が変わったので保存し直す
-  reply(true, {correct: data.correct, scoreDelta: scoreDelta});
+  reply(true, {correct: data.correct, giri: giriNew, scoreDelta: scoreDelta});
 }
 
 // ---- ゲスト側: ホストからの返事を受けて、はじめて自分の画面を動かす ----
@@ -11960,7 +11981,7 @@ function onJudgeFixAck(data){
     return;
   }
   lastJudge.correct = data.correct;
-  lastJudge.giri = false;   // ★直したあとは〇か✕（△には直さない）
+  lastJudge.giri = !!data.giri;   // ★2026-11-16 △にも直せる（△を知らない版のホストからは giri が来ない＝〇）
   // ★得点の増減は**ホストが決めた値をそのまま当てる**。2つの端末が別々に数えると食いちがう
   if(typeof data.scoreDelta === "number" && data.scoreDelta !== 0){
     scores.host = Math.max(0, scores.host + data.scoreDelta);
@@ -11968,9 +11989,9 @@ function onJudgeFixAck(data){
   }
   if(lastJudge.idx === currentIndex){
     myVerdictOfOpponent = data.correct;
-    els["status-banner"].textContent = "相手を「" + (data.correct ? "せいかい" : "まちがい") + "」と判定しました。";
+    els["status-banner"].textContent = "相手を「" + (data.correct ? (data.giri ? "ぎりぎり（あしたもう一度）" : "せいかい") : "まちがい") + "」と判定しました。";
   }
-  showJudgeFixStatus("相手の記録を「" + (data.correct ? "〇 せいかい" : "✕ まちがい") + "」に直しました。", "win");
+  showJudgeFixStatus("相手の記録を「" + (data.correct ? (data.giri ? "△ ぎりぎり" : "〇 せいかい") : "✕ まちがい") + "」に直しました。", "win");
   updateJudgeFixUI();
 }
 // ==== ここまで「一個前の判定を直す」 =====================================
