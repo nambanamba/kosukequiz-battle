@@ -31,6 +31,8 @@ import shutil
 HERE = os.path.dirname(os.path.abspath(__file__))
 BATTLE = os.path.dirname(HERE)
 def _find_src():
+    if os.environ.get("KQ_SRC"):   # ★2026-11-15 作業ツリーが kosukequiz-battle の外にあるとき
+        return os.environ["KQ_SRC"]
     # git worktree（kosukequiz-battle/_wt/xxx）から動かしても元データを見つけられるよう、上へたどる
     d = BATTLE
     while True:
@@ -54,6 +56,7 @@ FILES = {
     8: "第8回_安土桃山時代.json",   # 2026-10-17 追加
     9: "第9回_江戸時代1.json",   # 2026-10-24 追加
     11: "第11回_江戸時代2.json",   # 2026-11-06 追加
+    12: "第12回_江戸時代3.json",   # 2026-11-15 追加（第12回は年表なし＝並べ替える問は0）
 }
 
 
