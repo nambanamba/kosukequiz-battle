@@ -6431,7 +6431,9 @@ function orderByLog(list){
       const lastR = h.length ? h[h.length - 1].r : null;
       const show = tier === 3.5 ? unseen[0] : at < 0 ? g[0] : lastR === "o" ? g[(at + 1) % g.length] : g[at];   // ★◎で覚えたあとの復習は、前に出したカードの次の聞き方。✕・スキップ・△は同じカードでもう一度（はじめは組の頭）
       return { i: show, tier: tier, okAt: okAt, p: agg ? show : Math.min(...g), g: g }; });   // ★集約①: 並びは出すカード（代表）の出題順
-    it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || a.p - b.p);
+    // ★2026-11-17 ユーザー「表の問題や年表の問題など、基本的な問題からやりたい。いきなり発展問題が出る」→ 同じ段の中（◎の復習の段 4・5 はのぞく）は 表・年表 → 基礎 → 標準（level 無しも）→ 発展 の順。そのあと今までどおり出題順
+    const easy = i => { const d = QA_DATA[i] || {}, q = String(d.q || ""); const tb = /^【(表|年表)】/.test(q) || /^[gr]\d+t\d+$/.test(d.id) ? 0 : 1; const lv = d.level === "基礎" ? 0 : d.level === "発展" ? 2 : 1; return tb * 3 + lv; };
+    it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || (a.tier < 4 ? easy(a.i) - easy(b.i) : 0) || a.p - b.p);
     return newKaiFirst(it).map(x => x.i);   // ★11-16 いちばん新しい回を毎回15問（newKaiFirst）
   }catch(e){ console.error("orderByLog failed", e); return list; }
 }
