@@ -2823,6 +2823,26 @@ const PART_KEY = "kq_battle_parts_v1";
 // ★分けるのは理科だけ（ユーザー「理科の一問一答が全然できない」。社会の年表①②…は今までどおり1枚）。
 //   社会にも広げるときは、ここに "社会" を足すだけ（社会の検査 speed_skip・smoke は1枚で出る前提なので、合わせて直すこと）
 const SPLIT_SUBJECTS = ["理科"];
+// ★2026-11-17 夜 ユーザー「最大3問くらいに調整できますか」「まだ今日は時間があるので、作ってください」→ 空欄が4つ以上の表は、表の行のまとまりで3つまでのかたまりに分けて出す（今夜から）
+//   かたまり1つ＝1問（weightOf＝まだのかたまりの数）。かたまりは表の絵で確かめて手で決めた（11-17）。3つ以下の表は今までどおり1枚。分けるかは設定「分けずにまとめて出す」だけで決める（MERGE_ROW_OFF_FROM）
+//   ★同じ表の形違い（かくす列を変えたカード＝問題文の1文目が同じ表）は、1回に1枚（tableOnce・社会と理科）
+const TABLE_FROM = "2026-11-17";
+const TABLE_CHUNKS = { g12t1: [[1, 2], [3, 4], [5, 6, 7]], g12t2: [[1, 2], [3, 4], [5, 6, 7]], g12t7: [[1, 2], [3, 4]], g12t8: [[1, 2], [3, 4, 5]], g12t9: [[1, 2, 3], [4, 5]], g11t5: [[1, 2, 3], [4, 5]],
+  r12m75: [[1, 2], [3, 4]], r12m76: [[1, 2, 3], [4, 5, 6]], r12m79: [[1, 2], [3, 4]] };
+function isTableCard(d){ return !!d && (/^【(表|年表)】/.test(String(d.q || "")) || /^[gr]\d+t\d+$/.test(String(d.id || ""))); }
+function tableOn(){ return planTodayJst() >= TABLE_FROM; }
+// 表の問題文の「①〜⑦」は ①②③④⑤⑥⑦ と読む（parseAnswerParts は番号が問題文にあることを見るため）
+function tableRangeQ(q){ const C = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"; return String(q || "").replace(/([①-⑳])[〜～~]([①-⑳])/g, (m, a, b) => { const i = C.indexOf(a), j = C.indexOf(b); return i >= 0 && j >= i ? C.slice(i, j + 1) : m; }); }
+function tableChunks(d){   // かたまりにした部分 [{label:"①②", a:"①…　②…"}]。読めなければ null
+  const ch = TABLE_CHUNKS[d.id]; if(!ch) return null;
+  const ps = parseAnswerParts(tableRangeQ(d.q), d.a), C = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"; if(!ps) return null;
+  const by = new Map(ps.map(p => [C.indexOf(p.label) + 1, p]));
+  if(ch.flat().length !== ps.length || ch.flat().some(n => !by.has(n))) return null;
+  return ch.map(g => ({ label: g.map(n => by.get(n).label).join(""), a: g.map(n => by.get(n).label + by.get(n).a).join("　") }));
+}
+function tableKey(d){ return isTableCard(d) ? d.subj + "|" + String(d.u || "").split(".")[0] + "|" + String(d.q || "").replace(/^【[^】]*】/, "").split("。")[0] : ""; }
+function tableOnce(list){ if(!tableOn()) return list; const seen = new Set();
+  return list.filter(i => { const k = tableKey(QA_DATA[i]); if(!k) return true; if(seen.has(k)) return false; seen.add(k); return true; }); }
 const MERGE_ROW_OFF_FROM = "2026-11-17";   // ★11-17 ユーザー OK: この日から、分けるかは設定だけで決める（splitModeOf）。11-17 夜 ユーザー「単純にアプリの設定でコントロールしたい」→ 今夜から
 const SPLIT_CARD = new Map();   // カードの id → 大問と同じ形の入れ物 { key, split:true, card, items:[{id,label,q,a,hint}] }
 // a を部分に分ける。読めなければ null（1枚で出す）
@@ -2854,8 +2874,9 @@ function parseAnswerParts(q, a){
 (function addSplitCards(){
   const qaIds = new Set(QA_DATA.map(d => d.id));
   QA_DATA.forEach(d => {
-    if(!d || d.kind === "daimon" || d.kind === "calc" || SPLIT_SUBJECTS.indexOf(d.subj) < 0) return;
-    const parts = parseAnswerParts(d.q, d.a);
+    const chunks = d && tableOn() ? tableChunks(d) : null;   // ★11-17 夜〜 空欄4つ以上の表は3つまでのかたまり（社会・理科）
+    if(!d || d.kind === "daimon" || d.kind === "calc" || (SPLIT_SUBJECTS.indexOf(d.subj) < 0 && !chunks)) return;
+    const parts = chunks || parseAnswerParts(d.q, d.a);
     if(!parts) return;
     const g = { key: d.id, split: true, card: d, subj: d.subj, kai: "", book: "", daimon: "", lead: "", file: null,
       items: parts.map((p, k) => ({ id: d.id + "~" + (k + 1), label: p.label, q: "", a: p.a, hint: d.hint })) };
@@ -6437,7 +6458,7 @@ function orderByLog(list){
     // ★2026-11-17 ユーザー「表の問題や年表の問題など、基本的な問題からやりたい。いきなり発展問題が出る」→ 同じ段の中（◎の復習の段 4・5 はのぞく）は 表・年表 → 基礎 → 標準（level 無しも）→ 発展 の順。そのあと今までどおり出題順
     const easy = i => { const d = QA_DATA[i] || {}, q = String(d.q || ""); const tb = /^【(表|年表)】/.test(q) || /^[gr]\d+t\d+$/.test(d.id) ? 0 : 1; const lv = d.level === "基礎" ? 0 : d.level === "発展" ? 2 : 1; return tb * 3 + lv; };
     it.sort((a, b) => a.tier - b.tier || (a.tier >= 4 ? a.okAt - b.okAt : 0) || (a.tier < 4 ? easy(a.i) - easy(b.i) : 0) || a.p - b.p);
-    return newKaiFirst(it).map(x => x.i);   // ★11-16 いちばん新しい回を毎回15問（newKaiFirst）
+    return tableOnce(newKaiFirst(it).map(x => x.i));   // ★11-16 いちばん新しい回を毎回15問（newKaiFirst）
   }catch(e){ console.error("orderByLog failed", e); return list; }
 }
 // ★2026-11-13 ユーザー「今日のカードに入れてください」: 表の問題（改革・ききん・人）3枚を、11-13（日本の日付）の社会では必ず入れる。
