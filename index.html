@@ -2823,7 +2823,7 @@ const PART_KEY = "kq_battle_parts_v1";
 // ★分けるのは理科だけ（ユーザー「理科の一問一答が全然できない」。社会の年表①②…は今までどおり1枚）。
 //   社会にも広げるときは、ここに "社会" を足すだけ（社会の検査 speed_skip・smoke は1枚で出る前提なので、合わせて直すこと）
 const SPLIT_SUBJECTS = ["理科"];
-const MERGE_ROW_OFF_FROM = "2026-11-18";   // ★11-17 ユーザー OK: この日から、分けるかは設定だけで決める（splitModeOf）
+const MERGE_ROW_OFF_FROM = "2026-11-17";   // ★11-17 ユーザー OK: この日から、分けるかは設定だけで決める（splitModeOf）。11-17 夜 ユーザー「単純にアプリの設定でコントロールしたい」→ 今夜から
 const SPLIT_CARD = new Map();   // カードの id → 大問と同じ形の入れ物 { key, split:true, card, items:[{id,label,q,a,hint}] }
 // a を部分に分ける。読めなければ null（1枚で出す）
 //   ① 型: a 全体が「①…②…」の並び。①などの番号は問題文にも出てくること（何を答えるのか分からない部分を作らない）
