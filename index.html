@@ -9745,14 +9745,31 @@ function buildCheeseTrack(){
 const CHOICE_LABELS = ["ア", "イ", "ウ", "エ", "オ", "カ", "キ", "ク", "ケ", "コ"];
 const CHOICE_TIME_FACTOR = 0.5;
 const choiceSplitCache = new Map();
+// 文の最後に続く「…」「…」（間は 、・空白）を後ろから取る。中に「」が入っていてもよい。無ければ null
+function quoteTailChoices(s){
+  let i = s.length; while(i > 0 && /[、・\s　]/.test(s[i - 1])) i--;
+  const choices = []; let stemEnd = -1;
+  while(i > 0 && s[i - 1] === "」"){
+    let d = 0, j = i - 1;
+    for(; j >= 0; j--){ if(s[j] === "」") d++; else if(s[j] === "「"){ d--; if(d === 0) break; } }
+    if(j < 0 || i - 1 - (j + 1) <= 0) break;
+    choices.unshift(s.slice(j + 1, i - 1)); stemEnd = j;
+    let k = j; while(k > 0 && /[、・\s　]/.test(s[k - 1])) k--;
+    i = k;
+  }
+  if(stemEnd < 0) return null;
+  let e = stemEnd; while(e > 0 && /[\s　]/.test(s[e - 1])) e--;
+  return { stem: s.slice(0, e), choices: choices };
+}
 function splitChoiceQ(q){
   const s = String(q || "");
   if(choiceSplitCache.has(s)) return choiceSplitCache.get(s);
   let res = null;
-  const m = /^([\s\S]*?[^」\s　])[\s　]*((?:「[^「」]+」[、・\s　]*){2,})$/.exec(s);
-  if(m && /正し|まちが|誤|選|どれ|どの/.test(m[1])){
-    const choices = (m[2].match(/「[^「」]+」/g) || []).map(c => c.slice(1, -1));
-    if(choices.length >= 2 && choices.length <= CHOICE_LABELS.length) res = { stem: m[1], choices: choices };
+  // ★11-18 ユーザー「こういうのは改行してもらえませんか？」（g12r51）: 選択肢の中の「」（「「将軍のおひざもと」と…」」）も読む。
+  //   後ろから、対になる「」を数えて1つずつ取る（前は中に「」があると読めず、改行されなかった）
+  const t = quoteTailChoices(s);
+  if(t && t.stem && !/[」\s　]$/.test(t.stem) && /正し|まちが|誤|選|どれ|どの/.test(t.stem)){
+    if(t.choices.length >= 2 && t.choices.length <= CHOICE_LABELS.length) res = { stem: t.stem, choices: t.choices };
   }
   choiceSplitCache.set(s, res);
   return res;
