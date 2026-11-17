@@ -14046,6 +14046,35 @@ function freeKeepDrop(kind, subj){ const o = freeKeepAll(); if(o[kind] && o[kind
 function freeSoloLeft(subj){ const k = freeKeepGet("solo", subj); const ss = k ? restoreSoloSession(k) : null; return ss && !ss.reviewMode && ss.quizPos < ss.quizQueue.length ? ss.quizQueue.length - ss.quizPos : 0; }
 function freeBattleCarry(subj){ const k = freeKeepGet("two", subj); return k && !k.inMissRetryRound ? battleCarryFrom(k) : null; }
 function freeTwoLeft(subj){ const c = freeBattleCarry(subj); return c ? c.queue.length : 0; }
+// ★2026-11-18 ユーザー「2人でやって、終わらなかったら残りは1人でやりたいので、途中までの記録を1人と二人で共有にしたいです」
+//   →「2人のセットの残りのカードから1人で始める。2人で答えた〇×も1人の記録に入れる」（新しいアプリと古いアプリの両方）
+//   ・一人のつづきが無く、二人のつづきがあれば、「一人で」は二人の残り（まだ1回目を答えていないカード）から出す。並びは二人のまま
+//   ・2人で答えた〇×は、答えたときにこの端末の記録（◎×・学習ログ）に入っている。一人では出し直さない（二重に数えない）
+//   ・一人で始めたら、二人のつづきは消す（一人のつづきに引きつぐ。両方に残すと同じカードを2回やることになる）。◎×・学習ログは消さない
+function freeTwoRestIds(subj){
+  const c = freeBattleCarry(subj); if(!c) return [];
+  const ans = new Set(c.answered || []);
+  return c.queue.filter(id => !ans.has(id));
+}
+function startSoloFromTwo(subj){
+  const ids = freeTwoRestIds(subj); if(!ids.length) return false;
+  const k = freeKeepGet("two", subj);
+  kinaiActive = false;
+  reviewMode = false;
+  els["review-mode-toggle"].classList.toggle("on", false);
+  sessionMerge = false;
+  quizQueue = ids.slice();   // ★二人の並びのまま（もう分けた・まとめた形）。開き直さない
+  quizPos = 0; quizResults = []; inSoloRetryRound = false;
+  soloSkippedIds = new Set(); soloTimeupCount = 0;
+  planStarting = null;
+  studyLogStart("solo", quizQueue, {});
+  freeSoloSubj = subj;   // 一人のつづきとして控える（途中でやめても、ここから）
+  freeKeepDrop("two", subj);
+  try{ const bo = loadBattleSession(); if(bo && bo.fsubj === subj && k && JSON.stringify(bo.questionIds) === JSON.stringify(k.questionIds)) clearBattleSession(); }catch(e){}
+  startSoloCard();
+  showScreen("screen-solo");
+  return true;
+}
 // ★2026-11-14 その教科の続き（どこまで進んだか）を消す。一人・二人の両方。◎×・学習ログは消さない
 function freeKeepClear(subj){
   if(!confirm(subj + "のつづき（どこまで進んだか）を消してよいですか？\n◎×の記録は消えません。")) return;
@@ -14062,6 +14091,7 @@ function freeRowStart(subj, kind){
     try{ window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify(freeKeepGet("solo", subj))); }catch(e){}
     els["resume-solo-btn"].click(); return;
   }
+  if(kind === "solo" && freeTwoRestIds(subj).length && startSoloFromTwo(subj)) return;   // ★2026-11-18 二人の残りを一人で
   if(kind === "battle"){
     // ★続きは「二人で始める」と同じ待ち合わせ（部屋番号→開始）で、保存した並び・いまの添字から（今日やることの行の続きと同じ）
     const carry = freeBattleCarry(subj);
@@ -14109,7 +14139,7 @@ function renderFreeRows(box){
     row.querySelector(".plan-kid-sub").textContent = (n ? n + "問" : "問題がありません")
       + (sl ? "・一人のつづき " + sl + "問" : "") + (tl ? "・二人のつづき " + tl + "問" : "");
     row.querySelector(".plan-kid-clear").style.display = sl || tl ? "" : "none";
-    row.querySelector('button[data-kind="solo"]').disabled = n === 0 && !sl;
+    row.querySelector('button[data-kind="solo"]').disabled = n === 0 && !sl && !tl;
     row.querySelector('button[data-kind="battle"]').disabled = n === 0 && !tl;
   });
 }
