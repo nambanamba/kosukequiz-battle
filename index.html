@@ -14039,9 +14039,12 @@ const FREE_KEEP_KEY = "kq_battle_free_keep_v1";   // {solo: {社会: 一人の�
   }catch(e){}
 })();
 function freeKeepAll(){ try{ const o = JSON.parse(window.localStorage.getItem(FREE_KEEP_KEY) || "{}"); return o && typeof o === "object" ? o : {}; }catch(e){ return {}; } }
-function freeKeepGet(kind, subj){ const o = freeKeepAll(); return o[kind] && o[kind][subj] ? o[kind][subj] : null; }
-function freeKeepPut(kind, subj, v){ const o = freeKeepAll(); o[kind] = o[kind] || {}; o[kind][subj] = v; try{ window.localStorage.setItem(FREE_KEEP_KEY, JSON.stringify(o)); }catch(e){} }
-function freeKeepDrop(kind, subj){ const o = freeKeepAll(); if(o[kind] && o[kind][subj]){ delete o[kind][subj]; try{ window.localStorage.setItem(FREE_KEEP_KEY, JSON.stringify(o)); }catch(e){} } }
+// ★2026-11-18 ユーザー「どこかで上書きされたりするんだと思います」→「お願いします」: つづき1つ1つ（教科×一人/二人）に書いた時刻 at を持たせる。
+//   新しいアプリは端末どうしで写すので、開いたままの端末の古い写しで新しいつづきを上書きしないよう、sync.js が at の新しいほうを残す。
+//   消すときも「消した」と時刻を残す（gone）。消したつづきが、ほかの端末の古い写しで戻らないように。古いアプリ（この端末だけ）でも同じ形
+function freeKeepGet(kind, subj){ const o = freeKeepAll(); const v = o[kind] && o[kind][subj]; return v && !v.gone ? v : null; }
+function freeKeepPut(kind, subj, v){ const o = freeKeepAll(); o[kind] = o[kind] || {}; o[kind][subj] = Object.assign({}, v, { at: Date.now() }); try{ window.localStorage.setItem(FREE_KEEP_KEY, JSON.stringify(o)); }catch(e){} }
+function freeKeepDrop(kind, subj){ const o = freeKeepAll(); if(o[kind] && o[kind][subj] && !o[kind][subj].gone){ o[kind][subj] = { gone: true, at: Date.now() }; try{ window.localStorage.setItem(FREE_KEEP_KEY, JSON.stringify(o)); }catch(e){} } }
 // 続きの残りの数（無ければ 0）
 function freeSoloLeft(subj){ const k = freeKeepGet("solo", subj); const ss = k ? restoreSoloSession(k) : null; return ss && !ss.reviewMode && ss.quizPos < ss.quizQueue.length ? ss.quizQueue.length - ss.quizPos : 0; }
 function freeBattleCarry(subj){ const k = freeKeepGet("two", subj); return k && !k.inMissRetryRound ? battleCarryFrom(k) : null; }
