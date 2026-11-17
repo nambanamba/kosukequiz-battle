@@ -14088,11 +14088,13 @@ function freeKeepClear(subj){
 function freeRowStart(subj, kind){
   switchSubject(subj);
   refreshCreateButton();
+  // ★2026-11-18 一人のつづきが1問も進んでいない（並べただけ）で、二人の残りがあれば、二人の残りを先に（一人の並べただけの分は、二人の残りを始めるときに置きかわる）
+  const soloUntouched = () => { const k = freeKeepGet("solo", subj); return !!k && !(k.quizPos > 0) && !(Array.isArray(k.quizResults) && k.quizResults.length); };
+  if(kind === "solo" && freeTwoRestIds(subj).length && (!freeSoloLeft(subj) || soloUntouched()) && startSoloFromTwo(subj)) return;   // ★2026-11-18 二人の残りを一人で
   if(kind === "solo" && freeSoloLeft(subj)){
     try{ window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify(freeKeepGet("solo", subj))); }catch(e){}
     els["resume-solo-btn"].click(); return;
   }
-  if(kind === "solo" && freeTwoRestIds(subj).length && startSoloFromTwo(subj)) return;   // ★2026-11-18 二人の残りを一人で
   if(kind === "battle"){
     // ★続きは「二人で始める」と同じ待ち合わせ（部屋番号→開始）で、保存した並び・いまの添字から（今日やることの行の続きと同じ）
     const carry = freeBattleCarry(subj);
