@@ -14052,9 +14052,10 @@ function freeTwoLeft(subj){ const c = freeBattleCarry(subj); return c ? c.queue.
 //   ・2人で答えた〇×は、答えたときにこの端末の記録（◎×・学習ログ）に入っている。一人では出し直さない（二重に数えない）
 //   ・一人で始めたら、二人のつづきは消す（一人のつづきに引きつぐ。両方に残すと同じカードを2回やることになる）。◎×・学習ログは消さない
 function freeTwoRestIds(subj){
+  // ★並び全体から、まだ1回目の答え（〇✕・スキップ・時間切れ）がついていないカードを、並びの順に（✕でうしろへ回すと添字がずれるため、添字では切らない）
   const c = freeBattleCarry(subj); if(!c) return [];
-  const ans = new Set(c.answered || []);
-  return c.queue.filter(id => !ans.has(id));
+  const ans = new Set([].concat(c.answered || [], c.skipped || [], c.timeup || [], c.doneIds || [])), seen = new Set();
+  return c.ids.filter(id => { if(ans.has(id) || seen.has(id)) return false; seen.add(id); return true; });
 }
 function startSoloFromTwo(subj){
   const ids = freeTwoRestIds(subj); if(!ids.length) return false;
