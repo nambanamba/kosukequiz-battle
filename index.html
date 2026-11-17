@@ -14055,6 +14055,8 @@ function freeTwoRestIds(subj){
   // ★並び全体から、まだ1回目の答え（〇✕・スキップ・時間切れ）がついていないカードを、並びの順に（✕でうしろへ回すと添字がずれるため、添字では切らない）
   const c = freeBattleCarry(subj); if(!c) return [];
   const ans = new Set([].concat(c.answered || [], c.skipped || [], c.timeup || [], c.doneIds || [])), seen = new Set();
+  // ★学習ログのその回（slid）で答えたカードも入れる（端末どうしで写したつづきが古いと、答えた後のカードが「まだ」に見える。11-18 朝の理科）
+  try{ const ls = c.slid && (studyLog.sessions || []).find(x => x && x.id === c.slid); if(ls && Array.isArray(ls.q)) ls.q.forEach(e => { if(e && e[0]) ans.add(e[0]); }); }catch(e){}
   return c.ids.filter(id => { if(ans.has(id) || seen.has(id)) return false; seen.add(id); return true; });
 }
 function startSoloFromTwo(subj){
