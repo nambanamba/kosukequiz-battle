@@ -6487,12 +6487,16 @@ function sameWordsOf(d){
   s = s.replace(/（答えの例）|が正しくありません。?|が正しい文|の順です。?|[①-⑳㉑-㉟・]+は逆でもよい/g, " ");
   if(s.startsWith("（")) s = [...s.matchAll(/（([^）]*)）/g)].map(m => m[1]).join(" ");
   s = s.replace(/[（）()「」『』]/g, " ");
-  const out = new Set();
+  const out = new Set(), q = String(d.q || "");
   for(let w of s.split(/[\s　、，,・→／/…。]+/)){
-    w = w.replace(/^[①-⑳㉑-㉟]|^\(\d+\)|^\d+\)/, "").trim();
+    // ★11-18 ユーザー「Ⅰ元禄　Ⅱ化政ですが今日だけで2回出てきました」: Ⅰ〜Ⅹ の記号も ① と同じに外す。
+    //   問いの空らんのすぐ後ろの語（「（Ⅰ）文化」の「文化」）を足した語も入れる（元禄 → 元禄文化。g12r10・g12r13 と同じ組に）
+    const lm = /^[①-⑳㉑-㉟Ⅰ-Ⅹ]/.exec(w);
+    w = w.replace(/^[①-⑳㉑-㉟Ⅰ-Ⅹ]|^\(\d+\)|^\d+\)/, "").trim();
     if(!w || SAME_STOP_W.has(w)) continue;
     if(w.length === 1 && !/[一-龥]/.test(w)) continue;
     out.add(w);
+    if(lm){ const sm = new RegExp("[（(]" + lm[0] + "[）)]([一-龥]{1,2})").exec(q); if(sm && !w.endsWith(sm[1])) out.add(w + sm[1]); }
   }
   return out;
 }
