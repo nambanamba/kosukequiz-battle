@@ -5361,6 +5361,10 @@ function saveBattleSession(){
     window.localStorage.setItem(BATTLE_SESSION_KEY, JSON.stringify(o));
     if(planBattleActive) planTwoKeepPut(planBattleActive, o);
     else if(freeBattleSubj) freeKeepPut("two", freeBattleSubj, o);   // ★2026-11-06 今日やることの「二人で」は、行ごとにも控える
+    if(!planBattleActive && freeBattleSubj && freeDropSoloOnStart === freeBattleSubj){   // ★2026-11-19 つづきは1つ
+      freeKeepDrop("solo", freeBattleSubj); try{ const so = loadSoloSession(); if(so && so.fsubj === freeBattleSubj) clearSoloSession(); }catch(e){}
+      freeDropSoloOnStart = null;
+    }
   }catch(e){}
 }
 // ★★2026-11-06 ユーザー「暗記カードですが、何があっても状態を消さないでください」
@@ -13692,11 +13696,27 @@ function battleCarryFrom(bs){
     ? (known.has(bs.questionIds[bs.recordedIdx]) ? keptBefore(bs.recordedIdx) : keptBefore(bs.recordedIdx) - 1) : -1;
   const qIdx = typeof bs.requeuedIdx === "number" && bs.requeuedIdx >= 0
     ? (known.has(bs.questionIds[bs.requeuedIdx]) ? keptBefore(bs.requeuedIdx) : keptBefore(bs.requeuedIdx) - 1) : -1;
+  // ★2026-11-19 添字より前で、まだ1回も答えていないカード（スキップでうしろへ移したあと 添字が進みすぎて飛ばされたもの）を、いまの添字の前に入れなおす。
+  //   前は続きの残りから抜けていた（一人で・二人でとも。11-19 ユーザー「一人でも二人でも続きの問題は共有して」の試験で見つかった）。飛ばされたカードが無ければ今までどおり
+  let ids2 = ids, index2 = index, rIdx2 = rIdx, qIdx2 = qIdx;
+  {
+    const ansd = new Set([].concat(bs.answered || [], bs.hostSkippedIds || [], bs.timeupIds || [], bs.doneIds || []));
+    const lostAt = []; for(let i = 0; i < Math.min(index, ids.length); i++){ if(!ansd.has(ids[i]) && ids.indexOf(ids[i]) === i) lostAt.push(i); }
+    if(lostAt.length){
+      const lostSet = new Set(lostAt), order = [];
+      for(let i = 0; i < index; i++) if(!lostSet.has(i)) order.push(i);
+      lostAt.forEach(i => order.push(i));
+      for(let i = index; i < ids.length; i++) order.push(i);
+      const where = new Map(order.map((oi, ni) => [oi, ni]));
+      ids2 = order.map(i => ids[i]); index2 = index - lostAt.length;
+      rIdx2 = rIdx >= 0 && where.has(rIdx) ? where.get(rIdx) : rIdx; qIdx2 = qIdx >= 0 && where.has(qIdx) ? where.get(qIdx) : qIdx;
+    }
+  }
   const done = new Set(Array.isArray(bs.doneIds) ? bs.doneIds : []), seen = new Set();
-  const queue = ids.slice(index).filter(id => { if(done.has(id) || seen.has(id)) return false; seen.add(id); return true; });   // のこり（数を見せるだけ）
-  if(index >= ids.length || queue.length === 0) return null;
+  const queue = ids2.slice(index2).filter(id => { if(done.has(id) || seen.has(id)) return false; seen.add(id); return true; });   // のこり（一人で・二人でとも この残り）
+  if(index2 >= ids2.length || queue.length === 0) return null;
   return {
-    ids: ids, index: index, queue: queue, recordedIdx: rIdx, requeuedIdx: qIdx,
+    ids: ids2, index: index2, queue: queue, recordedIdx: rIdx2, requeuedIdx: qIdx2,
     slid: typeof bs.slid === "string" ? bs.slid : "",
     answered: Array.isArray(bs.answered) ? bs.answered : [],
     skipped: Array.isArray(bs.hostSkippedIds) ? bs.hostSkippedIds : [],
@@ -14055,12 +14075,30 @@ function freeTwoLeft(subj){ const c = freeBattleCarry(subj); return c ? c.queue.
 //   ・2人で答えた〇×は、答えたときにこの端末の記録（◎×・学習ログ）に入っている。一人では出し直さない（二重に数えない）
 //   ・一人で始めたら、二人のつづきは消す（一人のつづきに引きつぐ。両方に残すと同じカードを2回やることになる）。◎×・学習ログは消さない
 function freeTwoRestIds(subj){
-  // ★並び全体から、まだ1回目の答え（〇✕・スキップ・時間切れ）がついていないカードを、並びの順に（✕でうしろへ回すと添字がずれるため、添字では切らない）
-  const c = freeBattleCarry(subj); if(!c) return [];
-  const ans = new Set([].concat(c.answered || [], c.skipped || [], c.timeup || [], c.doneIds || [])), seen = new Set();
-  // ★学習ログのその回（slid）で答えたカードも入れる（端末どうしで写したつづきが古いと、答えた後のカードが「まだ」に見える。11-18 朝の理科）
-  try{ const ls = c.slid && (studyLog.sessions || []).find(x => x && x.id === c.slid); if(ls && Array.isArray(ls.q)) ls.q.forEach(e => { if(e && e[0]) ans.add(e[0]); }); }catch(e){}
-  return c.ids.filter(id => { if(ans.has(id) || seen.has(id)) return false; seen.add(id); return true; });
+  // ★2026-11-19 ユーザー「一人でも二人でも続きの問題は共有してって言いました」「2人だとあと10問、1人だとあと20問ってなってておかしい」
+  //   → 二人の残りは「二人で」で続けたときと同じ（carry.queue。スキップ・時間切れでうしろへ回した問題も残り）。前は スキップを「答えた」と数えて 0問になり、一人はふつうの選び方の20問になっていた
+  const c = freeBattleCarry(subj); return c ? c.queue.slice() : [];
+}
+// ★2026-11-19 つづきは教科ごとに1つ（一人でも二人でも同じ残りから）。どちらを使うか: "solo" | "two" | null
+//   ・片方だけなら それ。両方あれば、一人が1問も進んでいない（並べただけ）なら二人。どちらも進んでいれば、あとから書いたほう（at）
+//   ・始めた側にまとめ、もう片方のつづきは消す（同じカードを2回やらない）。◎×・学習ログは消さない
+function freeSoloTouched(subj){ const k = freeKeepGet("solo", subj); return !!k && (k.quizPos > 0 || (Array.isArray(k.quizResults) && k.quizResults.length > 0)); }
+function freeSoloRestIds(subj){ const k = freeKeepGet("solo", subj); const ss = k ? restoreSoloSession(k) : null; if(!ss || ss.reviewMode) return []; const seen = new Set(); return ss.quizQueue.slice(ss.quizPos).filter(id => { if(seen.has(id)) return false; seen.add(id); return true; }); }
+function freeShareKind(subj){
+  const sl = freeSoloLeft(subj), tl = freeTwoLeft(subj);
+  if(!sl && !tl) return null; if(!tl) return "solo"; if(!sl) return "two";
+  if(!freeSoloTouched(subj)) return "two";
+  const ks = freeKeepGet("solo", subj), kt = freeKeepGet("two", subj);
+  return ((ks && ks.at) || 0) >= ((kt && kt.at) || 0) ? "solo" : "two";
+}
+function freeShareLeft(subj){ const k = freeShareKind(subj); return k === "solo" ? freeSoloLeft(subj) : k === "two" ? freeTwoLeft(subj) : 0; }
+var freeDropSoloOnStart = null;   // 二人をつづきから始めたとき、はじめて二人のつづきを書いたら その教科の一人のつづきを消す（待ち合わせでやめたら一人のつづきは残す）
+function startBattleFromSolo(subj){
+  const ids = freeSoloRestIds(subj); if(!ids.length) return false;
+  const carry = { ids: ids.slice(), index: 0, queue: ids.slice(), recordedIdx: -1, requeuedIdx: -1, slid: "", answered: [], skipped: [], timeup: [], misses: [], doneIds: [], scores: null };
+  if(!startBattleWithIds(null, null, carry)) return false;
+  freeBattleSubj = subj; freeDropSoloOnStart = subj;
+  return true;
 }
 function startSoloFromTwo(subj){
   const ids = freeTwoRestIds(subj); if(!ids.length) return false;
@@ -14093,17 +14131,21 @@ function freeKeepClear(subj){
 function freeRowStart(subj, kind){
   switchSubject(subj);
   refreshCreateButton();
-  // ★2026-11-18 一人のつづきが1問も進んでいない（並べただけ）で、二人の残りがあれば、二人の残りを先に（一人の並べただけの分は、二人の残りを始めるときに置きかわる）
-  const soloUntouched = () => { const k = freeKeepGet("solo", subj); return !!k && !(k.quizPos > 0) && !(Array.isArray(k.quizResults) && k.quizResults.length); };
-  if(kind === "solo" && freeTwoRestIds(subj).length && (!freeSoloLeft(subj) || soloUntouched()) && startSoloFromTwo(subj)) return;   // ★2026-11-18 二人の残りを一人で
-  if(kind === "solo" && freeSoloLeft(subj)){
-    try{ window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify(freeKeepGet("solo", subj))); }catch(e){}
-    els["resume-solo-btn"].click(); return;
+  freeDropSoloOnStart = null;
+  const sh = freeShareKind(subj);   // ★2026-11-19 つづきは教科ごとに1つ（一人でも二人でも同じ残りから）
+  if(kind === "solo"){
+    if(sh === "two" && startSoloFromTwo(subj)) return;   // 二人の残りを一人で（二人のつづきは消す）
+    if(sh === "solo"){
+      freeKeepDrop("two", subj);   // 古いほうの二人のつづきは使わない
+      try{ window.localStorage.setItem(SOLO_SESSION_KEY, JSON.stringify(freeKeepGet("solo", subj))); }catch(e){}
+      els["resume-solo-btn"].click(); return;
+    }
   }
   if(kind === "battle"){
+    if(sh === "solo" && startBattleFromSolo(subj)) return;   // 一人の残りを二人で（一人のつづきは、二人が始まったら消す）
     // ★続きは「二人で始める」と同じ待ち合わせ（部屋番号→開始）で、保存した並び・いまの添字から（今日やることの行の続きと同じ）
-    const carry = freeBattleCarry(subj);
-    if(carry && startBattleWithIds(null, null, carry)){ freeBattleSubj = subj; return; }
+    const carry = sh === "two" ? freeBattleCarry(subj) : null;
+    if(carry && startBattleWithIds(null, null, carry)){ freeBattleSubj = subj; freeDropSoloOnStart = subj; return; }
   }
   const big = els[kind === "solo" ? "solo-start-btn" : "create-btn"];
   if(!big.disabled) big.click();
@@ -14143,12 +14185,12 @@ function renderFreeRows(box){
   kid.querySelectorAll(".plan-kid-row").forEach(row => {
     const subj = row.dataset.subj;
     let n = 0; try{ n = planFreeCount(subj); }catch(e){ console.error("free rows count failed", e); }
-    const sl = freeSoloLeft(subj), tl = freeTwoLeft(subj);
+    const sl = freeSoloLeft(subj), tl = freeTwoLeft(subj), sh = freeShareLeft(subj);   // ★2026-11-19 つづきは1つ（一人でも二人でも）
     row.querySelector(".plan-kid-sub").textContent = (n ? n + "問" : "問題がありません")
-      + (sl ? "・一人のつづき " + sl + "問" : "") + (tl ? "・二人のつづき " + tl + "問" : "");
+      + (sh ? "・つづき " + sh + "問" : "");
     row.querySelector(".plan-kid-clear").style.display = sl || tl ? "" : "none";
-    row.querySelector('button[data-kind="solo"]').disabled = n === 0 && !sl && !tl;
-    row.querySelector('button[data-kind="battle"]').disabled = n === 0 && !tl;
+    row.querySelector('button[data-kind="solo"]').disabled = n === 0 && !sh;
+    row.querySelector('button[data-kind="battle"]').disabled = n === 0 && !sh;
   });
 }
 function renderPlan(){
